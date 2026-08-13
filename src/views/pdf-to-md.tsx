@@ -1,0 +1,557 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { join } from "@tauri-apps/api/path";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import {
+  ArrowLeft,
+  Check,
+  Clock,
+  Download,
+  FileText,
+  ListPlus,
+  Loader2,
+  Play,
+  Square,
+  Trash2,
+  X,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import { ConvertWorkspace } from "@/components/pdf2md/convert-workspace";
+import { DragOverlay } from "@/components/pdf2md/drag-overlay";
+import { DropZone } from "@/components/pdf2md/drop-zone";
+import { usePdfDrop } from "@/components/pdf2md/use-pdf-drop";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { convertPdf, detectPdf, exportMarkdown } from "@/lib/ipc";
+import { ensureMaxConcurrent } from "@/lib/concurrency";
+import type { ConvertResult } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+import { convertWithOcr } from "@/components/pdf2md/render-pdf-pages";
+
+type BatchStatus = "queued" | "converting" | "done" | "error";
+
+interface BatchItem {
+  id: string;
+  path: string;
+  name: string;
+  status: BatchStatus;
+  error?: string;
+  result?: ConvertResult | null;
+}
+
+function StatusBadge({
+  status,
+  error,
+}: {
+  status: BatchStatus;
+  error?: string;
+}) {
+  if (status === "converting") {
+    return (
+      <Badge className="border-sky-500/30 bg-sky-500/10 text-sky-600 dark:border-sky-500/40 dark:text-sky-400">
+        <Loader2 className="size-3 animate-spin" />
+        转换中
+      </Badge>
+    );
+  }
+  if (status === "done") {
+    return (
+      <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:border-emerald-500/40 dark:text-emerald-400">
+        <Check className="size-3" />
+        完成
+      </Badge>
+    );
+  }
+  if (status === "error") {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge variant="destructive">
+            <X className="size-3" />
+            失败
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="whitespace-pre-wrap break-words">
+          {error}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+  return (
+    <Badge variant="outline" className="text-muted-foreground">
+      <Clock className="size-3" />
+      等待中
+    </Badge>
+  );
+}
+
+export function BatchView() {
+  const [items, setItems] = useState<BatchItem[]>([]);
+  const [activeItem, setActiveItem] = useState<BatchItem | null>(null);
+  const [running, setRunning] = useState(false);
+  const [concurrency, setConcurrency] = useState(1);
+
+  useEffect(() => {
+    let cancelled = false;
+    ensureMaxConcurrent().then((n) => {
+      if (!cancelled) setConcurrency(n);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const itemsRef = useRef<BatchItem[]>([]);
+  const queueRef = useRef<{ id: string; path: string }[]>([]);
+  const activeRef = useRef(0);
+  const runningRef = useRef(false);
+  const waitersRef = useRef<(() => void)[]>([]);
+
+  const mutate = useCallback((fn: (prev: BatchItem[]) => BatchItem[]) => {
+    const next = fn(itemsRef.current);
+    itemsRef.current = next;
+    setItems(next);
+  }, []);
+
+  const patchItem = useCallback(
+    (id: string, patch: Partial<BatchItem>) => {
+      mutate((prev) =>
+        prev.map((it) => (it.id === id ? { ...it, ...patch } : it)),
+      );
+    },
+    [mutate],
+  );
+
+  const wake = useCallback(() => {
+    const ws = waitersRef.current;
+    waitersRef.current = [];
+    ws.forEach((w) => w());
+  }, []);
+
+  const runJob = useCallback(
+    async (job: { id: string; path: string }) => {
+      activeRef.current += 1;
+      patchItem(job.id, { status: "converting" });
+      try {
+        let result: ConvertResult;
+        const det = await detectPdf(job.path);
+        const needOcr = det.pagesNeedingOcr;
+        if (needOcr.length > 0) {
+          result = await convertWithOcr(job.path, needOcr);
+        } else {
+          result = await convertPdf(job.path);
+        }
+        patchItem(job.id, { status: "done", result });
+      } catch (e) {
+        patchItem(job.id, { status: "error", error: String(e) });
+      }
+      activeRef.current -= 1;
+      if (queueRef.current.length === 0 && activeRef.current === 0) {
+        runningRef.current = false;
+        setRunning(false);
+        wake();
+      }
+    },
+    [patchItem, wake],
+  );
+
+  const worker = useCallback(async () => {
+    while (runningRef.current) {
+      const job = queueRef.current.shift();
+      if (!job) {
+        await new Promise<void>((r) => waitersRef.current.push(r));
+        continue;
+      }
+      await runJob(job);
+    }
+  }, [runJob]);
+
+  const start = useCallback(() => {
+    if (runningRef.current || queueRef.current.length === 0) return;
+    runningRef.current = true;
+    setRunning(true);
+    for (let i = 0; i < concurrency; i += 1) void worker();
+  }, [worker, concurrency]);
+
+  const stop = useCallback(() => {
+    if (!runningRef.current) return;
+    runningRef.current = false;
+    setRunning(false);
+    wake();
+  }, [wake]);
+
+  const addFiles = useCallback(
+    (paths: string[]) => {
+      if (paths.length === 0) return;
+      const newItems: BatchItem[] = paths.map((path) => ({
+        id: crypto.randomUUID(),
+        path,
+        name: path.split(/[\\/]/).pop() ?? path,
+        status: "queued",
+      }));
+      const all = [...itemsRef.current, ...newItems];
+      mutate(() => all);
+      for (const it of newItems)
+        queueRef.current.push({ id: it.id, path: it.path });
+      setActiveItem(null);
+      if (runningRef.current) {
+        // 若批量池正空闲等待（队列已清空且无任务在执行），
+        // 停掉池子，让新文件保持“等待中”，由用户点击“开始”再转换。
+        if (
+          queueRef.current.length === newItems.length &&
+          activeRef.current === 0
+        ) {
+          runningRef.current = false;
+          setRunning(false);
+          wake();
+        }
+      }
+    },
+    [mutate, wake],
+  );
+
+  const { dragging } = usePdfDrop(addFiles);
+
+  const removeItem = useCallback(
+    (id: string) => {
+      mutate((prev) => prev.filter((it) => it.id !== id));
+      queueRef.current = queueRef.current.filter((j) => j.id !== id);
+      setActiveItem((cur) => (cur?.id === id ? null : cur));
+    },
+    [mutate],
+  );
+
+  const retryItem = useCallback(
+    (item: BatchItem) => {
+      mutate((prev) =>
+        prev.map((it) =>
+          it.id === item.id
+            ? { ...it, status: "queued", error: undefined, result: undefined }
+            : it,
+        ),
+      );
+      queueRef.current = queueRef.current.filter((j) => j.id !== item.id);
+      queueRef.current.push({ id: item.id, path: item.path });
+      if (runningRef.current) wake();
+      else start();
+    },
+    [mutate, start, wake],
+  );
+
+  const clearAll = useCallback(() => {
+    stop();
+    mutate(() => []);
+    queueRef.current = [];
+    setActiveItem(null);
+  }, [mutate, stop]);
+
+  const handleConverted = useCallback(
+    (id: string, result: ConvertResult) => {
+      patchItem(id, { status: "done", result });
+      queueRef.current = queueRef.current.filter((j) => j.id !== id);
+    },
+    [patchItem],
+  );
+
+  async function pickMore() {
+    const file = await open({
+      multiple: true,
+      filters: [{ name: "PDF 文档", extensions: ["pdf"] }],
+    });
+    if (typeof file === "string") addFiles([file]);
+    else if (Array.isArray(file) && file.length > 0) addFiles(file);
+  }
+
+  async function exportItem(item: BatchItem) {
+    if (!item.result) return;
+    const base = item.name.replace(/\.pdf$/i, "") || "document";
+    const target = await save({
+      defaultPath: `${base}.md`,
+      filters: [{ name: "Markdown", extensions: ["md"] }],
+    });
+    if (typeof target !== "string") return;
+    try {
+      await exportMarkdown(target, item.result.markdown);
+      toast.success("已导出", { description: target });
+    } catch (e) {
+      toast.error("导出失败", { description: String(e) });
+    }
+  }
+
+  async function exportAll() {
+    const done = itemsRef.current.filter(
+      (it) => it.status === "done" && it.result,
+    );
+    if (done.length === 0) {
+      toast.error("暂无完成的文档", {
+        description: "请先完成至少一个文件的转换",
+      });
+      return;
+    }
+    const dir = await open({
+      directory: true,
+      multiple: false,
+      title: "选择导出目录",
+    });
+    if (typeof dir !== "string") return;
+    let ok = 0;
+    const used = new Set<string>();
+    for (const it of done) {
+      const base = it.name.replace(/\.pdf$/i, "") || "document";
+      let name = `${base}.md`;
+      let n = 2;
+      while (used.has(name.toLowerCase())) name = `${base} (${n++}).md`;
+      used.add(name.toLowerCase());
+      const target = await join(dir, name);
+      try {
+        await exportMarkdown(target, it.result!.markdown);
+        ok += 1;
+      } catch (e) {
+        toast.error(`导出失败: ${it.name}`, { description: String(e) });
+      }
+    }
+    toast.success(`已导出 ${ok} 个文件`, { description: dir });
+  }
+
+  const total = items.length;
+  const doneCount = items.filter((it) => it.status === "done").length;
+  const convertingCount = items.filter(
+    (it) => it.status === "converting",
+  ).length;
+  const hasQueued = items.some((it) => it.status === "queued");
+  const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+
+  const view = activeItem ?? (items.length === 1 ? items[0] : null);
+  const previewing = Boolean(activeItem);
+
+  if (view) {
+    return (
+      <div className="relative flex min-h-0 flex-1 flex-col gap-3">
+        {dragging ? (
+          <DragOverlay title="松开以加入列表" hint="可追加多个 .pdf 文件" />
+        ) : null}
+
+        {previewing ? (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setActiveItem(null)}
+            >
+              <ArrowLeft />
+              返回列表
+            </Button>
+          </div>
+        ) : null}
+
+        <ConvertWorkspace
+          key={view.id}
+          filePath={view.path}
+          fileName={view.name}
+          initialResult={view.result ?? undefined}
+          onConverted={(r) => handleConverted(view.id, r)}
+          onClear={previewing ? () => setActiveItem(null) : clearAll}
+        />
+      </div>
+    );
+  }
+
+  if (total > 1) {
+    return (
+      <div className="relative flex min-h-0 flex-1 flex-col gap-3">
+        {dragging ? (
+          <DragOverlay title="松开以加入列表" hint="可追加多个 .pdf 文件" />
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card px-3 py-2 shadow-sm">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <ListPlus className="size-4" />
+          </span>
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="text-sm font-medium">批量转换</p>
+            <p
+              className={cn(
+                "text-xs",
+                convertingCount > 0
+                  ? "text-sky-600 dark:text-sky-400"
+                  : "text-muted-foreground",
+              )}
+            >
+              {convertingCount > 0
+                ? `正在转换 ${convertingCount} / ${concurrency} · `
+                : ""}
+              已完成 {doneCount} / {total}
+              {total > doneCount ? ` · 并发上限 ${concurrency}` : ""}
+            </p>
+          </div>
+          <Progress value={pct} className="hidden w-40 sm:block" />
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={clearAll}
+              disabled={total === 0}
+            >
+              <Trash2 />
+            </Button>
+            <Button variant="secondary" size="sm" onClick={pickMore}>
+              <ListPlus />
+              添加
+            </Button>
+            {running ? (
+              <Button size="sm" onClick={stop}>
+                <Square />
+                停止
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={start}
+                disabled={!hasQueued}
+              >
+                <Play />
+                开始
+              </Button>
+            )}
+            <Button variant="secondary" size="sm" onClick={exportAll}>
+              <Download />
+              全部导出
+            </Button>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-hidden rounded-xl border bg-card shadow-sm">
+          <div className="flex h-full max-h-full flex-col">
+            <div className="overflow-auto">
+              <table className="w-full table-fixed text-sm">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
+                    <th className="px-3 py-2 font-medium">文件名</th>
+                    <th className="w-[100px] px-3 py-2 font-medium">状态</th>
+                    <th className="w-[90px] px-3 py-2 font-medium">耗时</th>
+                    <th className="w-[150px] px-3 py-2 text-right font-medium">
+                      操作
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <tr
+                      key={item.id}
+                      className="border-b transition-colors last:border-0 hover:bg-muted/40"
+                    >
+                      <td className="min-w-0 px-3 py-2">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="block min-w-0">
+                              <button
+                                type="button"
+                                disabled={item.status !== "done"}
+                                onClick={() => setActiveItem(item)}
+                                className={cn(
+                                  "flex w-full min-w-0 items-center gap-2 text-left",
+                                  item.status === "done"
+                                    ? "cursor-pointer hover:underline"
+                                    : "cursor-default",
+                                )}
+                              >
+                                <span
+                                  className={cn(
+                                    "flex size-6 shrink-0 items-center justify-center rounded-md",
+                                    item.status === "done"
+                                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                      : "bg-muted text-muted-foreground",
+                                  )}
+                                >
+                                  <FileText className="size-3.5" />
+                                </span>
+                                <span className="truncate text-foreground">
+                                  {item.name}
+                                </span>
+                              </button>
+                            </span>
+                          </TooltipTrigger>
+                        </Tooltip>
+                      </td>
+                      <td className="px-3 py-2">
+                        <StatusBadge status={item.status} error={item.error} />
+                      </td>
+                      <td className="px-3 py-2 text-xs tabular-nums text-muted-foreground">
+                        {item.result
+                          ? `${item.result.processingTimeMs} ms`
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-end gap-1">
+                          {item.status === "done" ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={() => exportItem(item)}
+                                >
+                                  <Download />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>导出 Markdown</TooltipContent>
+                            </Tooltip>
+                          ) : null}
+                          {item.status === "error" ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={() => retryItem(item)}
+                                >
+                                  <Play />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>重试</TooltipContent>
+                            </Tooltip>
+                          ) : null}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => removeItem(item.id)}
+                              >
+                                <X />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>从列表移除</TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col gap-3">
+      {dragging ? (
+        <DragOverlay title="松开以加入列表" hint="可一次拖入多个 .pdf 文件" />
+      ) : null}
+
+      <DropZone onFiles={addFiles} multiple className="flex-1" />
+    </div>
+  );
+}
