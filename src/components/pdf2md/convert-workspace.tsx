@@ -304,6 +304,8 @@ export function ConvertWorkspace({
           result={detect}
           loading={detecting}
           extra={drawMode ? t("mode.drawTable") : undefined}
+          skippedPages={result?.skippedPages}
+          failedPages={result?.failedPages}
         />
       </div>
     </>

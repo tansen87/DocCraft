@@ -60,6 +60,9 @@ export async function* renderPdfPagesForOcr(
  * Hybrid conversion with per-page streaming: render → send one page at a time
  * so the backend never holds the whole document's images. Text pages are
  * extracted once by the backend session.
+ *
+ * When no usable OCR provider is configured, no pages are rendered or sent —
+ * the backend skips them and records which pages were skipped in the result.
  */
 export async function convertWithOcr(
   path: string,
@@ -67,8 +70,10 @@ export async function convertWithOcr(
 ): Promise<ConvertResult> {
   const session = await startHybridSession(path, pages);
   try {
-    for await (const img of renderPdfPagesForOcr(path, pages)) {
-      await hybridPageOcr(session.sessionId, img.page, img.imagePng);
+    if (session.ocrConfigured) {
+      for await (const img of renderPdfPagesForOcr(path, pages)) {
+        await hybridPageOcr(session.sessionId, img.page, img.imagePng);
+      }
     }
     return await finishHybridSession(session.sessionId);
   } catch (e) {

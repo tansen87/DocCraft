@@ -143,6 +143,9 @@ const en = {
   "status.ocrNeed": "OCR needed",
   "status.none": "None",
   "status.mode": "Mode",
+  "status.skippedPages": "Skipped pages: {pages}",
+  "status.failedPages": "Failed pages: {pages}",
+  "status.noticesEmpty": "No skipped or failed pages",
 
   "pdfmeta.text": "Text",
   "pdfmeta.textHint": "No OCR needed, converted locally",
@@ -328,6 +331,9 @@ const zh: Record<TranslationKey, string> = {
   "status.ocrNeed": "OCR 需求",
   "status.none": "无",
   "status.mode": "模式",
+  "status.skippedPages": "跳过的页: {pages}",
+  "status.failedPages": "转换失败的页: {pages}",
+  "status.noticesEmpty": "无跳过或失败的页面",
 
   "pdfmeta.text": "文本型",
   "pdfmeta.textHint": "无需 OCR, 本地直接转换",

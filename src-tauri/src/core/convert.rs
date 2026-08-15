@@ -27,6 +27,8 @@ pub fn convert_pdf(path: &str) -> Result<ConvertResult, PdfError> {
     info: DetectResult::from(&det),
     markdown,
     processing_time_ms: start.elapsed().as_millis() as u64,
+    skipped_pages: Vec::new(),
+    failed_pages: Vec::new(),
   })
 }
 

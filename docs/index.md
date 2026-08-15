@@ -25,12 +25,18 @@ and Simplified Chinese — switchable at runtime.
   vision API (`base_url`, per-vendor multiple models). API keys are encrypted
   at rest (DPAPI on Windows) and never sent back to the frontend. The first
   configured vendor with a key + model is used by default.
+- **Graceful OCR fallback** — when no usable OCR provider is configured, the
+  conversion still completes: pages flagged for OCR are skipped (marked with a
+  `<!-- OCR 跳过 … -->` comment) and recorded instead of failing the document.
+  Per-page OCR failures degrade to a `<!-- OCR 失败 … -->` comment as well. A
+  **bell icon** at the far right of the status bar shows the total skipped /
+  failed count and, on hover, the exact page numbers.
 - **Batch queue with configurable concurrency** — multi-file drag & drop,
   worker-pool conversion, retry / remove / export-all, and a user-adjustable
   concurrency limit (1–16, default 1) persisted in app settings.
 - **Editor-style workspace** — top toolbar (file name + convert action),
   split-view middle (PDF preview | Markdown preview) and a bottom status bar
-  (PDF type, pages, confidence, OCR needs).
+  (PDF type, pages, confidence, OCR needs, plus a skipped/failed notices bell).
 - **Whole-window drag & drop** — drop any PDF anywhere in the window; a drag
   overlay confirms the drop target; auto-detect runs immediately on select.
 - **Markdown → Excel** — batch-analyze `.md` files, auto-detect tables
@@ -134,9 +140,9 @@ Commands (invoked from `src/lib/ipc.ts`):
 |----------------------|-----------------------------------------|------------------------------|
 | `detect_pdf`         | `{ path }`                              | `DetectResult` (type, confidence, pages needing OCR, layout) |
 | `convert_pdf`        | `{ path }`                              | `ConvertResult` (`DetectResult` + `markdown` + `processingTimeMs`) |
-| `hybrid_session_start` | `{ path, ocrPages }` — 1-indexed pages needing OCR | `HybridSessionInfo` (sessionId + detect info; text pages extracted once and kept on the backend) |
+| `hybrid_session_start` | `{ path, ocrPages }` — 1-indexed pages needing OCR | `HybridSessionInfo` (sessionId + `ocrConfigured` + detect info; text pages extracted once and kept on the backend; no provider → OCR pages are skipped, not failed) |
 | `hybrid_page_ocr`    | `{ sessionId, page, imagePng }` — one rendered page | `string` — that page's markdown (OCR failures degrade to a `<!-- OCR 失败 … -->` comment) |
-| `hybrid_session_finish` | `{ sessionId }`                       | `ConvertResult` — text + OCR pages reassembled in document order |
+| `hybrid_session_finish` | `{ sessionId }`                       | `ConvertResult` — text + OCR pages reassembled in document order; reports `skippedPages` and `failedPages` |
 | `hybrid_session_abort` | `{ sessionId }`                      | `void` (discards an abandoned session) |
 | `export_markdown`    | `{ path, content }`                     | `void` (writes markdown to file) |
 | `get_ocr_config`     | —                                       | `OcrVendor[]` (keys never returned, only `apiKeySet`) |
@@ -157,7 +163,9 @@ Result fields are serialized in camelCase; `PdfTypeDto` mirrors `pdf-inspector`'
     convert_pdf(path)               → pdf-inspector::process_pdf → full local Markdown
 [4] Convert (mixed / scanned PDF)
     startHybridSession(path, N)     → backend extracts text pages once, resolves OCR provider
+                                      (if none configured → pages are skipped and recorded)
     renderPdfPagesForOcr(path, N)   → pdf.js renders ONE OCR page to PNG (base64) at a time
+                                      (skipped entirely when OCR is not configured)
     hybrid_page_ocr(session, p, im) → OCR provider per image, streamed one page at a time
     hybrid_session_finish(session)  → reassemble in doc order; abort on cancel/error
 [5] PDF preview                     → pdf.js fetches file via asset protocol → canvas pages
@@ -171,6 +179,10 @@ of the whole document. API keys are decrypted only inside the Rust process
 frontend never sees them. Sessions are auto-pruned if the frontend never
 finishes or aborts them.
 Errors from `PdfError` are stringified and surfaced through toast notifications.
+When OCR isn't configured, `finish_session` returns a successful `ConvertResult`
+whose `skippedPages` lists every page that needed OCR, and each skipped page
+appears in the markdown as a `<!-- OCR 跳过 … -->` comment; failed pages are
+tracked the same way via `failedPages`.
 
 ## Internationalization (i18n)
 

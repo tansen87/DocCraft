@@ -1,5 +1,11 @@
+import { Bell } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { pdfTypeMeta } from "@/lib/pdf-meta";
 import type { DetectResult } from "@/lib/types";
@@ -33,12 +39,26 @@ interface StatusBarProps {
   result: DetectResult | null;
   loading: boolean;
   extra?: string;
+  /** 1-indexed pages skipped because no OCR provider is configured. */
+  skippedPages?: number[];
+  /** 1-indexed pages whose OCR request failed. */
+  failedPages?: number[];
 }
 
-export function StatusBar({ result, loading, extra }: StatusBarProps) {
+export function StatusBar({
+  result,
+  loading,
+  extra,
+  skippedPages,
+  failedPages,
+}: StatusBarProps) {
   const { t } = useI18n();
   const meta = result ? pdfTypeMeta[result.pdfType] : null;
   const needsOcr = result?.pagesNeedingOcr.length ?? 0;
+
+  const skipped = skippedPages ?? [];
+  const failed = failedPages ?? [];
+  const noticeCount = skipped.length + failed.length;
 
   const pdfTypeLabel = result
     ? {
@@ -113,6 +133,51 @@ export function StatusBar({ result, loading, extra }: StatusBarProps) {
           </Stat>
         </>
       ) : null}
+
+      <div className="ml-auto">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                "relative flex size-8 items-center justify-center rounded-lg transition-colors",
+                noticeCount > 0
+                  ? "text-amber-600 hover:bg-amber-500/10 dark:text-amber-400"
+                  : "text-muted-foreground hover:bg-muted/60",
+              )}
+            >
+              <Bell className="size-4" />
+              {noticeCount > 0 ? (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-4 text-white">
+                  {noticeCount}
+                </span>
+              ) : null}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {noticeCount === 0 ? (
+              t("status.noticesEmpty")
+            ) : (
+              <div className="space-y-1">
+                {skipped.length > 0 ? (
+                  <p>
+                    {t("status.skippedPages", {
+                      pages: skipped.join(", "),
+                    })}
+                  </p>
+                ) : null}
+                {failed.length > 0 ? (
+                  <p>
+                    {t("status.failedPages", {
+                      pages: failed.join(", "),
+                    })}
+                  </p>
+                ) : null}
+              </div>
+            )}
+          </TooltipContent>
+        </Tooltip>
+      </div>
     </div>
   );
 }

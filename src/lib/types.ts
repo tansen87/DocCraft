@@ -19,6 +19,10 @@ export interface DetectResult {
 export interface ConvertResult extends DetectResult {
   markdown: string;
   processingTimeMs: number;
+  /** 1-indexed pages that needed OCR but were skipped (no OCR provider configured). */
+  skippedPages: number[];
+  /** 1-indexed pages whose OCR request failed (degraded to a placeholder comment). */
+  failedPages: number[];
 }
 
 export interface OcrModel {
@@ -58,6 +62,8 @@ export interface OcrPageImage {
 /** Returned by `startHybridSession`: session id + detection info. */
 export interface HybridSessionInfo extends DetectResult {
   sessionId: string;
+  /** Whether a usable OCR provider was resolved. When false, OCR pages are skipped. */
+  ocrConfigured: boolean;
 }
 
 /** Global app settings persisted by the backend. */

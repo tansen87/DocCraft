@@ -75,6 +75,12 @@ pub struct ConvertResult {
   pub info: DetectResult,
   pub markdown: String,
   pub processing_time_ms: u64,
+  /// 1-indexed pages that needed OCR but were skipped because no usable OCR
+  /// provider is configured. They appear in the markdown as a skip comment.
+  pub skipped_pages: Vec<u32>,
+  /// 1-indexed pages whose OCR request failed (degraded to a placeholder
+  /// comment in the markdown).
+  pub failed_pages: Vec<u32>,
 }
 
 impl From<&PdfProcessResult> for ConvertResult {
@@ -83,6 +89,8 @@ impl From<&PdfProcessResult> for ConvertResult {
       info: DetectResult::from(r),
       markdown: r.markdown.clone().unwrap_or_default(),
       processing_time_ms: r.processing_time_ms,
+      skipped_pages: Vec::new(),
+      failed_pages: Vec::new(),
     }
   }
 }
@@ -153,6 +161,9 @@ pub struct OcrVendorInput {
 #[serde(rename_all = "camelCase")]
 pub struct HybridSessionInfo {
   pub session_id: String,
+  /// Whether a usable OCR provider was resolved for this session. When `false`,
+  /// pages that need OCR are skipped (recorded in the finish result).
+  pub ocr_configured: bool,
   #[serde(flatten)]
   pub info: DetectResult,
 }

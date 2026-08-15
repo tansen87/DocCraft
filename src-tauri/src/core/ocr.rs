@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -117,6 +117,10 @@ pub struct HybridSession {
   pub client: Client,
   /// OCR results keyed by 1-indexed page number.
   pub ocr_results: HashMap<u32, String>,
+  /// Pages that needed OCR but were skipped because no provider is configured.
+  pub skipped_pages: Vec<u32>,
+  /// Pages whose OCR request failed (degraded to a placeholder comment).
+  pub failed_pages: Vec<u32>,
   pub start: Instant,
 }
 
@@ -158,18 +162,26 @@ pub fn start_session(
   ocr_set.sort_unstable();
   ocr_set.dedup();
 
-  let resolved: Option<(String, String, String)> = if !ocr_set.is_empty() {
-    let vendors = settings::get_ocr_config(app)?;
-    let (vendor, model) = resolve_provider(&vendors).ok_or_else(|| {
-      "未配置可用的 OCR 供应商.请在「设置」页添加供应商、填写 API Key 并添加至少一个模型."
-        .to_string()
-    })?;
-    let key = settings::api_key_for(app, &vendor.id)?
-      .ok_or_else(|| format!("供应商「{}」的 API Key 为空", vendor.name))?;
-    Some((vendor.base_url.clone(), model.id.clone(), key))
-  } else {
-    None
-  };
+  // Resolve the OCR provider when pages need OCR. If none is configured, the
+  // conversion still proceeds — those pages are skipped and recorded instead of
+  // aborting the whole document.
+  let (resolved, skipped_pages): (Option<(String, String, String)>, Vec<u32>) =
+    if !ocr_set.is_empty() {
+      let vendors = settings::get_ocr_config(app)?;
+      match resolve_provider(&vendors) {
+        Some((vendor, model)) => {
+          let key = settings::api_key_for(app, &vendor.id)?
+            .ok_or_else(|| format!("供应商「{}」的 API Key 为空", vendor.name))?;
+          (
+            Some((vendor.base_url.clone(), model.id.clone(), key)),
+            Vec::new(),
+          )
+        }
+        None => (None, ocr_set.clone()),
+      }
+    } else {
+      (None, Vec::new())
+    };
 
   let client = Client::builder()
     .timeout(Duration::from_secs(300))
@@ -191,12 +203,16 @@ pub fn start_session(
     },
   };
 
+  let ocr_configured = resolved.is_some();
+
   let session = HybridSession {
     pages: page_markdowns,
     info: info.clone(),
     resolved,
     client,
     ocr_results: HashMap::new(),
+    skipped_pages,
+    failed_pages: Vec::new(),
     start,
   };
 
@@ -217,7 +233,11 @@ pub fn start_session(
   let session_id = Uuid::new_v4().to_string();
   map.insert(session_id.clone(), session);
 
-  Ok(HybridSessionInfo { session_id, info })
+  Ok(HybridSessionInfo {
+    session_id,
+    ocr_configured,
+    info,
+  })
 }
 
 /// Run one page through the configured OCR provider and cache its markdown.
@@ -243,7 +263,13 @@ pub async fn ocr_page_in_session(
 
   let md = match ocr_page(&client, &base_url, &model_id, &api_key, page, image_png).await {
     Ok(m) => m,
-    Err(e) => format!("<!-- OCR 失败(第 {page} 页): {e} -->"),
+    Err(e) => {
+      let mut map = store.0.lock().unwrap();
+      if let Some(session) = map.get_mut(session_id) {
+        session.failed_pages.push(page);
+      }
+      format!("<!-- OCR 失败(第 {page} 页): {e} -->")
+    }
   };
 
   let mut map = store.0.lock().unwrap();
@@ -261,16 +287,21 @@ pub fn finish_session(store: &HybridStore, session_id: &str) -> Result<ConvertRe
     .ok_or_else(|| "转换会话不存在或已过期".to_string())?;
 
   let page_count = session.info.page_count;
+  let skipped: HashSet<u32> = session.skipped_pages.iter().copied().collect();
   let mut parts = Vec::with_capacity(page_count as usize);
   for i in 0..page_count {
     let page_1 = i + 1;
-    let md = match session.ocr_results.get(&page_1) {
-      Some(m) => m.clone(),
-      None => session
-        .pages
-        .get(i as usize)
-        .map(|p| p.trim().to_string())
-        .unwrap_or_default(),
+    let md = if skipped.contains(&page_1) {
+      format!("<!-- OCR 跳过(第 {page_1} 页): 未配置 OCR 供应商 -->")
+    } else {
+      match session.ocr_results.get(&page_1) {
+        Some(m) => m.clone(),
+        None => session
+          .pages
+          .get(i as usize)
+          .map(|p| p.trim().to_string())
+          .unwrap_or_default(),
+      }
     };
     parts.push(md);
   }
@@ -279,6 +310,8 @@ pub fn finish_session(store: &HybridStore, session_id: &str) -> Result<ConvertRe
     info: session.info,
     markdown: parts.join("\n\n"),
     processing_time_ms: session.start.elapsed().as_millis() as u64,
+    skipped_pages: session.skipped_pages,
+    failed_pages: session.failed_pages,
   })
 }
 
