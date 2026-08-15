@@ -1,4 +1,4 @@
-import { FileText, Grid3X3, Loader2, WandSparkles, X } from "lucide-react";
+import { FileText, Grid3X3, Loader2, WandSparkles, Trash2 } from "lucide-react";
 
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
@@ -48,13 +48,8 @@ export function ConvertToolbar({
       <Tooltip>
         <TooltipTrigger asChild>
           {onClear ? (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={onClear}
-              className="shrink-0"
-            >
-              <X />
+            <Button variant="ghost" size="sm" onClick={onClear}>
+              <Trash2 />
             </Button>
           ) : null}
         </TooltipTrigger>

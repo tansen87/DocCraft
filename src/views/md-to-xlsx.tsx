@@ -456,10 +456,10 @@ export function MdToXlsxView() {
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="sm"
                   onClick={() => removeItem(item.id)}
                 >
-                  <X />
+                  <Trash2 />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{t("tooltip.remove")}</TooltipContent>

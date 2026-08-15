@@ -122,7 +122,7 @@ const en = {
   "settings.modelPlaceholder": "e.g. gpt-4o-mini / qwen2.5-vl",
   "settings.addModel": "Add model",
   "settings.threadsDesc":
-    "Controls the number of concurrent threads used for batch conversion (1–16). Higher values convert faster overall but consume more CPU and memory.",
+    "Controls the number of concurrent threads used for batch conversion (1-16). Higher values convert faster overall but consume more CPU and memory.",
   "settings.maxConcurrent": "Max batch conversion concurrency",
   "settings.threadPlaceholder": "Enter thread count (1~16)",
   "settings.save": "Save",
@@ -231,7 +231,7 @@ const zh: Record<TranslationKey, string> = {
   "tooltip.exportMarkdown": "导出 Markdown",
   "tooltip.retry": "重试",
   "tooltip.removeFromList": "从列表移除",
-  "tooltip.remove": "关闭",
+  "tooltip.remove": "移除",
   "tooltip.exportExcel": "导出 Excel",
   "tooltip.reanalyze": "重新解析",
 
