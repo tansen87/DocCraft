@@ -16,7 +16,12 @@ function Stat({
   return (
     <div className="flex min-w-0 items-center gap-2">
       <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
-      <span className={cn("flex min-w-0 items-center text-sm font-medium", className)}>
+      <span
+        className={cn(
+          "flex min-w-0 items-center text-sm font-medium",
+          className,
+        )}
+      >
         {children}
       </span>
     </div>
@@ -26,9 +31,10 @@ function Stat({
 interface StatusBarProps {
   result: DetectResult | null;
   loading: boolean;
+  extra?: string;
 }
 
-export function StatusBar({ result, loading }: StatusBarProps) {
+export function StatusBar({ result, loading, extra }: StatusBarProps) {
   const meta = result ? pdfTypeMeta[result.pdfType] : null;
   const needsOcr = result?.pagesNeedingOcr.length ?? 0;
 
@@ -74,11 +80,26 @@ export function StatusBar({ result, loading }: StatusBarProps) {
         {loading ? (
           <Skeleton className="h-5 w-16" />
         ) : result ? (
-          needsOcr > 0 ? `${needsOcr} 页` : "无"
+          needsOcr > 0 ? (
+            `${needsOcr} 页`
+          ) : (
+            "无"
+          )
         ) : (
           "—"
         )}
       </Stat>
+
+      {extra ? (
+        <>
+          <span className="hidden h-4 w-px bg-border sm:block" />
+          <Stat label="模式">
+            <Badge variant="secondary" className="text-xs">
+              {extra}
+            </Badge>
+          </Stat>
+        </>
+      ) : null}
     </div>
   );
 }

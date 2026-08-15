@@ -6,6 +6,7 @@ use reqwest::Client;
 use tauri::AppHandle;
 use uuid::Uuid;
 
+use crate::core::grid_rebuild;
 use crate::core::settings;
 use crate::models::{
   ConvertResult, DetectResult, HybridSessionInfo, LayoutDto, OcrVendor, PdfTypeDto,
@@ -142,6 +143,12 @@ pub fn start_session(
     pdf_inspector::extract_pages_markdown(path, None).map_err(|e| format!("文本提取失败: {e}"))?;
   let page_count = pages.pages.len() as u32;
 
+  // Recover line breaks on text pages.
+  let items =
+    pdf_inspector::extract_text_with_positions(path).map_err(|e| format!("文本提取失败: {e}"))?;
+  let page_markdowns: Vec<String> =
+    grid_rebuild::rebuild_pages(&pages.pages, &items, &pages.pages_with_tables);
+
   let det = pdf_inspector::detect_pdf(path).map_err(|e| e.to_string())?;
 
   let mut ocr_set: Vec<u32> = ocr_pages
@@ -185,7 +192,7 @@ pub fn start_session(
   };
 
   let session = HybridSession {
-    pages: pages.pages.iter().map(|p| p.markdown.clone()).collect(),
+    pages: page_markdowns,
     info: info.clone(),
     resolved,
     client,

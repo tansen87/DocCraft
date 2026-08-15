@@ -184,6 +184,76 @@ pub struct MdExportResult {
   pub processing_time_ms: u64,
 }
 
+// ─── Line-draw table extraction types ───────────────────────────────────────
+
+/// A rectangular region in PDF user-space coordinates.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrawTableRegion {
+  pub x: f64,
+  pub y: f64,
+  pub width: f64,
+  pub height: f64,
+}
+
+/// A single rectangular region drawn by the user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegionRect {
+  pub x: f64,
+  pub y: f64,
+  pub width: f64,
+  pub height: f64,
+}
+
+/// Per-page draw-table definition sent from the frontend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageDrawTable {
+  pub page: u32,
+  pub horizontal_lines: Vec<f64>,
+  pub vertical_lines: Vec<f64>,
+  pub rectangles: Option<Vec<RegionRect>>,
+  /// Page origin (x, y of lower-left corner) in PDF points, from pdfjs rawDims.
+  pub page_x: f64,
+  pub page_y: f64,
+  /// Page width/height in PDF points (without userUnit scaling), from pdfjs rawDims.
+  pub page_width: f64,
+  pub page_height: f64,
+}
+
+/// Complete draw-table request payload.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrawTableRequest {
+  pub pages: Vec<PageDrawTable>,
+  /// When `true`, the lines drawn on one page are applied to every page of the
+  /// document instead of only the pages listed in `pages`.
+  pub use_for_all_pages: Option<bool>,
+}
+
+/// Metadata about where a table was extracted from.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableRegionInfo {
+  pub page: u32,
+  pub row_start: f64,
+  pub row_end: f64,
+  pub col_start: f64,
+  pub col_end: f64,
+}
+
+/// Result of extracting tables from user-drawn lines.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DrawTableResult {
+  pub table_count: usize,
+  pub tables: Vec<MdTable>,
+  pub regions: Vec<TableRegionInfo>,
+  pub total_rows: usize,
+  pub processing_time_ms: u64,
+}
+
 /// Global application settings (persisted in `app-settings.json`).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

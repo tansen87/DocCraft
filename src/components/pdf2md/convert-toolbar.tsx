@@ -1,13 +1,19 @@
-import { FileText, Loader2, WandSparkles, X } from "lucide-react";
+import { FileText, Grid3X3, Loader2, WandSparkles, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ConvertToolbarProps {
   name: string;
   path: string;
   busy: boolean;
   converting: boolean;
+  drawMode: boolean;
+  onToggleDrawMode: () => void;
   onConvert: () => void;
   onClear?: () => void;
 }
@@ -17,6 +23,8 @@ export function ConvertToolbar({
   path,
   busy,
   converting,
+  drawMode,
+  onToggleDrawMode,
   onConvert,
   onClear,
 }: ConvertToolbarProps) {
@@ -43,7 +51,31 @@ export function ConvertToolbar({
           <X />
         </Button>
       ) : null}
-      <Button onClick={onConvert} disabled={busy} className="shrink-0" variant="secondary">
+
+      {/* Draw Table mode toggle */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant={drawMode ? "default" : "outline"}
+            size="sm"
+            onClick={onToggleDrawMode}
+            className="shrink-0 gap-1.5"
+          >
+            <Grid3X3 className="size-4" />
+            划线表格
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {drawMode ? "退出划线模式" : "手动划线定义表格区域"}
+        </TooltipContent>
+      </Tooltip>
+
+      <Button
+        onClick={onConvert}
+        disabled={busy || drawMode}
+        className="shrink-0"
+        variant="secondary"
+      >
         {converting ? <Loader2 className="animate-spin" /> : <WandSparkles />}
         转换为 Markdown
       </Button>

@@ -86,3 +86,94 @@ export interface MdExportResult {
   totalRows: number;
   processingTimeMs: number;
 }
+
+// ─── Line-draw table extraction types ────────────────────────────────────
+
+/** A single rectangular region drawn by the user. */
+export interface RegionRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Per-page draw-table definition sent to the backend. */
+export interface PageDrawTable {
+  page: number;
+  horizontalLines: number[];
+  verticalLines: number[];
+  rectangles?: RegionRect[];
+  /** Page origin (x, y of lower-left corner) in PDF points, from pdfjs rawDims. */
+  pageX: number;
+  pageY: number;
+  /** Page width/height in PDF points (without userUnit scaling), from pdfjs rawDims. */
+  pageWidth: number;
+  pageHeight: number;
+}
+
+/** Request payload for the draw-table extraction command. */
+export interface DrawTableRequest {
+  pages: PageDrawTable[];
+  /**
+   * When true, the lines drawn on one page are applied to every page of the
+   * document instead of only the pages listed in `pages`.
+   */
+  useForAllPages?: boolean;
+}
+
+/** Metadata about where a table was extracted from. */
+export interface TableRegionInfo {
+  page: number;
+  rowStart: number;
+  rowEnd: number;
+  colStart: number;
+  colEnd: number;
+}
+
+/** Result of extracting tables from user-drawn lines. */
+export interface DrawTableResult {
+  tableCount: number;
+  tables: MdTable[];
+  regions: TableRegionInfo[];
+  totalRows: number;
+  processingTimeMs: number;
+}
+
+// ─── Frontend-only types for the canvas overlay ──────────────────────────
+
+/** Line types for the draw-table canvas overlay. */
+export type DrawLineType = "horizontal" | "vertical" | "rectangle";
+
+/** A single line drawn on the canvas overlay. */
+export interface DrawLine {
+  id: string;
+  type: DrawLineType;
+  /** In PDF user-space coordinates */
+  pdfValue: number;
+  /** In canvas (CSS pixel) coordinates */
+  canvasValue: number;
+  color: string;
+}
+
+/** A rectangle drawn on the canvas overlay. */
+export interface DrawRect {
+  id: string;
+  type: "rectangle";
+  /** In PDF user-space coordinates */
+  pdfX: number;
+  pdfY: number;
+  pdfWidth: number;
+  pdfHeight: number;
+  /** In canvas (CSS pixel) coordinates */
+  canvasX: number;
+  canvasY: number;
+  canvasWidth: number;
+  canvasHeight: number;
+  color: string;
+}
+
+/** Canvas overlay element — either a line or a rectangle. */
+export type CanvasElement = DrawLine | DrawRect;
+
+/** Mode for the canvas overlay interaction. */
+export type DrawMode = "horizontal" | "vertical" | "rectangle" | "select";

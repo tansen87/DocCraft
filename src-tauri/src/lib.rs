@@ -3,8 +3,8 @@ mod models;
 
 use crate::core::ocr::HybridStore;
 use crate::models::{
-  AppSettings, ConvertResult, DetectResult, HybridSessionInfo, MdAnalyzeResult, MdExportResult,
-  OcrVendorDto, OcrVendorInput,
+  AppSettings, ConvertResult, DetectResult, DrawTableRequest, DrawTableResult, HybridSessionInfo,
+  MdAnalyzeResult, MdExportResult, OcrVendorDto, OcrVendorInput,
 };
 
 /// Classify a PDF without extracting: returns type, confidence and which
@@ -111,6 +111,25 @@ fn export_markdown_tables(md_path: String, xlsx_path: String) -> Result<MdExport
   core::md_to_xlsx::export_markdown_tables(&md_path, &xlsx_path)
 }
 
+/// Extract tables from a PDF based on user-drawn lines.
+#[tauri::command]
+fn extract_draw_table(
+  path: String,
+  draw_data: DrawTableRequest,
+) -> Result<DrawTableResult, String> {
+  core::line_draw::extract_tables_from_draw_lines(&path, &draw_data)
+}
+
+/// Extract tables from user-drawn lines and merge them into an existing Markdown document.
+#[tauri::command]
+fn extract_draw_table_to_markdown(
+  path: String,
+  draw_data: DrawTableRequest,
+  existing_markdown: Option<String>,
+) -> Result<String, String> {
+  core::line_draw::extract_tables_and_merge(&path, &draw_data, existing_markdown.as_deref())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -131,7 +150,9 @@ pub fn run() {
       get_app_settings,
       set_app_settings,
       analyze_markdown,
-      export_markdown_tables
+      export_markdown_tables,
+      extract_draw_table,
+      extract_draw_table_to_markdown
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

@@ -3,6 +3,8 @@ import type {
   AppSettings,
   ConvertResult,
   DetectResult,
+  DrawTableRequest,
+  DrawTableResult,
   HybridSessionInfo,
   MdAnalyzeResult,
   MdExportResult,
@@ -58,3 +60,19 @@ export const analyzeMarkdown = (path: string) =>
 /** Export all tables of a Markdown file into an xlsx workbook. */
 export const exportMarkdownTables = (mdPath: string, xlsxPath: string) =>
   invoke<MdExportResult>("export_markdown_tables", { mdPath, xlsxPath });
+
+/** Extract tables from a PDF based on user-drawn lines. */
+export const extractDrawTable = (path: string, drawData: DrawTableRequest) =>
+  invoke<DrawTableResult>("extract_draw_table", { path, drawData });
+
+/** Extract tables from user-drawn lines and merge into existing Markdown. */
+export const extractDrawTableToMarkdown = (
+  path: string,
+  drawData: DrawTableRequest,
+  existingMarkdown?: string,
+) =>
+  invoke<string>("extract_draw_table_to_markdown", {
+    path,
+    drawData,
+    existingMarkdown: existingMarkdown ?? null,
+  });
