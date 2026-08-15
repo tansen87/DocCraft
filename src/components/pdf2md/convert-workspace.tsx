@@ -53,7 +53,7 @@ export function ConvertWorkspace({
     pageX: number;
     pageY: number;
   } | null>(null);
-  const [currentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -230,7 +230,7 @@ export function ConvertWorkspace({
       />
 
       {drawMode ? (
-        /* Draw Table Mode: full-width canvas overlay + result panel below */
+        /* Draw Table Mode: full-width canvas overlay */
         <div className="flex min-h-0 flex-1 flex-col gap-3">
           <div
             ref={containerRef}
@@ -245,6 +245,9 @@ export function ConvertWorkspace({
                   pdfPath={filePath}
                   path={convertFileSrc(filePath)}
                   currentPage={currentPage}
+                  pageCount={Math.min(detect?.pageCount ?? 5, 5)}
+                  onPrevPage={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  onNextPage={() => setCurrentPage((p) => p + 1)}
                   scale={pageSize.scale}
                   canvasWidth={pageSize.canvasWidth}
                   canvasHeight={pageSize.canvasHeight}

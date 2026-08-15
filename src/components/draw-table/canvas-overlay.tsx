@@ -119,8 +119,14 @@ export function CanvasOverlay({
         setMousePos(null);
       }}
     >
-      {/* Semi-transparent overlay */}
-      <rect x={0} y={0} width={width} height={height} fill="rgba(0,0,0,0.02)" />
+      {/* Semi-transparent overlay to capture mouse events */}
+      <rect
+        x={0}
+        y={0}
+        width={width}
+        height={height}
+        className="fill-foreground/[0.02]"
+      />
 
       {/* Vertical lines */}
       {verticalLines.map((line) => {
@@ -160,9 +166,8 @@ export function CanvasOverlay({
         <text
           x={8}
           y={height - 8}
-          fill="#6b7280"
+          className="pointer-events-none select-none fill-muted-foreground"
           fontSize={11}
-          className="pointer-events-none select-none"
         >
           PDF: ({mousePdfX.toFixed(1)}, {mousePdfY.toFixed(1)}) | CSS: (
           {mousePos.x.toFixed(0)}, {mousePos.y.toFixed(0)})

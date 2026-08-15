@@ -16,6 +16,12 @@ interface DrawTablePanelProps {
   path: string;
   /** PDF page number (1-indexed) */
   currentPage: number;
+  /** Total pages available for drawing */
+  pageCount: number;
+  /** Navigate to the previous page */
+  onPrevPage: () => void;
+  /** Navigate to the next page */
+  onNextPage: () => void;
   /** Canvas rendering scale (CSS pixels per PDF point) */
   scale: number;
   /** Page width in CSS pixels */
@@ -45,6 +51,9 @@ export function DrawTablePanel({
   pdfPath,
   path,
   currentPage,
+  pageCount,
+  onPrevPage,
+  onNextPage,
   scale,
   canvasWidth,
   canvasHeight,
@@ -248,7 +257,7 @@ export function DrawTablePanel({
       )
         return;
 
-      if (e.key === "z" && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+      if (e.key === "y" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         handleRedo();
       } else if (e.key === "z" && (e.ctrlKey || e.metaKey)) {
@@ -276,6 +285,10 @@ export function DrawTablePanel({
         onExtract={handleExtract}
         extracting={extracting}
         hasLines={hasLines}
+        currentPage={currentPage}
+        pageCount={pageCount}
+        onPrevPage={onPrevPage}
+        onNextPage={onNextPage}
       />
 
       {/* Canvas area with ScrollArea for vertical scrolling */}
@@ -286,7 +299,7 @@ export function DrawTablePanel({
         >
           <canvas
             ref={pageCanvasRef}
-            className="absolute left-0 top-0 block bg-white"
+            className="absolute left-0 top-0 block dark:invert dark:hue-rotate-180"
             style={{ width: canvasWidth, height: canvasHeight }}
           />
           <CanvasOverlay

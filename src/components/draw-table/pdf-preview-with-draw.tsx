@@ -133,6 +133,9 @@ export function PdfPreviewWithDraw({
               pdfPath={pdfPath}
               path={path}
               currentPage={currentPage}
+              pageCount={1}
+              onPrevPage={() => {}}
+              onNextPage={() => {}}
               scale={pageSize.scale}
               canvasWidth={pageSize.canvasWidth}
               canvasHeight={pageSize.canvasHeight}

@@ -6,6 +6,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 interface ConvertToolbarProps {
   name: string;
@@ -52,18 +53,23 @@ export function ConvertToolbar({
         </Button>
       ) : null}
 
-      {/* Draw Table mode toggle */}
+      {/* Draw Table mode toggle — styled like the header tabs */}
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button
-            variant={drawMode ? "default" : "outline"}
-            size="sm"
+          <button
+            type="button"
+            disabled={busy}
             onClick={onToggleDrawMode}
-            className="shrink-0 gap-1.5"
+            className={cn(
+              "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 gap-1.5",
+              drawMode
+                ? "bg-background text-foreground shadow-sm"
+                : "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+            )}
           >
             <Grid3X3 className="size-4" />
             划线表格
-          </Button>
+          </button>
         </TooltipTrigger>
         <TooltipContent>
           {drawMode ? "退出划线模式" : "手动划线定义表格区域"}
@@ -77,7 +83,7 @@ export function ConvertToolbar({
         variant="secondary"
       >
         {converting ? <Loader2 className="animate-spin" /> : <WandSparkles />}
-        转换为 Markdown
+        提取为 Markdown
       </Button>
     </div>
   );

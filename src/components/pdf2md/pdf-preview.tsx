@@ -25,11 +25,15 @@ export function PdfPreview({ path, className }: PdfPreviewProps) {
   const canvasRefs = useRef(new Map<number, HTMLCanvasElement>());
   const renderedRef = useRef(new Set<number>());
   const docRef = useRef<pdfjs.PDFDocumentProxy | null>(null);
-  const resizeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const resizeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const lastWidth = useRef(0);
 
   const [pageCount, setPageCount] = useState<number | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
   const [visible, setVisible] = useState<ReadonlySet<number>>(new Set());
   const [aspects, setAspects] = useState<Record<number, string>>({});
   const [tick, setTick] = useState(0);
@@ -136,7 +140,8 @@ export function PdfPreview({ path, className }: PdfPreviewProps) {
       try {
         const page = await doc.getPage(pageNum);
         if (cancelled) return;
-        const width = wrapper.clientWidth || surfaceRef.current?.clientWidth || 600;
+        const width =
+          wrapper.clientWidth || surfaceRef.current?.clientWidth || 600;
         const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
         const base = page.getViewport({ scale: 1 });
         const scale = (width * dpr) / base.width;
@@ -214,7 +219,7 @@ export function PdfPreview({ path, className }: PdfPreviewProps) {
             )}
             {status === "error" && (
               <div className="px-6 py-16 text-center text-xs text-muted-foreground">
-                无法预览该 PDF，可点击右上角「转换为 Markdown」继续
+                无法预览该 PDF, 可点击右上角「提取为 Markdown」继续
               </div>
             )}
             {status === "ready" &&
