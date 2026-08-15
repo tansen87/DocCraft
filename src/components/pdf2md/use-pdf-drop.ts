@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { toast } from "sonner";
 
+import { useI18n } from "@/i18n";
+
 interface UseFileDropOptions {
   /** File extensions to accept, without a leading dot. */
   extensions: string[];
@@ -13,6 +15,7 @@ export function useFileDrop(
   onFiles: (paths: string[]) => void,
   { extensions, errorMessage }: UseFileDropOptions,
 ) {
+  const { t } = useI18n();
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
@@ -30,7 +33,10 @@ export function useFileDrop(
             extensions.some((ext) => p.toLowerCase().endsWith(`.${ext}`)),
           );
           if (matched.length > 0) onFiles(matched);
-          else toast.error("不支持的文件", { description: errorMessage });
+          else
+            toast.error(t("toast.unsupportedFile"), {
+              description: errorMessage,
+            });
         }
       })
       .then((fn) => {
@@ -45,14 +51,15 @@ export function useFileDrop(
       stopped = true;
       if (unlisten) unlisten();
     };
-  }, [onFiles, extensions, errorMessage]);
+  }, [onFiles, extensions, errorMessage, t]);
 
   return { dragging };
 }
 
 export function usePdfDrop(onFiles: (paths: string[]) => void) {
+  const { t } = useI18n();
   return useFileDrop(onFiles, {
     extensions: ["pdf"],
-    errorMessage: "请拖入 .pdf 文件",
+    errorMessage: t("drop.pdfInvalid"),
   });
 }

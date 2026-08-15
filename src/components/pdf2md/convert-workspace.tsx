@@ -9,6 +9,7 @@ import { PreviewPane } from "./preview-pane";
 import { convertWithOcr } from "./render-pdf-pages";
 import { StatusBar } from "./status-bar";
 import { DrawTablePanel } from "@/components/draw-table/draw-table-panel";
+import { useI18n } from "@/i18n";
 import { convertPdf, detectPdf, exportMarkdown } from "@/lib/ipc";
 import type { ConvertResult, DetectResult } from "@/lib/types";
 import * as pdfjs from "pdfjs-dist";
@@ -34,6 +35,7 @@ export function ConvertWorkspace({
   onConverted,
   onClear,
 }: ConvertWorkspaceProps) {
+  const { t } = useI18n();
   const [detecting, setDetecting] = useState(false);
   const [converting, setConverting] = useState(false);
   const [detect, setDetect] = useState<DetectResult | null>(
@@ -144,7 +146,9 @@ export function ConvertWorkspace({
       .then((d) => {
         if (!cancelled) setDetect(d);
       })
-      .catch((e) => toast.error("检测失败", { description: String(e) }))
+      .catch((e) =>
+        toast.error(t("toast.detectFailed"), { description: String(e) }),
+      )
       .finally(() => {
         if (!cancelled) setDetecting(false);
       });
@@ -165,9 +169,9 @@ export function ConvertWorkspace({
       setResult(r);
       setDetect(r);
       onConverted?.(r);
-      toast.success("转换完成");
+      toast.success(t("toast.convertDone"));
     } catch (e) {
-      toast.error("转换失败", { description: String(e) });
+      toast.error(t("toast.convertFailed"), { description: String(e) });
     } finally {
       setConverting(false);
     }
@@ -184,9 +188,9 @@ export function ConvertWorkspace({
     if (typeof target !== "string") return;
     try {
       await exportMarkdown(target, content);
-      toast.success("已导出", { description: target });
+      toast.success(t("toast.exported"), { description: target });
     } catch (e) {
-      toast.error("导出失败", { description: String(e) });
+      toast.error(t("toast.exportFailed"), { description: String(e) });
     }
   }
 
@@ -204,16 +208,20 @@ export function ConvertWorkspace({
       // If we already have a converted result, merge the table markdown into it
       if (result) {
         const merged =
-          result.markdown + "\n\n---\n\n<!-- 划线提取表格 -->\n\n" + markdown;
+          result.markdown +
+          "\n\n---\n\n" +
+          t("markdown.drawTableComment") +
+          "\n\n" +
+          markdown;
         setResult({ ...result, markdown: merged });
-        toast.success("表格已合并到 Markdown 输出");
+        toast.success(t("toast.mergedToMarkdown"));
       } else {
         // Create a synthetic ConvertResult with just the table markdown
         setMergedMarkdown(markdown);
-        toast.success("表格已提取");
+        toast.success(t("toast.tableExtracted"));
       }
     },
-    [result],
+    [result, t],
   );
 
   return (
@@ -295,7 +303,7 @@ export function ConvertWorkspace({
         <StatusBar
           result={detect}
           loading={detecting}
-          extra={drawMode ? "划线表格模式" : undefined}
+          extra={drawMode ? t("mode.drawTable") : undefined}
         />
       </div>
     </>

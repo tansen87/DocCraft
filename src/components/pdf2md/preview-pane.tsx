@@ -9,6 +9,7 @@ import "highlight.js/styles/github-dark.css";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 interface PreviewPaneProps {
@@ -24,6 +25,7 @@ export function PreviewPane({
   onExport,
   className,
 }: PreviewPaneProps) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<"raw" | "render">("render");
   const [copied, setCopied] = useState(false);
 
@@ -33,7 +35,7 @@ export function PreviewPane({
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      toast.error("复制失败");
+      toast.error(t("toast.copyFailed"));
     }
   }
 
@@ -46,9 +48,14 @@ export function PreviewPane({
     >
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">Markdown</p>
+          <p className="truncate text-sm font-medium">
+            {t("preview.markdown")}
+          </p>
           <p className="text-xs text-muted-foreground">
-            转换耗时 {processingTimeMs} ms · {markdown.length} 字符
+            {t("preview.timeChars", {
+              time: processingTimeMs,
+              chars: markdown.length,
+            })}
           </p>
         </div>
         <div className="flex items-center gap-1 rounded-lg bg-muted p-0.5">
@@ -62,7 +69,7 @@ export function PreviewPane({
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            渲染
+            {t("preview.render")}
           </button>
           <button
             type="button"
@@ -74,7 +81,7 @@ export function PreviewPane({
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            原始
+            {t("preview.raw")}
           </button>
         </div>
         <Button variant="ghost" size="icon-xs" onClick={copy}>

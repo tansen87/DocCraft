@@ -1,5 +1,6 @@
 import { FileText, Grid3X3, Loader2, WandSparkles, X } from "lucide-react";
 
+import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -29,6 +30,8 @@ export function ConvertToolbar({
   onConvert,
   onClear,
 }: ConvertToolbarProps) {
+  const { t } = useI18n();
+
   return (
     <div className="flex items-center gap-3 rounded-xl border bg-card px-3 py-2 shadow-sm">
       <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -42,16 +45,21 @@ export function ConvertToolbar({
           </div>
         </TooltipTrigger>
       </Tooltip>
-      {onClear ? (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={onClear}
-          className="shrink-0"
-        >
-          <X />
-        </Button>
-      ) : null}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {onClear ? (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={onClear}
+              className="shrink-0"
+            >
+              <X />
+            </Button>
+          ) : null}
+        </TooltipTrigger>
+        <TooltipContent>{t("toolbar.remove")}</TooltipContent>
+      </Tooltip>
 
       {/* Draw Table mode toggle — styled like the header tabs */}
       <Tooltip>
@@ -68,11 +76,11 @@ export function ConvertToolbar({
             )}
           >
             <Grid3X3 className="size-4" />
-            划线表格
+            {t("toolbar.drawTable")}
           </button>
         </TooltipTrigger>
         <TooltipContent>
-          {drawMode ? "退出划线模式" : "手动划线定义表格区域"}
+          {drawMode ? t("toolbar.exitDraw") : t("toolbar.enterDraw")}
         </TooltipContent>
       </Tooltip>
 
@@ -83,7 +91,7 @@ export function ConvertToolbar({
         variant="secondary"
       >
         {converting ? <Loader2 className="animate-spin" /> : <WandSparkles />}
-        提取为 Markdown
+        {t("toolbar.extractToMarkdown")}
       </Button>
     </div>
   );

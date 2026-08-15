@@ -2,6 +2,7 @@ import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FileText } from "lucide-react";
 
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 interface DropZoneProps {
@@ -25,17 +26,34 @@ export function DropZone({
   multiple = false,
   className,
   extensions = ["pdf"],
-  filterLabel = "PDF 文档",
-  title = "将 PDF 拖到窗口任意位置",
-  subtitle = "或点击选择文件",
-  supportText = `支持 .${extensions.join(" / .")} ${multiple ? "· 可多选" : "· 单文件"}`,
+  filterLabel,
+  title,
+  subtitle,
+  supportText,
 }: DropZoneProps) {
+  const { t } = useI18n();
   const [hover, setHover] = useState(false);
+
+  const defaultFilter = extensions.includes("md")
+    ? t("filter.mdDocs")
+    : t("filter.pdfDocs");
+  const defaultTitle = extensions.includes("md")
+    ? t("drop.mdTitle")
+    : t("drop.pdfTitle");
+  const effectiveFilter = filterLabel ?? defaultFilter;
+  const effectiveTitle = title ?? defaultTitle;
+  const effectiveSubtitle = subtitle ?? t("drop.clickToSelect");
+  const effectiveSupport =
+    supportText ??
+    t("drop.supported", {
+      exts: extensions.join(" / ."),
+      mode: multiple ? t("drop.multiple") : t("drop.single"),
+    });
 
   async function pick() {
     const file = (await open({
       multiple,
-      filters: [{ name: filterLabel, extensions }],
+      filters: [{ name: effectiveFilter, extensions }],
     })) as string | string[] | null;
     const paths = Array.isArray(file) ? file : file ? [file] : [];
     if (paths.length > 0) onFiles(paths);
@@ -58,18 +76,22 @@ export function DropZone({
       <span
         className={cn(
           "flex size-14 items-center justify-center rounded-2xl transition-colors",
-          hover ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground",
+          hover
+            ? "bg-primary/15 text-primary"
+            : "bg-muted text-muted-foreground",
         )}
       >
         <FileText className="size-7" />
       </span>
       <span className="space-y-1">
-        <span className="block text-sm font-medium">{title}</span>
+        <span className="block text-sm font-medium">{effectiveTitle}</span>
         <span className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
-          {subtitle}
+          {effectiveSubtitle}
         </span>
       </span>
-      <span className="text-xs text-muted-foreground/70">{supportText}</span>
+      <span className="text-xs text-muted-foreground/70">
+        {effectiveSupport}
+      </span>
     </button>
   );
 }

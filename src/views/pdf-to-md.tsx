@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/tooltip";
 import { convertPdf, detectPdf, exportMarkdown } from "@/lib/ipc";
 import { ensureMaxConcurrent } from "@/lib/concurrency";
+import { useI18n } from "@/i18n";
 import type { ConvertResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -53,11 +54,12 @@ function StatusBadge({
   status: BatchStatus;
   error?: string;
 }) {
+  const { t } = useI18n();
   if (status === "converting") {
     return (
       <Badge className="border-sky-500/30 bg-sky-500/10 text-sky-600 dark:border-sky-500/40 dark:text-sky-400">
         <Loader2 className="size-3 animate-spin" />
-        转换中
+        {t("status.converting")}
       </Badge>
     );
   }
@@ -65,7 +67,7 @@ function StatusBadge({
     return (
       <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:border-emerald-500/40 dark:text-emerald-400">
         <Check className="size-3" />
-        完成
+        {t("status.done")}
       </Badge>
     );
   }
@@ -75,7 +77,7 @@ function StatusBadge({
         <TooltipTrigger asChild>
           <Badge variant="destructive">
             <X className="size-3" />
-            失败
+            {t("status.failed")}
           </Badge>
         </TooltipTrigger>
         <TooltipContent className="whitespace-pre-wrap break-words">
@@ -87,12 +89,13 @@ function StatusBadge({
   return (
     <Badge variant="outline" className="text-muted-foreground">
       <Clock className="size-3" />
-      等待中
+      {t("status.queued")}
     </Badge>
   );
 }
 
 export function BatchView() {
+  const { t } = useI18n();
   const [items, setItems] = useState<BatchItem[]>([]);
   const [activeItem, setActiveItem] = useState<BatchItem | null>(null);
   const [running, setRunning] = useState(false);
@@ -263,7 +266,7 @@ export function BatchView() {
   async function pickMore() {
     const file = await open({
       multiple: true,
-      filters: [{ name: "PDF 文档", extensions: ["pdf"] }],
+      filters: [{ name: t("filter.pdfDocs"), extensions: ["pdf"] }],
     });
     if (typeof file === "string") addFiles([file]);
     else if (Array.isArray(file) && file.length > 0) addFiles(file);
@@ -279,9 +282,9 @@ export function BatchView() {
     if (typeof target !== "string") return;
     try {
       await exportMarkdown(target, item.result.markdown);
-      toast.success("已导出", { description: target });
+      toast.success(t("toast.exported"), { description: target });
     } catch (e) {
-      toast.error("导出失败", { description: String(e) });
+      toast.error(t("toast.exportFailed"), { description: String(e) });
     }
   }
 
@@ -290,15 +293,15 @@ export function BatchView() {
       (it) => it.status === "done" && it.result,
     );
     if (done.length === 0) {
-      toast.error("暂无完成的文档", {
-        description: "请先完成至少一个文件的转换",
+      toast.error(t("toast.noCompletedDocs"), {
+        description: t("toast.noCompletedDocsDesc"),
       });
       return;
     }
     const dir = await open({
       directory: true,
       multiple: false,
-      title: "选择导出目录",
+      title: t("dialog.exportDir"),
     });
     if (typeof dir !== "string") return;
     let ok = 0;
@@ -314,10 +317,14 @@ export function BatchView() {
         await exportMarkdown(target, it.result!.markdown);
         ok += 1;
       } catch (e) {
-        toast.error(`导出失败: ${it.name}`, { description: String(e) });
+        toast.error(t("toast.exportFailedFile", { name: it.name }), {
+          description: String(e),
+        });
       }
     }
-    toast.success(`已导出 ${ok} 个文件`, { description: dir });
+    toast.success(t("toast.exportedCount", { count: ok }), {
+      description: dir,
+    });
   }
 
   const total = items.length;
@@ -335,7 +342,10 @@ export function BatchView() {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col gap-3">
         {dragging ? (
-          <DragOverlay title="松开以加入列表" hint="可追加多个 .pdf 文件" />
+          <DragOverlay
+            title={t("overlay.releaseToAdd")}
+            hint={t("overlay.hintAddMore")}
+          />
         ) : null}
 
         {previewing ? (
@@ -346,7 +356,7 @@ export function BatchView() {
               onClick={() => setActiveItem(null)}
             >
               <ArrowLeft />
-              返回列表
+              {t("backToList")}
             </Button>
           </div>
         ) : null}
@@ -367,7 +377,10 @@ export function BatchView() {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col gap-3">
         {dragging ? (
-          <DragOverlay title="松开以加入列表" hint="可追加多个 .pdf 文件" />
+          <DragOverlay
+            title={t("overlay.releaseToAdd")}
+            hint={t("overlay.hintAddMore")}
+          />
         ) : null}
 
         <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card px-3 py-2 shadow-sm">
@@ -375,7 +388,7 @@ export function BatchView() {
             <ListPlus className="size-4" />
           </span>
           <div className="min-w-0 flex-1 space-y-1">
-            <p className="text-sm font-medium">批量转换</p>
+            <p className="text-sm font-medium">{t("batch.title")}</p>
             <p
               className={cn(
                 "text-xs",
@@ -385,31 +398,41 @@ export function BatchView() {
               )}
             >
               {convertingCount > 0
-                ? `正在转换 ${convertingCount} / ${concurrency} · `
+                ? t("batch.converting", {
+                    active: convertingCount,
+                    limit: concurrency,
+                  })
                 : ""}
-              已完成 {doneCount} / {total}
-              {total > doneCount ? ` · 并发上限 ${concurrency}` : ""}
+              {t("batch.completed", { done: doneCount, total })}
+              {total > doneCount
+                ? t("batch.concurrency", { limit: concurrency })
+                : ""}
             </p>
           </div>
           <Progress value={pct} className="hidden w-40 sm:block" />
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={clearAll}
-              disabled={total === 0}
-            >
-              <Trash2 />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={clearAll}
+                  disabled={total === 0}
+                >
+                  <Trash2 />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t("batch.remove")}</TooltipContent>
+            </Tooltip>
             <Button variant="secondary" size="sm" onClick={pickMore}>
               <ListPlus />
-              添加
+              {t("batch.add")}
             </Button>
             {running ? (
               <Button size="sm" onClick={stop}>
                 <Square />
-                停止
+                {t("batch.stop")}
               </Button>
             ) : (
               <Button
@@ -419,12 +442,12 @@ export function BatchView() {
                 disabled={!hasQueued}
               >
                 <Play />
-                开始
+                {t("batch.start")}
               </Button>
             )}
             <Button variant="secondary" size="sm" onClick={exportAll}>
               <Download />
-              全部导出
+              {t("batch.exportAll")}
             </Button>
           </div>
         </div>
@@ -435,11 +458,17 @@ export function BatchView() {
               <table className="w-full table-fixed text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b bg-muted/50 text-left text-xs text-muted-foreground">
-                    <th className="px-3 py-2 font-medium">文件名</th>
-                    <th className="w-[100px] px-3 py-2 font-medium">状态</th>
-                    <th className="w-[90px] px-3 py-2 font-medium">耗时</th>
+                    <th className="px-3 py-2 font-medium">
+                      {t("table.fileName")}
+                    </th>
+                    <th className="w-[100px] px-3 py-2 font-medium">
+                      {t("table.status")}
+                    </th>
+                    <th className="w-[90px] px-3 py-2 font-medium">
+                      {t("table.time")}
+                    </th>
                     <th className="w-[150px] px-3 py-2 text-right font-medium">
-                      操作
+                      {t("table.actions")}
                     </th>
                   </tr>
                 </thead>
@@ -503,7 +532,9 @@ export function BatchView() {
                                   <Download />
                                 </Button>
                               </TooltipTrigger>
-                              <TooltipContent>导出 Markdown</TooltipContent>
+                              <TooltipContent>
+                                {t("tooltip.exportMarkdown")}
+                              </TooltipContent>
                             </Tooltip>
                           ) : null}
                           {item.status === "error" ? (
@@ -517,7 +548,9 @@ export function BatchView() {
                                   <Play />
                                 </Button>
                               </TooltipTrigger>
-                              <TooltipContent>重试</TooltipContent>
+                              <TooltipContent>
+                                {t("tooltip.retry")}
+                              </TooltipContent>
                             </Tooltip>
                           ) : null}
                           <Tooltip>
@@ -530,7 +563,9 @@ export function BatchView() {
                                 <X />
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>从列表移除</TooltipContent>
+                            <TooltipContent>
+                              {t("tooltip.removeFromList")}
+                            </TooltipContent>
                           </Tooltip>
                         </div>
                       </td>
@@ -548,7 +583,10 @@ export function BatchView() {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col gap-3">
       {dragging ? (
-        <DragOverlay title="松开以加入列表" hint="可一次拖入多个 .pdf 文件" />
+        <DragOverlay
+          title={t("overlay.releaseToAdd")}
+          hint={t("overlay.hintAddMany")}
+        />
       ) : null}
 
       <DropZone onFiles={addFiles} multiple className="flex-1" />

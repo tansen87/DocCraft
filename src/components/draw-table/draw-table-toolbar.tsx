@@ -13,6 +13,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useI18n } from "@/i18n";
 
 interface DrawTableToolbarProps {
   onUndo: () => void;
@@ -47,11 +48,12 @@ export function DrawTableToolbar({
   onPrevPage,
   onNextPage,
 }: DrawTableToolbarProps) {
+  const { t } = useI18n();
   return (
     <div className="flex items-center gap-1.5 rounded-lg border bg-card px-2 py-1.5 shadow-sm">
       {/* Instruction */}
       <span className="px-1 text-xs text-muted-foreground">
-        点击添加竖线 - 双击删除 - 拖拽调整位置
+        {t("drawtable.instruction")}
       </span>
 
       <div className="mx-1 h-5 w-px bg-border" />
@@ -69,7 +71,7 @@ export function DrawTableToolbar({
             <RotateCcw className="size-3.5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>撤销 (Ctrl+Z)</TooltipContent>
+        <TooltipContent>{t("drawtable.undo")}</TooltipContent>
       </Tooltip>
 
       <Tooltip>
@@ -84,7 +86,7 @@ export function DrawTableToolbar({
             <RotateCcw className="size-3.5 scale-x-[-1]" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>重做 (Ctrl+Y)</TooltipContent>
+        <TooltipContent>{t("drawtable.redo")}</TooltipContent>
       </Tooltip>
 
       <div className="mx-1 h-5 w-px bg-border" />
@@ -102,7 +104,7 @@ export function DrawTableToolbar({
             <Trash2 className="size-3.5" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent>清空所有竖线</TooltipContent>
+        <TooltipContent>{t("drawtable.clearAll")}</TooltipContent>
       </Tooltip>
 
       <div className="mx-1 h-5 w-px bg-border" />
@@ -119,7 +121,7 @@ export function DrawTableToolbar({
             <ChevronLeft className="size-4" />
           </button>
         </TooltipTrigger>
-        <TooltipContent>上一页</TooltipContent>
+        <TooltipContent>{t("drawtable.prevPage")}</TooltipContent>
       </Tooltip>
       <span className="text-xs tabular-nums text-muted-foreground">
         {currentPage} / {pageCount}
@@ -135,7 +137,7 @@ export function DrawTableToolbar({
             <ChevronRight className="size-4" />
           </button>
         </TooltipTrigger>
-        <TooltipContent>下一页</TooltipContent>
+        <TooltipContent>{t("drawtable.nextPage")}</TooltipContent>
       </Tooltip>
 
       <div className="flex-1" />
@@ -153,7 +155,7 @@ export function DrawTableToolbar({
         ) : (
           <Grid3X3 className="size-3.5" />
         )}
-        {extracting ? "提取中…" : "提取表格"}
+        {extracting ? t("drawtable.extracting") : t("drawtable.extract")}
       </Button>
     </div>
   );

@@ -27,6 +27,7 @@ import {
   setAppSettings,
 } from "@/lib/ipc";
 import { setMaxConcurrent } from "@/lib/concurrency";
+import { useI18n } from "@/i18n";
 import type { OcrModel, OcrVendor, OcrVendorInput } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -34,12 +35,22 @@ type SettingsSection = "ocr" | "threads";
 
 const SECTIONS: {
   id: SettingsSection;
-  label: string;
-  hint: string;
+  labelKey: "settings.ocr" | "settings.threads";
+  hintKey: "settings.ocrHint" | "settings.threadsHint";
   icon: typeof ScanText;
 }[] = [
-  { id: "ocr", label: "OCR 服务", hint: "扫描页识别与模型", icon: ScanText },
-  { id: "threads", label: "并发线程", hint: "批量转换并发数", icon: Cpu },
+  {
+    id: "ocr",
+    labelKey: "settings.ocr",
+    hintKey: "settings.ocrHint",
+    icon: ScanText,
+  },
+  {
+    id: "threads",
+    labelKey: "settings.threads",
+    hintKey: "settings.threadsHint",
+    icon: Cpu,
+  },
 ];
 
 interface VendorForm {
@@ -67,6 +78,7 @@ function toForm(v: OcrVendor): VendorForm {
 }
 
 export function SettingsView() {
+  const { t } = useI18n();
   const [section, setSection] = useState<SettingsSection>("ocr");
 
   return (
@@ -100,10 +112,10 @@ export function SettingsView() {
                 </span>
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">
-                    {s.label}
+                    {t(s.labelKey)}
                   </span>
                   <span className="block truncate text-xs text-muted-foreground">
-                    {s.hint}
+                    {t(s.hintKey)}
                   </span>
                 </span>
               </button>
@@ -133,6 +145,7 @@ export function SettingsView() {
 }
 
 function OcrSettingsPanel() {
+  const { t } = useI18n();
   const [vendors, setVendors] = useState<VendorForm[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -144,14 +157,16 @@ function OcrSettingsPanel() {
       .then((data) => {
         if (!cancelled) setVendors(data.map(toForm));
       })
-      .catch((e) => toast.error("加载配置失败", { description: String(e) }))
+      .catch((e) =>
+        toast.error(t("toast.loadConfigFailed"), { description: String(e) }),
+      )
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   const updateVendor = useCallback((id: string, patch: Partial<VendorForm>) => {
     setVendors((prev) =>
@@ -183,7 +198,7 @@ function OcrSettingsPanel() {
       ...prev,
       {
         id,
-        name: `供应商 ${prev.length + 1}`,
+        name: t("settings.defaultVendorName", { n: prev.length + 1 }),
         baseUrl: "",
         apiKey: "",
         apiKeySet: false,
@@ -227,7 +242,7 @@ function OcrSettingsPanel() {
       try {
         val = (await revealOcrKey(v.id)) ?? "";
       } catch (e) {
-        toast.error("读取密钥失败", { description: String(e) });
+        toast.error(t("toast.readKeyFailed"), { description: String(e) });
         return;
       }
     }
@@ -266,9 +281,9 @@ function OcrSettingsPanel() {
           models: e.input.models,
         })),
       );
-      toast.success("配置已保存");
+      toast.success(t("toast.configSaved"));
     } catch (e) {
-      toast.error("保存失败", { description: String(e) });
+      toast.error(t("toast.saveFailed"), { description: String(e) });
     } finally {
       setSaving(false);
     }
@@ -277,18 +292,14 @@ function OcrSettingsPanel() {
   return (
     <>
       <div className="space-y-1.5">
-        <p className="text-sm text-muted-foreground">
-          按供应商配置 OCR 服务,每个供应商可配置多个模型;API Key
-          使用系统级加密保存. 转换时扫描页将调用 OCR
-          识别,并默认使用第一个已配置且有效的供应商.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("settings.ocrDesc")}</p>
       </div>
 
       <div className="space-y-3">
         {loading ? (
           <div className="flex items-center justify-center gap-2 rounded-xl border bg-card py-10 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
-            正在加载配置…
+            {t("settings.loadingConfig")}
           </div>
         ) : vendors.length === 0 ? (
           <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed bg-card px-6 py-10 text-center">
@@ -296,14 +307,14 @@ function OcrSettingsPanel() {
               <KeyRound className="size-6" />
             </span>
             <div className="space-y-1">
-              <p className="text-sm font-medium">还没有配置供应商</p>
+              <p className="text-sm font-medium">{t("settings.noVendors")}</p>
               <p className="text-xs text-muted-foreground">
-                添加一个 OpenAI 兼容的 OCR 服务(如 OpenAI / vLLM / Ollama).
+                {t("settings.noVendorsDesc")}
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={addVendor}>
               <Plus />
-              添加供应商
+              {t("settings.addVendor")}
             </Button>
           </div>
         ) : (
@@ -326,11 +337,11 @@ function OcrSettingsPanel() {
         <div className="flex items-center justify-between">
           <Button variant="outline" size="sm" onClick={addVendor}>
             <Plus />
-            添加供应商
+            {t("settings.addVendor")}
           </Button>
           <Button onClick={handleSave} disabled={saving}>
             {saving ? <Loader2 className="animate-spin" /> : <Save />}
-            保存配置
+            {t("settings.saveConfig")}
           </Button>
         </div>
       ) : null}
@@ -346,6 +357,7 @@ function clampThread(n: number): number {
 }
 
 function ThreadSettingsPanel() {
+  const { t } = useI18n();
   const [value, setValue] = useState<number>(1);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -358,11 +370,13 @@ function ThreadSettingsPanel() {
         setValue(clampThread(s.maxConcurrent));
         setLoaded(true);
       })
-      .catch((e) => toast.error("加载设置失败", { description: String(e) }));
+      .catch((e) =>
+        toast.error(t("toast.loadSettingsFailed"), { description: String(e) }),
+      );
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   async function handleSave() {
     const n = clampThread(Number.isFinite(value) ? value : 1);
@@ -371,11 +385,11 @@ function ThreadSettingsPanel() {
     try {
       await setAppSettings({ maxConcurrent: n });
       setMaxConcurrent(n);
-      toast.success("并发设置已保存", {
-        description: `批量转换并发上限：${n}`,
+      toast.success(t("toast.concurrencySaved"), {
+        description: t("toast.concurrencyLimit", { n }),
       });
     } catch (e) {
-      toast.error("保存失败", { description: String(e) });
+      toast.error(t("toast.saveFailed"), { description: String(e) });
     } finally {
       setSaving(false);
     }
@@ -385,15 +399,14 @@ function ThreadSettingsPanel() {
     <>
       <div className="space-y-1.5">
         <p className="text-sm text-muted-foreground">
-          控制批量转换使用的并发线程数(1–16),数值越高整体转换越快,但会占用更多
-          CPU 与内存.
+          {t("settings.threadsDesc")}
         </p>
       </div>
 
       <Card className="gap-3 p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-0 flex-1 space-y-1.5">
-            <Label>批量转换最大并发数</Label>
+            <Label>{t("settings.maxConcurrent")}</Label>
             <Input
               type="number"
               inputMode="numeric"
@@ -403,16 +416,16 @@ function ThreadSettingsPanel() {
               value={Number.isFinite(value) ? value : ""}
               onChange={(e) => setValue(e.target.valueAsNumber)}
               disabled={!loaded}
-              placeholder="请输入线程数(1~16)"
+              placeholder={t("settings.threadPlaceholder")}
             />
           </div>
           <Button onClick={handleSave} disabled={saving || !loaded}>
             {saving ? <Loader2 className="animate-spin" /> : <Save />}
-            保存
+            {t("settings.save")}
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          建议保持默认值 1;转换含 OCR 的文档时,每个任务会额外占用网络请求.
+          {t("settings.threadsHint2")}
         </p>
       </Card>
     </>
@@ -436,6 +449,7 @@ function VendorCard({
   onRemoveModel: (modelId: string) => void;
   onToggleKey: () => void;
 }) {
+  const { t } = useI18n();
   const v = vendor;
   return (
     <Card className="gap-3 p-4">
@@ -443,7 +457,7 @@ function VendorCard({
         <Input
           value={v.name}
           onChange={(e) => onPatch({ name: e.target.value })}
-          placeholder="供应商名称"
+          placeholder={t("settings.vendorName")}
           className="h-9 flex-1 text-base font-medium"
         />
         <Button variant="ghost" size="icon" onClick={onRemove}>
@@ -452,26 +466,26 @@ function VendorCard({
       </div>
 
       <div className="space-y-1.5">
-        <Label>服务地址 (OpenAI 兼容 Base URL)</Label>
+        <Label>{t("settings.baseUrl")}</Label>
         <Input
           value={v.baseUrl}
           onChange={(e) => onPatch({ baseUrl: e.target.value })}
-          placeholder="例如 https://api.openai.com/v1"
+          placeholder={t("settings.baseUrlPlaceholder")}
         />
       </div>
 
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
-          <Label>API Key</Label>
+          <Label>{t("settings.apiKey")}</Label>
           {v.apiKeySet && !v.clearApiKey ? (
             <span className="flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
               <ShieldCheck className="size-3" />
-              已安全保存
+              {t("settings.keySaved")}
             </span>
           ) : null}
           {v.clearApiKey ? (
             <span className="rounded-md bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
-              保存后将被清除
+              {t("settings.keyWillBeCleared")}
             </span>
           ) : null}
         </div>
@@ -480,7 +494,9 @@ function VendorCard({
             type={v.showKey ? "text" : "password"}
             value={v.apiKey}
             onChange={(e) => onPatch({ apiKey: e.target.value })}
-            placeholder={v.apiKeySet ? "已保存,留空则保持不变" : "sk-..."}
+            placeholder={
+              v.apiKeySet ? t("settings.keyPlaceholderSet") : "sk-..."
+            }
             disabled={v.clearApiKey}
           />
           <Button
@@ -498,7 +514,7 @@ function VendorCard({
                 size="sm"
                 onClick={() => onPatch({ clearApiKey: false })}
               >
-                取消清除
+                {t("settings.cancelClear")}
               </Button>
             ) : (
               <Button
@@ -506,7 +522,7 @@ function VendorCard({
                 size="sm"
                 onClick={() => onPatch({ clearApiKey: true, apiKey: "" })}
               >
-                清除
+                {t("settings.clear")}
               </Button>
             )
           ) : null}
@@ -516,14 +532,14 @@ function VendorCard({
       <Separator />
 
       <div className="space-y-2">
-        <Label>模型</Label>
+        <Label>{t("settings.models")}</Label>
         <div className="space-y-2">
           {v.models.map((m) => (
             <div key={m.id} className="flex items-center gap-2">
               <Input
                 value={m.name}
                 onChange={(e) => onUpdateModel(m.id, e.target.value)}
-                placeholder="例如 gpt-4o-mini / qwen2.5-vl"
+                placeholder={t("settings.modelPlaceholder")}
               />
               <Button
                 variant="ghost"
@@ -537,7 +553,7 @@ function VendorCard({
         </div>
         <Button variant="outline" size="sm" onClick={onAddModel}>
           <Plus />
-          添加模型
+          {t("settings.addModel")}
         </Button>
       </div>
     </Card>

@@ -5,6 +5,7 @@ import { FileText, Loader2 } from "lucide-react";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
@@ -20,6 +21,7 @@ interface PdfPreviewProps {
 }
 
 export function PdfPreview({ path, className }: PdfPreviewProps) {
+  const { t } = useI18n();
   const surfaceRef = useRef<HTMLDivElement>(null);
   const wrapperRefs = useRef(new Map<number, HTMLDivElement>());
   const canvasRefs = useRef(new Map<number, HTMLCanvasElement>());
@@ -195,13 +197,13 @@ export function PdfPreview({ path, className }: PdfPreviewProps) {
         <span className="flex size-5 items-center justify-center text-primary">
           <FileText className="size-4" />
         </span>
-        <p className="text-sm font-medium">PDF 预览</p>
+        <p className="text-sm font-medium">{t("preview.pdf")}</p>
         <span className="ml-auto text-xs text-muted-foreground">
           {status === "loading"
-            ? "加载中…"
+            ? t("preview.loading")
             : status === "error"
-              ? "加载失败"
-              : `共 ${pageCount ?? 0} 页`}
+              ? t("preview.loadFailed")
+              : t("preview.totalPages", { count: pageCount ?? 0 })}
         </span>
       </div>
 
@@ -214,12 +216,12 @@ export function PdfPreview({ path, className }: PdfPreviewProps) {
             {status === "loading" && (
               <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
                 <Loader2 className="size-5 animate-spin" />
-                <span className="text-xs">正在渲染 PDF…</span>
+                <span className="text-xs">{t("preview.rendering")}</span>
               </div>
             )}
             {status === "error" && (
               <div className="px-6 py-16 text-center text-xs text-muted-foreground">
-                无法预览该 PDF, 可点击右上角「提取为 Markdown」继续
+                {t("preview.cannotPreview")}
               </div>
             )}
             {status === "ready" &&

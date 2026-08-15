@@ -1,6 +1,7 @@
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 
+import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,6 +13,7 @@ import {
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
+  const { t } = useI18n();
 
   return (
     <DropdownMenu>
@@ -24,19 +26,19 @@ export function ThemeToggle() {
       <DropdownMenuContent align="end">
         <DropdownMenuSeparator className="hidden" />
         <DropdownMenuItem onClick={() => setTheme("light")}>
-          <Sun /> 亮色
+          <Sun /> {t("theme.light")}
           {theme === "light" && (
             <span className="ml-auto text-xs text-muted-foreground">✓</span>
           )}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setTheme("dark")}>
-          <Moon /> 暗色
+          <Moon /> {t("theme.dark")}
           {theme === "dark" && (
             <span className="ml-auto text-xs text-muted-foreground">✓</span>
           )}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setTheme("system")}>
-          <Monitor /> 跟随系统
+          <Monitor /> {t("theme.system")}
           {theme === "system" && (
             <span className="ml-auto text-xs text-muted-foreground">✓</span>
           )}

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { CanvasOverlay } from "@/components/draw-table/canvas-overlay";
 import { DrawTableToolbar } from "@/components/draw-table/draw-table-toolbar";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useI18n } from "@/i18n";
 import { extractDrawTableToMarkdown } from "@/lib/ipc";
 import type { DrawLine, PageDrawTable } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -64,6 +65,7 @@ export function DrawTablePanel({
   onMergeToMarkdown,
   className,
 }: DrawTablePanelProps) {
+  const { t } = useI18n();
   const [drawState, setDrawState] = useState<PageDrawState>(() => ({
     verticalLines: [],
   }));
@@ -235,18 +237,18 @@ export function DrawTablePanel({
 
       if (md.trim()) {
         onMergeToMarkdown?.(md);
-        toast.success("提取完成，已合并到 Markdown");
+        toast.success(t("toast.extractDone"));
       } else {
-        toast.warning("未提取到表格", {
-          description: "请调整竖线位置后重试",
+        toast.warning(t("toast.noTable"), {
+          description: t("toast.noTableDesc"),
         });
       }
     } catch (e) {
-      toast.error("提取失败", { description: String(e) });
+      toast.error(t("toast.extractFailed"), { description: String(e) });
     } finally {
       setExtracting(false);
     }
-  }, [pdfPath, currentPage, drawState, onMergeToMarkdown]);
+  }, [pdfPath, currentPage, drawState, onMergeToMarkdown, t]);
 
   // Keyboard shortcuts
   useEffect(() => {

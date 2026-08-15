@@ -1,6 +1,7 @@
 import { Table2 } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 interface TablePreviewProps {
@@ -16,6 +17,7 @@ export function TablePreview({
   tables,
   className,
 }: TablePreviewProps) {
+  const { t } = useI18n();
   return (
     <div
       className={cn(
@@ -25,9 +27,11 @@ export function TablePreview({
     >
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">表格预览</p>
+          <p className="truncate text-sm font-medium">
+            {t("tablepreview.title")}
+          </p>
           <p className="text-xs text-muted-foreground">
-            共 {tableCount} 张表格 · {totalRows} 行数据
+            {t("tablepreview.summary", { count: tableCount, rows: totalRows })}
           </p>
         </div>
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -38,18 +42,18 @@ export function TablePreview({
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-6 p-4">
           {tables.length > 0 ? (
-            tables.map((t, i) => (
+            tables.map((table, i) => (
               <section key={i} className="space-y-2">
                 {tables.length > 1 ? (
                   <p className="text-xs font-medium text-muted-foreground">
-                    表格 {i + 1}
+                    {t("tablepreview.table", { index: i + 1 })}
                   </p>
                 ) : null}
                 <div className="overflow-x-auto rounded-lg border">
                   <table className="w-full border-collapse text-sm">
                     <thead>
                       <tr>
-                        {t.columns.map((c, ci) => (
+                        {table.columns.map((c, ci) => (
                           <th
                             key={ci}
                             className="border-b bg-muted/60 px-3 py-1.5 text-left text-xs font-medium"
@@ -60,7 +64,7 @@ export function TablePreview({
                       </tr>
                     </thead>
                     <tbody>
-                      {t.rows.map((r, ri) => (
+                      {table.rows.map((r, ri) => (
                         <tr key={ri}>
                           {r.map((cell, ci) => (
                             <td
@@ -80,7 +84,7 @@ export function TablePreview({
           ) : (
             <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
               <Table2 className="size-6" />
-              未检测到表格
+              {t("tablepreview.empty")}
             </div>
           )}
         </div>
