@@ -7,6 +7,7 @@ use tauri::AppHandle;
 use uuid::Uuid;
 
 use crate::core::grid_rebuild;
+use crate::core::page_marker::page_marker;
 use crate::core::settings;
 use crate::models::{
   ConvertResult, DetectResult, HybridSessionInfo, LayoutDto, OcrVendor, PdfTypeDto,
@@ -303,7 +304,7 @@ pub fn finish_session(store: &HybridStore, session_id: &str) -> Result<ConvertRe
           .unwrap_or_default(),
       }
     };
-    parts.push(md);
+    parts.push(format!("{}\n\n{md}", page_marker(page_1)));
   }
 
   Ok(ConvertResult {

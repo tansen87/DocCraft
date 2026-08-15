@@ -174,6 +174,9 @@ pub struct HybridSessionInfo {
 pub struct MdTable {
   pub columns: Vec<String>,
   pub rows: Vec<Vec<String>>,
+  /// Source PDF page (1-indexed) when the table came from this app's
+  /// PDF→Markdown conversion; `None` for tables without a page marker.
+  pub page: Option<u32>,
 }
 
 /// Analysis of the tables found in a Markdown file.

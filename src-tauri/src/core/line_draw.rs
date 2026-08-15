@@ -192,6 +192,7 @@ fn extract_table_from_vertical_lines(
     return MdTable {
       columns: Vec::new(),
       rows: Vec::new(),
+      page: None,
     };
   }
 
@@ -201,6 +202,7 @@ fn extract_table_from_vertical_lines(
     return MdTable {
       columns: Vec::new(),
       rows: Vec::new(),
+      page: None,
     };
   }
 
@@ -227,7 +229,11 @@ fn extract_table_from_vertical_lines(
     Vec::new()
   };
 
-  MdTable { columns, rows }
+  MdTable {
+    columns,
+    rows,
+    page: None,
+  }
 }
 
 // ─── Legacy extraction functions (kept for backward compatibility) ────────
@@ -263,6 +269,7 @@ fn extract_table_from_grid(
     return MdTable {
       columns: Vec::new(),
       rows: Vec::new(),
+      page: None,
     };
   }
 
@@ -294,7 +301,11 @@ fn extract_table_from_grid(
     rows.push(row_cells);
   }
 
-  MdTable { columns, rows }
+  MdTable {
+    columns,
+    rows,
+    page: None,
+  }
 }
 
 /// Extract table from a rectangular region by auto-detecting row/column structure.
@@ -304,6 +315,7 @@ fn extract_table_from_rectangle(elements: &[TextElement], rect: &DrawTableRegion
     return MdTable {
       columns: Vec::new(),
       rows: Vec::new(),
+      page: None,
     };
   }
 
@@ -313,6 +325,7 @@ fn extract_table_from_rectangle(elements: &[TextElement], rect: &DrawTableRegion
     return MdTable {
       columns: Vec::new(),
       rows: Vec::new(),
+      page: None,
     };
   }
 
@@ -352,6 +365,7 @@ fn extract_table_from_rectangle(elements: &[TextElement], rect: &DrawTableRegion
       } else {
         Vec::new()
       },
+      page: None,
     };
     // If only one row, treat it as a single-row table
     if result.columns.is_empty() {
@@ -391,6 +405,7 @@ fn extract_table_from_rectangle(elements: &[TextElement], rect: &DrawTableRegion
       } else {
         Vec::new()
       },
+      page: None,
     };
     if result.columns.is_empty() {
       result.columns = vec!["内容".to_string()];
@@ -429,6 +444,7 @@ fn extract_table_from_rectangle(elements: &[TextElement], rect: &DrawTableRegion
   MdTable {
     columns,
     rows: data_rows,
+    page: None,
   }
 }
 

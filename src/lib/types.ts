@@ -76,6 +76,8 @@ export interface AppSettings {
 export interface MdTable {
   columns: string[];
   rows: string[][];
+  /** Source PDF page (1-indexed) when the table came from this app's PDF→Markdown conversion. */
+  page: number | null;
 }
 
 /** Result of analyzing the tables in a Markdown file. */

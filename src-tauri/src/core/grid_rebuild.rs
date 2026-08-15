@@ -9,6 +9,8 @@
 use pdf_inspector::TextItem;
 use pdf_inspector::extractor::ItemType;
 
+use crate::core::page_marker::page_marker;
+
 /// Rebuild the document markdown page by page, keeping every visual line on
 /// its own line, returning one markdown string per page (in document order).
 ///
@@ -44,13 +46,20 @@ pub fn rebuild_pages(
 }
 
 /// Convenience wrapper around [`rebuild_pages`] that joins pages with a blank
-/// line, matching pdf-inspector's document-level output.
+/// line, matching pdf-inspector's document-level output, and prefixes every
+/// page with a `<!-- 第 N 页 -->` marker so downstream tooling can attribute
+/// content (e.g. tables) to its source PDF page.
 pub fn rebuild_document(
   pages: &[pdf_inspector::PageMarkdown],
   items: &[TextItem],
   pages_with_tables: &[u32],
 ) -> String {
-  rebuild_pages(pages, items, pages_with_tables).join("\n\n")
+  rebuild_pages(pages, items, pages_with_tables)
+    .into_iter()
+    .enumerate()
+    .map(|(i, page)| format!("{}\n\n{page}", page_marker(i as u32 + 1)))
+    .collect::<Vec<_>>()
+    .join("\n\n")
 }
 
 /// Group positioned items into visual lines (top-to-bottom, then left-to-right).

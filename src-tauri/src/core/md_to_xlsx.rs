@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use rust_xlsxwriter::{Format, FormatAlign, FormatBorder, Workbook};
 
+use crate::core::page_marker::page_from_line;
 use crate::models::{MdAnalyzeResult, MdExportResult, MdTable};
 
 /// A line is a GFM table delimiter when it only contains `-`, `:`, `|` and
@@ -45,12 +46,20 @@ fn split_cells(line: &str) -> Vec<String> {
   cells
 }
 
-/// Extract every GitHub-Flavored Markdown table from a document.
+/// Extract every GitHub-Flavored Markdown table from a document. Tables that
+/// follow a `<!-- 第 N 页 -->` marker are tagged with that source page.
 pub fn parse_md_tables(content: &str) -> Vec<MdTable> {
   let lines: Vec<&str> = content.lines().collect();
   let mut tables = Vec::new();
+  let mut current_page: Option<u32> = None;
   let mut i = 0usize;
   while i < lines.len() {
+    let line = lines[i].trim();
+    if let Some(page) = page_from_line(line) {
+      current_page = Some(page);
+      i += 1;
+      continue;
+    }
     let header = lines[i].trim();
     let delim = lines.get(i + 1).map(|l| l.trim()).unwrap_or("");
     if header.starts_with('|') && is_delimiter(delim) {
@@ -70,7 +79,11 @@ pub fn parse_md_tables(content: &str) -> Vec<MdTable> {
         rows.push(padded);
         j += 1;
       }
-      tables.push(MdTable { columns, rows });
+      tables.push(MdTable {
+        columns,
+        rows,
+        page: current_page,
+      });
       i = j;
     } else {
       i += 1;
@@ -124,7 +137,11 @@ pub fn export_markdown_tables(md_path: &str, xlsx_path: &str) -> Result<MdExport
   let mut row: u32 = 0;
   let mut total_rows = 0usize;
   for (idx, table) in tables.iter().enumerate() {
-    ws.write_string_with_format(row, 0, format!("表格 {}", idx + 1), &label_fmt)
+    let label = match table.page {
+      Some(page) => format!("第 {page} 页"),
+      None => format!("表格 {}", idx + 1),
+    };
+    ws.write_string_with_format(row, 0, &label, &label_fmt)
       .map_err(|e| e.to_string())?;
     row += 1;
     for (col, name) in table.columns.iter().enumerate() {
@@ -188,6 +205,30 @@ mod tests {
   fn ignores_lines_without_delimiter() {
     let md = "| A | B |\n| 1 | 2 |\n";
     assert!(parse_md_tables(md).is_empty());
+  }
+
+  #[test]
+  fn tracks_source_page_from_markers() {
+    let md = "<!-- 第 1 页 -->\n\nintro\n\n| H1 |\n|---|\n| a |\n\n<!-- 第 3 页 -->\n\n| H1 | H2 |\n|----|----|\n| b  | c  |\n";
+    let tables = parse_md_tables(md);
+    assert_eq!(tables.len(), 2);
+    assert_eq!(tables[0].page, Some(1));
+    assert_eq!(tables[1].page, Some(3));
+  }
+
+  #[test]
+  fn page_is_none_without_markers() {
+    let md = "| A | B |\n|---|---|\n| 1 | 2 |\n";
+    let tables = parse_md_tables(md);
+    assert_eq!(tables[0].page, None);
+  }
+
+  #[test]
+  fn ocr_comment_is_not_a_page_marker() {
+    let md = "<!-- OCR 跳过(第 2 页): 未配置 OCR 供应商 -->\n\n| A |\n|---|\n| 1 |\n";
+    let tables = parse_md_tables(md);
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].page, None);
   }
 
   #[test]
