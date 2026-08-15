@@ -1,9 +1,11 @@
 # DocCraft
 
-A cross-platform **PDF → Markdown** desktop converter built with
-[Tauri 2](https://tauri.app), React, TypeScript, [shadcn/ui](https://ui.shadcn.com) and
-[`pdf-inspector`](https://crates.io/crates/pdf-inspector) (Firecrawl's pure-Rust PDF
-classification / extraction engine).
+A cross-platform **PDF → Markdown** and **Markdown → Excel** desktop converter
+built with [Tauri 2](https://tauri.app), React, TypeScript,
+[shadcn/ui](https://ui.shadcn.com) and
+[`pdf-inspector`](https://crates.io/crates/pdf-inspector) (Firecrawl's pure-Rust
+PDF classification / extraction engine). The UI is bilingual — English (default)
+and Simplified Chinese — switchable at runtime.
 
 > Chinese architecture design document: [docs/architecture.md](./architecture.md)
 
@@ -31,20 +33,32 @@ classification / extraction engine).
   (PDF type, pages, confidence, OCR needs).
 - **Whole-window drag & drop** — drop any PDF anywhere in the window; a drag
   overlay confirms the drop target; auto-detect runs immediately on select.
-- **Sidebar settings page** — left navigation switches between **OCR 服务**
-  (vendors / models / keys) and **并发线程** (batch conversion concurrency).
+- **Markdown → Excel** — batch-analyze `.md` files, auto-detect tables
+  (count + rows), preview each table, and export to `.xlsx` (single file or
+  export-all into a chosen directory).
+- **Draw-a-table extraction** — in the PDF workspace, manually draw vertical
+  separators over a rendered page to define table regions, then extract them
+  into the Markdown output (undo/redo, per-page lines, Enter to extract).
+- **Bilingual UI (i18n)** — English (default) and 中文 (Simplified Chinese)
+  switched via a dropdown next to the theme toggle; the choice persists in
+  `localStorage` and every string goes through a typed translation layer.
+- **Sidebar settings page** — left navigation switches between **OCR 服务 /
+  OCR Service** (vendors / models / keys) and **并发线程 / Concurrency**
+  (batch conversion concurrency).
 
 ## Tech Stack
 
 | Layer   | Choice |
 |---------|--------|
 | Desktop framework | Tauri 2.x (WebView + Rust core), asset protocol enabled for local file preview |
-| Frontend          | React 19 + TypeScript + Vite 7 |
+| Frontend          | React 19 + TypeScript + Vite 8 |
 | UI kit            | shadcn/ui (Radix primitives, Tailwind CSS v4) |
 | Package manager   | pnpm 10 |
 | PDF engine        | `pdf-inspector` 1.14 (pure Rust, `lopdf`) |
 | PDF preview / OCR images | `pdfjs-dist` 6.x (renders preview pages; also renders OCR pages to PNG for the backend) |
-| HTTP client       | `reqwest` 0.12 (async, native-tls) |
+| Markdown / Excel  | `react-markdown` + GFM on the frontend; `rust_xlsxwriter` on the backend for `.xlsx` export |
+| i18n              | custom lightweight React Context layer (no external dep), typed en/zh dictionaries |
+| HTTP client       | `reqwest` 0.13 (async, native-tls) |
 | Secret storage    | DPAPI via `windows-sys` (Win32_Security_Cryptography) on Windows |
 | Concurrency       | frontend worker pool (limit from app settings) |
 | Config storage    | JSON files in `app_config_dir` (`ocr-config.json`, `app-settings.json`) |
@@ -58,7 +72,7 @@ doccraft/
 │  └─ index.md                   # This file
 ├─ src/                          # React frontend
 │  ├─ components/
-│  │  ├─ convert/                # Convert workflow
+│  │  ├─ pdf2md/                 # PDF → Markdown workflow
 │  │  │  ├─ convert-workspace.tsx# Workspace: detect → convert → preview
 │  │  │  ├─ convert-toolbar.tsx  # Top toolbar (file info + convert CTA)
 │  │  │  ├─ drop-zone.tsx        # Full-area pick / drag target (empty state)
@@ -68,21 +82,32 @@ doccraft/
 │  │  │  ├─ preview-pane.tsx     # Markdown preview (render / raw toggle)
 │  │  │  ├─ render-pdf-pages.ts  # Renders OCR pages to PNG base64 for the backend
 │  │  │  └─ status-bar.tsx       # Bottom status (type / pages / confidence / OCR)
-│  │  ├─ ui/                     # shadcn/ui components
-│  │  ├─ layout/app-header.tsx   # Top bar (brand, tabs, theme toggle)
-│  │  └─ theme-toggle.tsx
+│  │  ├─ draw-table/             # Manual "draw-a-table" extraction
+│  │  │  ├─ draw-table-toolbar.tsx
+│  │  │  ├─ draw-table-panel.tsx # Overlay + per-page lines + undo/redo
+│  │  │  ├─ canvas-overlay.tsx   # Draw/edit vertical separator lines
+│  │  │  └─ pdf-preview-with-draw.tsx
+│  │  ├─ md2xlsx/table-preview.tsx # Table-by-table preview of parsed .md
+│  │  ├─ layout/app-header.tsx   # Top bar (brand, tabs, language + theme toggles)
+│  │  ├─ language-toggle.tsx     # English / 中文 dropdown
+│  │  ├─ theme-toggle.tsx
+│  │  └─ ui/                     # shadcn/ui components
+│  ├─ i18n/
+│  │  ├─ index.tsx               # LanguageProvider + useI18n() + t() interpolation
+│  │  └─ translations.ts         # Typed en/zh dictionaries (TranslationKey)
 │  ├─ lib/
 │  │  ├─ ipc.ts                  # Tauri invoke() wrappers
 │  │  ├─ types.ts                # Shared IPC DTO types
 │  │  ├─ concurrency.ts          # Shared max-concurrent cache (default 1)
-│  │  ├─ pdf-meta.ts             # PDF-type → label/icon/badge mapping
+│  │  ├─ pdf-meta.ts             # PDF-type → badge/icon mapping
 │  │  └─ utils.ts                # cn() helper
 │  ├─ views/
-│  │  ├─ convert.tsx             # Batch list + single-file workspace routing
+│  │  ├─ pdf-to-md.tsx           # Batch queue + single-file PDF workspace
+│  │  ├─ md-to-xlsx.tsx          # Markdown → Excel batch list + preview
 │  │  └─ settings.tsx            # Sidebar settings (OCR 服务 / 并发线程)
-│  ├─ App.tsx                    # App shell, tab switching (batch / settings)
+│  ├─ App.tsx                    # App shell, tab switching (PDF/MD → XLSX / settings)
 │  ├─ index.css                  # Tailwind v4 + design tokens
-│  └─ main.tsx                   # Entry, imports index.css
+│  └─ main.tsx                   # Entry, providers, imports index.css
 ├─ src-tauri/                    # Rust backend
 │  ├─ src/
 │  │  ├─ lib.rs                  # Tauri commands + run()
@@ -147,6 +172,23 @@ frontend never sees them. Sessions are auto-pruned if the frontend never
 finishes or aborts them.
 Errors from `PdfError` are stringified and surfaced through toast notifications.
 
+## Internationalization (i18n)
+
+A small custom layer (no external dependency) keeps every UI string bilingual:
+
+- `src/i18n/translations.ts` — two dictionaries, `en` (default) and `zh`.
+  The `TranslationKey` type is derived from the `en` keys, and `zh` is typed
+  as `Record<TranslationKey, string>`, so adding a key to one language fails
+  type-check until it exists in both.
+- `src/i18n/index.tsx` — `LanguageProvider` + the `useI18n()` hook. It exposes
+  `t(key, params?)` which interpolates `{param}` placeholders (e.g.
+  `t("batch.completed", { done, total })`). The active language is persisted in
+  `localStorage` (`doccraft-language`, default `en`).
+- `src/components/language-toggle.tsx` — a dropdown button next to the theme
+  toggle in the app header (English / 中文, native labels). Views and shared
+  components consume translations through `t()`; toasts, tooltips, dialogs,
+  drag-drop overlays and status badges are all covered.
+
 ## Getting Started
 
 Prerequisites: Node ≥ 20, pnpm ≥ 10, Rust toolchain (stable).
@@ -176,8 +218,12 @@ cargo check --manifest-path src-tauri/Cargo.toml
 - **M3 (mostly done)** — Batch processing: worker pool with a user-configurable
   concurrency limit (settings → 并发线程, default 1), retry / remove /
   export-all. (Live progress events & per-file OCR cancellation still optional.)
-- **M4 (planned)** — Polish: error details, markdown rendering preview
-  enhancements, config import/export, release packaging (MSI/NSIS).
+- **M3.5 (done)** — **Markdown → Excel**: batch `.md` analysis, auto table
+  detection, table-by-table preview, and `.xlsx` export (single or all).
+  Plus manual **draw-a-table** extraction for scanned PDF regions.
+- **M4 (mostly done)** — Polish: **bilingual i18n (en/zh, runtime toggle)**
+  and dark mode. (Config import/export and release packaging MSI/NSIS still
+  planned.)
 
 ## Configuration
 
