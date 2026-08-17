@@ -47,7 +47,7 @@ pub fn rebuild_pages(
 
 /// Convenience wrapper around [`rebuild_pages`] that joins pages with a blank
 /// line, matching pdf-inspector's document-level output, and prefixes every
-/// page with a `<!-- 第 N 页 -->` marker so downstream tooling can attribute
+/// page with a `<!-- Page N -->` marker so downstream tooling can attribute
 /// content (e.g. tables) to its source PDF page.
 pub fn rebuild_document(
   pages: &[pdf_inspector::PageMarkdown],

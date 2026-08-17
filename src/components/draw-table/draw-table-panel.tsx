@@ -71,6 +71,11 @@ export function DrawTablePanel({
   }));
 
   const pageCanvasRef = useRef<HTMLCanvasElement>(null);
+  // Cache the loaded PDF document so page switches reuse the parsed doc
+  // instead of re-downloading/re-parsing the whole file every time.
+  const docRef = useRef<pdfjs.PDFDocumentProxy | null>(null);
+  const loadingTaskRef = useRef<pdfjs.PDFDocumentLoadingTask | null>(null);
+  const renderTaskRef = useRef<pdfjs.RenderTask | null>(null);
 
   // Per-page state storage
   const pageStatesRef = useRef<Map<number, PageDrawState>>(new Map());
@@ -120,17 +125,33 @@ export function DrawTablePanel({
   // Render the current page into the overlay's background canvas. The canvas is
   // anchored to the top-left of the same box that hosts CanvasOverlay, so the
   // drawn lines' coordinate mapping (CanvasOverlay) matches the PDF exactly.
+  // The parsed document is cached (docRef) so navigating pages is fast even for
+  // large PDFs; only the first render pays the parse cost.
   useEffect(() => {
     const canvas = pageCanvasRef.current;
     if (!canvas) return;
     let cancelled = false;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    const task = pdfjs.getDocument({ url: path });
-    task.promise
-      .then((doc) => doc.getPage(currentPage))
-      .then(async (page) => {
+    (async () => {
+      try {
+        let doc = docRef.current;
+        if (!doc) {
+          const task = pdfjs.getDocument({ url: path });
+          loadingTaskRef.current = task;
+          const loaded = await task.promise;
+          if (cancelled) {
+            task.destroy();
+            loadingTaskRef.current = null;
+            return;
+          }
+          doc = loaded;
+          docRef.current = doc;
+        }
+
+        const page = await doc.getPage(currentPage);
         if (cancelled) return;
+
+        const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
         const viewport = page.getViewport({ scale: scale * dpr });
         canvas.width = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
@@ -138,18 +159,31 @@ export function DrawTablePanel({
         if (ctx) {
           ctx.fillStyle = "#ffffff";
           ctx.fillRect(0, 0, canvas.width, canvas.height);
-          await page.render({ canvas, viewport }).promise;
+          renderTaskRef.current?.cancel();
+          renderTaskRef.current = page.render({ canvas, viewport });
+          await renderTaskRef.current.promise;
         }
         page.cleanup();
-      })
-      .catch(() => {})
-      .finally(() => task.destroy());
+      } catch {
+        // Ignore render errors (e.g. task cancelled while switching pages).
+      }
+    })();
 
     return () => {
       cancelled = true;
-      task.destroy();
+      renderTaskRef.current?.cancel();
     };
   }, [path, currentPage, scale]);
+
+  // Release the cached document when the PDF path changes or on unmount.
+  useEffect(() => {
+    return () => {
+      renderTaskRef.current?.cancel();
+      loadingTaskRef.current?.destroy();
+      loadingTaskRef.current = null;
+      docRef.current = null;
+    };
+  }, [path]);
 
   const handleLineAdd = useCallback(
     (line: DrawLine) => {

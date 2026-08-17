@@ -47,7 +47,7 @@ fn split_cells(line: &str) -> Vec<String> {
 }
 
 /// Extract every GitHub-Flavored Markdown table from a document. Tables that
-/// follow a `<!-- 第 N 页 -->` marker are tagged with that source page.
+/// follow a `<!-- Page N -->` marker are tagged with that source page.
 pub fn parse_md_tables(content: &str) -> Vec<MdTable> {
   let lines: Vec<&str> = content.lines().collect();
   let mut tables = Vec::new();
@@ -117,7 +117,7 @@ pub fn export_markdown_tables(md_path: &str, xlsx_path: &str) -> Result<MdExport
   let start = Instant::now();
   let tables = parse_md_tables(&content);
   if tables.is_empty() {
-    return Err("Markdown 中没有找到表格".to_string());
+    return Err("Table not found in Markdown".to_string());
   }
 
   let mut workbook = Workbook::new();
@@ -138,8 +138,8 @@ pub fn export_markdown_tables(md_path: &str, xlsx_path: &str) -> Result<MdExport
   let mut total_rows = 0usize;
   for (idx, table) in tables.iter().enumerate() {
     let label = match table.page {
-      Some(page) => format!("第 {page} 页"),
-      None => format!("表格 {}", idx + 1),
+      Some(page) => format!("Page {page}"),
+      None => format!("Table {}", idx + 1),
     };
     ws.write_string_with_format(row, 0, &label, &label_fmt)
       .map_err(|e| e.to_string())?;
@@ -209,11 +209,19 @@ mod tests {
 
   #[test]
   fn tracks_source_page_from_markers() {
-    let md = "<!-- 第 1 页 -->\n\nintro\n\n| H1 |\n|---|\n| a |\n\n<!-- 第 3 页 -->\n\n| H1 | H2 |\n|----|----|\n| b  | c  |\n";
+    let md = "<!-- Page 1 -->\n\nintro\n\n| H1 |\n|---|\n| a |\n\n<!-- Page 3 -->\n\n| H1 | H2 |\n|----|----|\n| b  | c  |\n";
     let tables = parse_md_tables(md);
     assert_eq!(tables.len(), 2);
     assert_eq!(tables[0].page, Some(1));
     assert_eq!(tables[1].page, Some(3));
+  }
+
+  #[test]
+  fn legacy_chinese_markers_still_attribute_pages() {
+    let md = "<!-- 第 2 页 -->\n\n| A |\n|---|\n| a |\n";
+    let tables = parse_md_tables(md);
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].page, Some(2));
   }
 
   #[test]
@@ -225,7 +233,7 @@ mod tests {
 
   #[test]
   fn ocr_comment_is_not_a_page_marker() {
-    let md = "<!-- OCR 跳过(第 2 页): 未配置 OCR 供应商 -->\n\n| A |\n|---|\n| 1 |\n";
+    let md = "<!-- OCR skipped (page 2): no OCR provider configured -->\n\n| A |\n|---|\n| 1 |\n";
     let tables = parse_md_tables(md);
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].page, None);

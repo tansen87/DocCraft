@@ -73,7 +73,7 @@ async fn ocr_page(
     .json(&body)
     .send()
     .await
-    .map_err(|e| format!("OCR 请求失败(第 {page} 页): {e}"))?;
+    .map_err(|e| format!("OCR request failed (page {page}): {e}"))?;
 
   let status = response.status();
   if !status.is_success() {
@@ -101,7 +101,7 @@ async fn ocr_page(
 
   match text {
     Some(t) if !t.trim().is_empty() => Ok(t.trim().to_string()),
-    _ => Err(format!("OCR 服务未返回内容(第 {page} 页)")),
+    _ => Err(format!("OCR service returned no content (page {page})")),
   }
 }
 
@@ -269,7 +269,7 @@ pub async fn ocr_page_in_session(
       if let Some(session) = map.get_mut(session_id) {
         session.failed_pages.push(page);
       }
-      format!("<!-- OCR 失败(第 {page} 页): {e} -->")
+      format!("<!-- OCR failed (page {page}): {e} -->")
     }
   };
 
@@ -293,7 +293,7 @@ pub fn finish_session(store: &HybridStore, session_id: &str) -> Result<ConvertRe
   for i in 0..page_count {
     let page_1 = i + 1;
     let md = if skipped.contains(&page_1) {
-      format!("<!-- OCR 跳过(第 {page_1} 页): 未配置 OCR 供应商 -->")
+      format!("<!-- OCR skipped (page {page_1}): no OCR provider configured -->")
     } else {
       match session.ocr_results.get(&page_1) {
         Some(m) => m.clone(),

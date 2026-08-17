@@ -21,7 +21,7 @@ and Simplified Chinese — switchable at runtime.
   pages need OCR (`pages_needing_ocr`). Pure-text PDFs never touch the network.
 - **Local markdown extraction** — headings, lists, code blocks, tables, links,
   and repeated-header/footer stripping — no OCR needed for native text PDFs.
-  Every converted page is delimited by a `<!-- 第 N 页 -->` marker (invisible
+  Every converted page is delimited by a `<!-- Page N -->` marker (invisible
   in rendered preview), which lets downstream tooling like the Excel export
   attribute tables to their source page.
 - **Configurable OCR providers** — any **OpenAI-chat-completions-compatible**
@@ -45,8 +45,8 @@ and Simplified Chinese — switchable at runtime.
 - **Markdown → Excel** — batch-analyze `.md` files, auto-detect tables
   (count + rows), preview each table, and export to `.xlsx` (single file or
   export-all into a chosen directory). Each table in the workbook is labeled
-  with its source PDF page (`第 N 页`) when the file was produced by this app's
-  PDF conversion; otherwise it falls back to `表格 N`.
+  with its source PDF page (`Page N`) when the file was produced by this app's
+  PDF conversion; otherwise it falls back to `Table N`.
 - **Draw-a-table extraction** — in the PDF workspace, manually draw vertical
   separators over a rendered page to define table regions, then extract them
   into the Markdown output (undo/redo, per-page lines, Enter to extract).

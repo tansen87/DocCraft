@@ -658,7 +658,7 @@ pub fn extract_tables_and_merge(
   match existing_markdown {
     Some(md) if !md.trim().is_empty() => {
       let mut merged = md.trim().to_string();
-      merged.push_str("\n\n---\n\n<!-- 划线提取表格 -->\n\n");
+      merged.push_str("\n\n---\n\n<!-- Draw lines to extract tables -->\n\n");
       merged.push_str(&table_md);
       Ok(merged)
     }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -11,6 +11,51 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+
+/** Marker that delimits PDF pages in converted Markdown (`<!-- Page N -->`). */
+const PAGE_MARKER_RE = /<!--\s*(?:Page\s*\d+|第\s*\d+\s*页)\s*-->/g;
+/** How far below the viewport a page is pre-rendered before it scrolls in. */
+const IO_BUFFER_PX = 600;
+/** Placeholder height for not-yet-rendered pages so scrolling stays smooth. */
+const PLACEHOLDER_HEIGHT_PX = 240;
+
+interface MarkdownPage {
+  marker: string;
+  content: string;
+}
+
+/** Split markdown into per-page chunks using the app's own page markers. */
+function splitMarkdownPages(markdown: string): MarkdownPage[] {
+  const pages: MarkdownPage[] = [];
+  const re = new RegExp(PAGE_MARKER_RE.source, "g");
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(markdown)) !== null) {
+    pages.push({
+      marker: match[0],
+      content: markdown.slice(lastIndex, match.index),
+    });
+    lastIndex = match.index + match[0].length;
+  }
+  pages.push({ marker: "", content: markdown.slice(lastIndex) });
+  return pages;
+}
+
+/** Memoized per-page renderer: re-parses only when its own chunk changes. */
+const MarkdownPageView = memo(function MarkdownPageView({
+  markdown,
+}: {
+  markdown: string;
+}) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeHighlight]}
+    >
+      {markdown}
+    </ReactMarkdown>
+  );
+});
 
 interface PreviewPaneProps {
   markdown: string;
@@ -28,6 +73,51 @@ export function PreviewPane({
   const { t } = useI18n();
   const [mode, setMode] = useState<"raw" | "render">("render");
   const [copied, setCopied] = useState(false);
+
+  // Paginate the markdown by its page markers and render pages lazily, so
+  // large documents don't pay the whole ReactMarkdown + highlight parse at once.
+  const pages = useMemo(() => splitMarkdownPages(markdown), [markdown]);
+  const [visiblePages, setVisiblePages] = useState<ReadonlySet<number>>(
+    () => new Set(pages.length ? [0] : []),
+  );
+  const articleRef = useRef<HTMLElement | null>(null);
+  const pageRefs = useRef(new Map<number, HTMLDivElement>());
+
+  useEffect(() => {
+    setVisiblePages(new Set(pages.length ? [0] : []));
+  }, [pages]);
+
+  useEffect(() => {
+    if (mode !== "render" || pages.length <= 1) return;
+    const root =
+      (articleRef.current?.closest(
+        '[data-slot="scroll-area-viewport"]',
+      ) as Element | null) ?? null;
+    const io = new IntersectionObserver(
+      (entries) => {
+        setVisiblePages((prev) => {
+          let changed = false;
+          const next = new Set(prev);
+          for (const entry of entries) {
+            const idx = Number((entry.target as HTMLElement).dataset.page);
+            if (Number.isNaN(idx)) continue;
+            if (entry.isIntersecting) {
+              if (!next.has(idx)) {
+                next.add(idx);
+                changed = true;
+              }
+            } else if (next.delete(idx)) {
+              changed = true;
+            }
+          }
+          return changed ? next : prev;
+        });
+      },
+      { root, rootMargin: `${IO_BUFFER_PX}px 0px` },
+    );
+    for (const el of pageRefs.current.values()) io.observe(el);
+    return () => io.disconnect();
+  }, [mode, pages]);
 
   async function copy() {
     try {
@@ -100,13 +190,26 @@ export function PreviewPane({
         </ScrollArea>
       ) : (
         <ScrollArea className="min-h-0 flex-1">
-          <article className="markdown-body p-4">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeHighlight]}
-            >
-              {markdown}
-            </ReactMarkdown>
+          <article ref={articleRef} className="markdown-body p-4">
+            {pages.map((pg, i) => (
+              <div
+                key={i}
+                data-page={i}
+                ref={(el) => {
+                  if (el) pageRefs.current.set(i, el);
+                  else pageRefs.current.delete(i);
+                }}
+                style={
+                  visiblePages.has(i)
+                    ? undefined
+                    : { minHeight: PLACEHOLDER_HEIGHT_PX }
+                }
+              >
+                {visiblePages.has(i) ? (
+                  <MarkdownPageView markdown={pg.marker + pg.content} />
+                ) : null}
+              </div>
+            ))}
           </article>
         </ScrollArea>
       )}
