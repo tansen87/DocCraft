@@ -14,7 +14,7 @@ export function AppHeader({ activeTab, onTabChange }: AppHeaderProps) {
   const { t } = useI18n();
 
   return (
-    <header className="sticky top-0 z-20 flex h-12 items-center gap-4 border-b bg-background/80 px-4 backdrop-blur">
+    <header className="sticky top-0 z-20 flex h-12 items-center gap-4 bg-background/80 px-4 backdrop-blur">
       <Tabs
         value={activeTab}
         onValueChange={(v) => onTabChange(v as WorkspaceTab)}

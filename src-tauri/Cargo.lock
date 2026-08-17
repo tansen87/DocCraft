@@ -937,7 +937,6 @@ dependencies = [
 name = "doccraft"
 version = "0.1.0"
 dependencies = [
- "lopdf",
  "pdf-inspector",
  "reqwest",
  "rust_xlsxwriter",

@@ -1,6 +1,5 @@
+use std::collections::HashSet;
 use std::time::Instant;
-
-use lopdf::Document;
 
 use pdf_inspector::TextItem;
 use pdf_inspector::extractor::ItemType;
@@ -26,8 +25,17 @@ struct TextElement {
 /// Extract positioned text items from the PDF via pdf-inspector, which decodes
 /// each font through its `/ToUnicode` CMap (unlike raw byte decoding, so CJK
 /// content is recovered correctly). Images and links are excluded.
-fn extract_text_elements(path: &str) -> Result<Vec<TextItem>, String> {
-  pdf_inspector::extract_text_with_positions(path).map_err(|e| format!("提取文本失败: {e}"))
+///
+/// `page_filter` restricts extraction to those 1-indexed pages (text on other
+/// pages is not decoded). This is the main cost of a line-draw extraction —
+/// font CMap + content-stream decoding scales with the number of pages decoded,
+/// so skipping pages we do not process keeps previews and single-page work fast.
+fn extract_text_elements(
+  path: &str,
+  page_filter: Option<&HashSet<u32>>,
+) -> Result<Vec<TextItem>, String> {
+  pdf_inspector::extract_text_with_positions_pages(path, page_filter)
+    .map_err(|e| format!("Text extraction failed: {e}"))
 }
 
 /// Map pdf-inspector text items onto the local element type, keeping only
@@ -455,38 +463,63 @@ pub fn extract_tables_from_draw_lines(
 ) -> Result<DrawTableResult, String> {
   let start = Instant::now();
 
-  let doc = Document::load(path).map_err(|e| format!("PDF 解析失败: {e}"))?;
-
-  // Extract positioned text once; pdf-inspector decodes each font via its
-  // `/ToUnicode` CMap so CJK content is not garbled (lopdf's raw byte decode
-  // was producing mojibake for Chinese tables).
-  let items = extract_text_elements(path)?;
-
   // When the user asks for the drawn lines to apply to the whole document,
   // reuse the first entry that actually carries lines for every page.
   let use_for_all_pages = request.use_for_all_pages.unwrap_or(false);
+  let max_pages = request.max_pages.filter(|&n| n > 0);
+
+  let template = request.pages.iter().find(|p| {
+    !p.vertical_lines.is_empty()
+      || !p.horizontal_lines.is_empty()
+      || p.rectangles.as_ref().is_some_and(|r| !r.is_empty())
+  });
+
+  if use_for_all_pages && template.is_none() {
+    return Ok(DrawTableResult {
+      table_count: 0,
+      tables: Vec::new(),
+      regions: Vec::new(),
+      processing_time_ms: start.elapsed().as_millis() as u64,
+      total_rows: 0,
+    });
+  }
+
+  // Only decode text for the pages we will actually process. The full-document
+  // font/CMap + content-stream decode dominates extraction time, so this makes
+  // the "first 5 pages" preview (and per-page line drawing) avoid paying for
+  // pages that are never inspected.
+  let page_filter: Option<HashSet<u32>> = if use_for_all_pages {
+    // Lines apply to pages 1..=end; when limited to a preview range we know the
+    // exact pages up front (extra numbers beyond the document are no-ops).
+    max_pages.map(|n| (1..=n).collect())
+  } else {
+    // Per-page mode: only the pages that actually carry lines matter.
+    Some(
+      request
+        .pages
+        .iter()
+        .filter(|p| {
+          !p.vertical_lines.is_empty()
+            || !p.horizontal_lines.is_empty()
+            || p.rectangles.as_ref().is_some_and(|r| !r.is_empty())
+        })
+        .map(|p| p.page)
+        .collect(),
+    )
+  };
+
+  // Extract positioned text once; pdf-inspector decodes each font via its
+  // `/ToUnicode` CMap so CJK content is not garbled (raw byte decoding would
+  // produce mojibake for Chinese tables).
+  let items = extract_text_elements(path, page_filter.as_ref())?;
+
   let effective_pages: Vec<PageDrawTable> = if use_for_all_pages {
-    let Some(template) = request.pages.iter().find(|p| {
-      !p.vertical_lines.is_empty()
-        || !p.horizontal_lines.is_empty()
-        || p.rectangles.as_ref().is_some_and(|r| !r.is_empty())
-    }) else {
-      return Ok(DrawTableResult {
-        table_count: 0,
-        tables: Vec::new(),
-        regions: Vec::new(),
-        processing_time_ms: start.elapsed().as_millis() as u64,
-        total_rows: 0,
-      });
-    };
-    let total_pages = doc.get_pages().len() as u32;
-    // Optionally limit to the first N pages so the user can quickly verify the
-    // drawn lines before extracting the whole document.
-    let end_page = request
-      .max_pages
-      .filter(|&n| n > 0)
-      .map(|n| total_pages.min(n))
-      .unwrap_or(total_pages);
+    let template = template.unwrap();
+    // Without a page limit the lines apply to every page, bounded by the last
+    // page that actually has text items (avoids a separate full-document parse
+    // just to read the page count).
+    let total_pages = items.iter().map(|it| it.page).max().unwrap_or(0);
+    let end_page = max_pages.unwrap_or(total_pages);
     (1..=end_page)
       .map(|page| {
         let mut entry = template.clone();
