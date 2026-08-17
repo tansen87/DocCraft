@@ -100,6 +100,10 @@ export function BatchView() {
   const [activeItem, setActiveItem] = useState<BatchItem | null>(null);
   const [running, setRunning] = useState(false);
   const [concurrency, setConcurrency] = useState(1);
+  const [exportingIds, setExportingIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const [exportingAll, setExportingAll] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -272,23 +276,30 @@ export function BatchView() {
     else if (Array.isArray(file) && file.length > 0) addFiles(file);
   }
 
-  async function exportItem(item: BatchItem) {
+  async function exportItem(item: BatchItem): Promise<void> {
     if (!item.result) return;
-    const base = item.name.replace(/\.pdf$/i, "") || "document";
-    const target = await save({
-      defaultPath: `${base}.md`,
-      filters: [{ name: "Markdown", extensions: ["md"] }],
-    });
-    if (typeof target !== "string") return;
+    setExportingIds((prev) => new Set(prev).add(item.id));
     try {
+      const base = item.name.replace(/\.pdf$/i, "") || "document";
+      const target = await save({
+        defaultPath: `${base}.md`,
+        filters: [{ name: "Markdown", extensions: ["md"] }],
+      });
+      if (typeof target !== "string") return;
       await exportMarkdown(target, item.result.markdown);
       toast.success(t("toast.exported"), { description: target });
     } catch (e) {
       toast.error(t("toast.exportFailed"), { description: String(e) });
+    } finally {
+      setExportingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
     }
   }
 
-  async function exportAll() {
+  async function exportAll(): Promise<void> {
     const done = itemsRef.current.filter(
       (it) => it.status === "done" && it.result,
     );
@@ -304,27 +315,32 @@ export function BatchView() {
       title: t("dialog.exportDir"),
     });
     if (typeof dir !== "string") return;
-    let ok = 0;
-    const used = new Set<string>();
-    for (const it of done) {
-      const base = it.name.replace(/\.pdf$/i, "") || "document";
-      let name = `${base}.md`;
-      let n = 2;
-      while (used.has(name.toLowerCase())) name = `${base} (${n++}).md`;
-      used.add(name.toLowerCase());
-      const target = await join(dir, name);
-      try {
-        await exportMarkdown(target, it.result!.markdown);
-        ok += 1;
-      } catch (e) {
-        toast.error(t("toast.exportFailedFile", { name: it.name }), {
-          description: String(e),
-        });
+    setExportingAll(true);
+    try {
+      let ok = 0;
+      const used = new Set<string>();
+      for (const it of done) {
+        const base = it.name.replace(/\.pdf$/i, "") || "document";
+        let name = `${base}.md`;
+        let n = 2;
+        while (used.has(name.toLowerCase())) name = `${base} (${n++}).md`;
+        used.add(name.toLowerCase());
+        const target = await join(dir, name);
+        try {
+          await exportMarkdown(target, it.result!.markdown);
+          ok += 1;
+        } catch (e) {
+          toast.error(t("toast.exportFailedFile", { name: it.name }), {
+            description: String(e),
+          });
+        }
       }
+      toast.success(t("toast.exportedCount", { count: ok }), {
+        description: dir,
+      });
+    } finally {
+      setExportingAll(false);
     }
-    toast.success(t("toast.exportedCount", { count: ok }), {
-      description: dir,
-    });
   }
 
   const total = items.length;
@@ -445,8 +461,17 @@ export function BatchView() {
                 {t("batch.start")}
               </Button>
             )}
-            <Button variant="secondary" size="sm" onClick={exportAll}>
-              <Download />
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void exportAll()}
+              disabled={exportingAll}
+            >
+              {exportingAll ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <Download />
+              )}
               {t("batch.exportAll")}
             </Button>
           </div>
@@ -527,9 +552,14 @@ export function BatchView() {
                                 <Button
                                   variant="ghost"
                                   size="icon-sm"
-                                  onClick={() => exportItem(item)}
+                                  onClick={() => void exportItem(item)}
+                                  disabled={exportingIds.has(item.id)}
                                 >
-                                  <Download />
+                                  {exportingIds.has(item.id) ? (
+                                    <Loader2 className="animate-spin" />
+                                  ) : (
+                                    <Download />
+                                  )}
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>

@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { Check, Copy, Download } from "lucide-react";
+import { Check, Copy, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import "highlight.js/styles/github-dark.css";
@@ -60,7 +60,8 @@ const MarkdownPageView = memo(function MarkdownPageView({
 interface PreviewPaneProps {
   markdown: string;
   processingTimeMs: number;
-  onExport: () => void;
+  /** Export the markdown. The caller shows its own success/failure toast. */
+  onExport: () => Promise<void>;
   className?: string;
 }
 
@@ -73,6 +74,7 @@ export function PreviewPane({
   const { t } = useI18n();
   const [mode, setMode] = useState<"raw" | "render">("render");
   const [copied, setCopied] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   // Paginate the markdown by its page markers and render pages lazily, so
   // large documents don't pay the whole ReactMarkdown + highlight parse at once.
@@ -129,6 +131,16 @@ export function PreviewPane({
     }
   }
 
+  async function handleExport() {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await onExport();
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div
       className={cn(
@@ -177,8 +189,14 @@ export function PreviewPane({
         <Button variant="ghost" size="icon-xs" onClick={copy}>
           {copied ? <Check className="text-emerald-500" /> : <Copy />}
         </Button>
-        <Button variant="ghost" size="icon-xs" onClick={onExport}>
-          <Download />
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={handleExport}
+          disabled={exporting}
+          aria-label={t("tooltip.exportMarkdown")}
+        >
+          {exporting ? <Loader2 className="animate-spin" /> : <Download />}
         </Button>
       </div>
 

@@ -177,7 +177,7 @@ export function ConvertWorkspace({
     }
   }
 
-  async function handleExport() {
+  async function handleExport(): Promise<void> {
     const content = result?.markdown ?? mergedMarkdown;
     if (!content) return;
     const base = fileName.replace(/\.pdf$/i, "") || "document";
