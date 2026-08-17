@@ -1,6 +1,7 @@
 import {
   ChevronLeft,
   ChevronRight,
+  FileSearch,
   Grid3X3,
   Loader2,
   RotateCcw,
@@ -22,7 +23,9 @@ interface DrawTableToolbarProps {
   canRedo: boolean;
   onClear: () => void;
   onExtract: () => void;
-  extracting: boolean;
+  onExtractFirst5: () => void;
+  /** Which extraction is currently running (`null` when idle). */
+  extracting: "all" | "first5" | null;
   hasLines: boolean;
   /** Current page number (1-indexed) */
   currentPage: number;
@@ -41,6 +44,7 @@ export function DrawTableToolbar({
   canRedo,
   onClear,
   onExtract,
+  onExtractFirst5,
   extracting,
   hasLines,
   currentPage,
@@ -142,20 +146,40 @@ export function DrawTableToolbar({
 
       <div className="flex-1" />
 
+      {/* Extract first 5 pages (preview) button */}
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={!hasLines || extracting !== null}
+        onClick={() => onExtractFirst5()}
+        className="gap-1.5"
+      >
+        {extracting === "first5" ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <FileSearch className="size-3.5" />
+        )}
+        {extracting === "first5"
+          ? t("drawtable.extractingFirst5")
+          : t("drawtable.extractFirst5")}
+      </Button>
+
       {/* Extract button */}
       <Button
         size="sm"
         variant="secondary"
-        disabled={!hasLines || extracting}
-        onClick={onExtract}
+        disabled={!hasLines || extracting !== null}
+        onClick={() => onExtract()}
         className="gap-1.5"
       >
-        {extracting ? (
+        {extracting === "all" ? (
           <Loader2 className="size-3.5 animate-spin" />
         ) : (
           <Grid3X3 className="size-3.5" />
         )}
-        {extracting ? t("drawtable.extracting") : t("drawtable.extract")}
+        {extracting === "all"
+          ? t("drawtable.extracting")
+          : t("drawtable.extract")}
       </Button>
     </div>
   );

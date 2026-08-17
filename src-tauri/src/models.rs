@@ -244,6 +244,10 @@ pub struct DrawTableRequest {
   /// When `true`, the lines drawn on one page are applied to every page of the
   /// document instead of only the pages listed in `pages`.
   pub use_for_all_pages: Option<bool>,
+  /// When `use_for_all_pages` is `true`, restrict extraction to the first
+  /// `max_pages` pages (e.g. a quick preview of the first 5 pages to verify the
+  /// drawn lines before extracting the whole document). `None` means all pages.
+  pub max_pages: Option<u32>,
 }
 
 /// Metadata about where a table was extracted from.

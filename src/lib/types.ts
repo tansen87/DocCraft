@@ -127,6 +127,12 @@ export interface DrawTableRequest {
    * document instead of only the pages listed in `pages`.
    */
   useForAllPages?: boolean;
+  /**
+   * When `useForAllPages` is set, restrict extraction to the first `maxPages`
+   * pages (e.g. a quick preview of the first 5 pages to verify the drawn
+   * lines). When omitted, all pages are extracted.
+   */
+  maxPages?: number;
 }
 
 /** Metadata about where a table was extracted from. */

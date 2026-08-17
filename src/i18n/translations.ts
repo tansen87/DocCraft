@@ -182,6 +182,8 @@ const en = {
   "drawtable.nextPage": "Next page",
   "drawtable.extracting": "Extracting…",
   "drawtable.extract": "Extract table",
+  "drawtable.extractFirst5": "Extract first 5 pages",
+  "drawtable.extractingFirst5": "Extracting first 5 pages…",
 
   "markdown.drawTableComment": "<!-- table extracted by drawing -->",
 
@@ -369,6 +371,8 @@ const zh: Record<TranslationKey, string> = {
   "drawtable.nextPage": "下一页",
   "drawtable.extracting": "提取中…",
   "drawtable.extract": "提取表格",
+  "drawtable.extractFirst5": "提取前 5 页",
+  "drawtable.extractingFirst5": "正在提取前 5 页…",
 
   "markdown.drawTableComment": "<!-- 划线提取表格 -->",
 

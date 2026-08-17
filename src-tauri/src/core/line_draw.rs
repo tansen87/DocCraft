@@ -480,7 +480,14 @@ pub fn extract_tables_from_draw_lines(
       });
     };
     let total_pages = doc.get_pages().len() as u32;
-    (1..=total_pages)
+    // Optionally limit to the first N pages so the user can quickly verify the
+    // drawn lines before extracting the whole document.
+    let end_page = request
+      .max_pages
+      .filter(|&n| n > 0)
+      .map(|n| total_pages.min(n))
+      .unwrap_or(total_pages);
+    (1..=end_page)
       .map(|page| {
         let mut entry = template.clone();
         entry.page = page;

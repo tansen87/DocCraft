@@ -7,7 +7,7 @@ import { DrawTableToolbar } from "@/components/draw-table/draw-table-toolbar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/i18n";
 import { extractDrawTableToMarkdown } from "@/lib/ipc";
-import type { DrawLine, PageDrawTable } from "@/lib/types";
+import type { DrawLine, DrawTableRequest, PageDrawTable } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface DrawTablePanelProps {
@@ -79,7 +79,7 @@ export function DrawTablePanel({
   const [history, setHistory] = useState<HistoryEntry[]>([drawState]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
-  const [extracting, setExtracting] = useState(false);
+  const [extracting, setExtracting] = useState<"all" | "first5" | null>(null);
 
   // Save current page state when page changes
   useEffect(() => {
@@ -209,46 +209,57 @@ export function DrawTablePanel({
     pushHistory(empty);
   }, [pushHistory]);
 
-  const handleExtract = useCallback(async () => {
-    setExtracting(true);
+  const handleExtract = useCallback(
+    async (maxPages?: number) => {
+      setExtracting(maxPages ? "first5" : "all");
 
-    // Save current page state first
-    pageStatesRef.current.set(currentPage, drawState);
+      // Save current page state first
+      pageStatesRef.current.set(currentPage, drawState);
 
-    // Build the request from all pages
-    const pages: PageDrawTable[] = [];
-    for (const [page, state] of pageStatesRef.current) {
-      const pageData: PageDrawTable = {
-        page,
-        horizontalLines: [],
-        verticalLines: state.verticalLines.map((l) => l.pdfValue),
-        pageX,
-        pageY,
-        pageWidth,
-        pageHeight,
-      };
-      pages.push(pageData);
-    }
-
-    const request = { pages, useForAllPages: true };
-
-    try {
-      const md = await extractDrawTableToMarkdown(pdfPath, request);
-
-      if (md.trim()) {
-        onMergeToMarkdown?.(md);
-        toast.success(t("toast.extractDone"));
-      } else {
-        toast.warning(t("toast.noTable"), {
-          description: t("toast.noTableDesc"),
-        });
+      // Build the request from all pages
+      const pages: PageDrawTable[] = [];
+      for (const [page, state] of pageStatesRef.current) {
+        const pageData: PageDrawTable = {
+          page,
+          horizontalLines: [],
+          verticalLines: state.verticalLines.map((l) => l.pdfValue),
+          pageX,
+          pageY,
+          pageWidth,
+          pageHeight,
+        };
+        pages.push(pageData);
       }
-    } catch (e) {
-      toast.error(t("toast.extractFailed"), { description: String(e) });
-    } finally {
-      setExtracting(false);
-    }
-  }, [pdfPath, currentPage, drawState, onMergeToMarkdown, t]);
+
+      const request: DrawTableRequest = {
+        pages,
+        useForAllPages: true,
+        ...(maxPages ? { maxPages } : {}),
+      };
+
+      try {
+        const md = await extractDrawTableToMarkdown(pdfPath, request);
+
+        if (md.trim()) {
+          onMergeToMarkdown?.(md);
+          toast.success(t("toast.extractDone"));
+        } else {
+          toast.warning(t("toast.noTable"), {
+            description: t("toast.noTableDesc"),
+          });
+        }
+      } catch (e) {
+        toast.error(t("toast.extractFailed"), { description: String(e) });
+      } finally {
+        setExtracting(null);
+      }
+    },
+    [pdfPath, currentPage, drawState, onMergeToMarkdown, t],
+  );
+
+  const handleExtractFirst5 = useCallback(() => {
+    handleExtract(5);
+  }, [handleExtract]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -285,6 +296,7 @@ export function DrawTablePanel({
         canRedo={historyIndex < history.length - 1}
         onClear={handleClear}
         onExtract={handleExtract}
+        onExtractFirst5={handleExtractFirst5}
         extracting={extracting}
         hasLines={hasLines}
         currentPage={currentPage}
