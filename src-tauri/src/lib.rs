@@ -1,6 +1,8 @@
 mod core;
 mod models;
 
+use tauri::Manager;
+
 use crate::core::ocr::HybridStore;
 use crate::models::{
   AppSettings, ConvertResult, DetectResult, DrawTableRequest, DrawTableResult, HybridSessionInfo,
@@ -10,32 +12,44 @@ use crate::models::{
 /// Classify a PDF without extracting: returns type, confidence and which
 /// pages need OCR.
 #[tauri::command]
-fn detect_pdf(path: String) -> Result<DetectResult, String> {
-  core::convert::detect_pdf(&path).map_err(|e| e.to_string())
+async fn detect_pdf(path: String) -> Result<DetectResult, String> {
+  tauri::async_runtime::spawn_blocking(move || core::convert::detect_pdf(&path))
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
 }
 
 /// Convert a PDF to Markdown locally via pdf-inspector.
 #[tauri::command]
-fn convert_pdf(path: String) -> Result<ConvertResult, String> {
-  core::convert::convert_pdf(&path).map_err(|e| e.to_string())
+async fn convert_pdf(path: String) -> Result<ConvertResult, String> {
+  tauri::async_runtime::spawn_blocking(move || core::convert::convert_pdf(&path))
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
 }
 
 /// Write Markdown content to a user-chosen file path.
 #[tauri::command]
-fn export_markdown(path: String, content: String) -> Result<(), String> {
-  core::convert::export_markdown(&path, &content)
+async fn export_markdown(path: String, content: String) -> Result<(), String> {
+  tauri::async_runtime::spawn_blocking(move || core::convert::export_markdown(&path, &content))
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Begin a hybrid conversion session: text pages are extracted once and kept on
 /// the backend; OCR pages are then streamed in one at a time.
 #[tauri::command]
-fn hybrid_session_start(
+async fn hybrid_session_start(
   app: tauri::AppHandle,
-  state: tauri::State<'_, HybridStore>,
   path: String,
   ocr_pages: Vec<u32>,
 ) -> Result<HybridSessionInfo, String> {
-  core::ocr::start_session(&app, &state, &path, ocr_pages)
+  tauri::async_runtime::spawn_blocking(move || {
+    let store = app.state::<HybridStore>();
+    core::ocr::start_session(&app, &store, &path, ocr_pages)
+  })
+  .await
+  .map_err(|e| e.to_string())?
 }
 
 /// Send one rendered page to the OCR provider inside the session. The image is
@@ -52,16 +66,21 @@ async fn hybrid_page_ocr(
 
 /// Reassemble text + OCR pages in document order and discard the session.
 #[tauri::command]
-fn hybrid_session_finish(
-  state: tauri::State<'_, HybridStore>,
+async fn hybrid_session_finish(
+  app: tauri::AppHandle,
   session_id: String,
 ) -> Result<ConvertResult, String> {
-  core::ocr::finish_session(&state, &session_id)
+  tauri::async_runtime::spawn_blocking(move || {
+    let store = app.state::<HybridStore>();
+    core::ocr::finish_session(&store, &session_id)
+  })
+  .await
+  .map_err(|e| e.to_string())?
 }
 
 /// Abandon a session (cancelled / failed before finishing).
 #[tauri::command]
-fn hybrid_session_abort(
+async fn hybrid_session_abort(
   state: tauri::State<'_, HybridStore>,
   session_id: String,
 ) -> Result<(), String> {
@@ -70,64 +89,87 @@ fn hybrid_session_abort(
 
 /// Load OCR vendor configs. API keys are never sent back; only `api_key_set`.
 #[tauri::command]
-fn get_ocr_config(app: tauri::AppHandle) -> Result<Vec<OcrVendorDto>, String> {
+async fn get_ocr_config(app: tauri::AppHandle) -> Result<Vec<OcrVendorDto>, String> {
   core::settings::get_ocr_config(&app)
     .map(|vendors| vendors.into_iter().map(|v| v.to_dto()).collect())
 }
 
 /// Persist OCR vendor configs (API keys are protected at rest).
 #[tauri::command]
-fn save_ocr_config(app: tauri::AppHandle, vendors: Vec<OcrVendorInput>) -> Result<(), String> {
+async fn save_ocr_config(
+  app: tauri::AppHandle,
+  vendors: Vec<OcrVendorInput>,
+) -> Result<(), String> {
   core::settings::save_ocr_config(&app, vendors)
 }
 
 /// Decrypt and return the stored key for a vendor ("show key" in settings).
 #[tauri::command]
-fn reveal_ocr_key(app: tauri::AppHandle, vendor_id: String) -> Result<Option<String>, String> {
+async fn reveal_ocr_key(
+  app: tauri::AppHandle,
+  vendor_id: String,
+) -> Result<Option<String>, String> {
   core::settings::api_key_for(&app, &vendor_id)
 }
 
 /// Load global app settings (e.g. batch conversion concurrency).
 #[tauri::command]
-fn get_app_settings(app: tauri::AppHandle) -> Result<AppSettings, String> {
+async fn get_app_settings(app: tauri::AppHandle) -> Result<AppSettings, String> {
   core::settings::get_app_settings(&app)
 }
 
 /// Persist global app settings.
 #[tauri::command]
-fn set_app_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
+async fn set_app_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
   core::settings::set_app_settings(&app, settings)
 }
 
 /// Analyze a Markdown file and return every table it contains (for preview).
 #[tauri::command]
-fn analyze_markdown(path: String) -> Result<MdAnalyzeResult, String> {
-  core::md_to_xlsx::analyze_markdown(&path)
+async fn analyze_markdown(path: String) -> Result<MdAnalyzeResult, String> {
+  tauri::async_runtime::spawn_blocking(move || core::md_to_xlsx::analyze_markdown(&path))
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Export all tables of a Markdown file into a `.xlsx` workbook.
 #[tauri::command]
-fn export_markdown_tables(md_path: String, xlsx_path: String) -> Result<MdExportResult, String> {
-  core::md_to_xlsx::export_markdown_tables(&md_path, &xlsx_path)
+async fn export_markdown_tables(
+  md_path: String,
+  xlsx_path: String,
+) -> Result<MdExportResult, String> {
+  tauri::async_runtime::spawn_blocking(move || {
+    core::md_to_xlsx::export_markdown_tables(&md_path, &xlsx_path)
+  })
+  .await
+  .map_err(|e| e.to_string())?
 }
 
 /// Extract tables from a PDF based on user-drawn lines.
 #[tauri::command]
-fn extract_draw_table(
+async fn extract_draw_table(
   path: String,
   draw_data: DrawTableRequest,
 ) -> Result<DrawTableResult, String> {
-  core::line_draw::extract_tables_from_draw_lines(&path, &draw_data)
+  tauri::async_runtime::spawn_blocking(move || {
+    core::line_draw::extract_tables_from_draw_lines(&path, &draw_data)
+  })
+  .await
+  .map_err(|e| e.to_string())?
 }
 
 /// Extract tables from user-drawn lines and merge them into an existing Markdown document.
 #[tauri::command]
-fn extract_draw_table_to_markdown(
+async fn extract_draw_table_to_markdown(
   path: String,
   draw_data: DrawTableRequest,
   existing_markdown: Option<String>,
 ) -> Result<String, String> {
-  core::line_draw::extract_tables_and_merge(&path, &draw_data, existing_markdown.as_deref())
+  tauri::async_runtime::spawn_blocking(move || {
+    core::line_draw::extract_tables_and_merge(&path, &draw_data, existing_markdown.as_deref())
+  })
+  .await
+  .map_err(|e| e.to_string())?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
