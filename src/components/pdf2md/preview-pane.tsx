@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -108,13 +108,28 @@ export function PreviewPane({
   );
   const articleRef = useRef<HTMLElement | null>(null);
   const pageRefs = useRef(new Map<number, HTMLDivElement>());
+  // Last measured height of each page, used to reserve real space for
+  // reclaimed (unmounted) pages so scrolling back up doesn't reflow.
+  const pageHeightsRef = useRef(new Map<number, number>());
 
   useEffect(() => {
     setVisiblePages(new Set(pages.length ? [0] : []));
+    pageHeightsRef.current.clear();
   }, [pages]);
 
+  // Measure a mounted page's height once so its reclaimed placeholder can
+  // reserve the same space (avoids the scroll-up reflow / stuck feedback loop).
+  const measurePage = useCallback(
+    (i: number) => (el: HTMLDivElement | null) => {
+      if (el && !pageHeightsRef.current.has(i)) {
+        pageHeightsRef.current.set(i, el.offsetHeight);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
-    if (mode !== "render" || pages.length <= 1) return;
+    if (pages.length <= 1) return;
     const root =
       (articleRef.current?.closest(
         '[data-slot="scroll-area-viewport"]',
@@ -226,9 +241,36 @@ export function PreviewPane({
 
       {mode === "raw" ? (
         <ScrollArea className="min-h-0 flex-1">
-          <pre className="whitespace-pre-wrap p-4 font-mono text-xs leading-relaxed">
-            {markdown}
-          </pre>
+          <div className="p-4">
+            {pages.map((pg, i) => (
+              <div
+                key={i}
+                data-page={i}
+                ref={(el) => {
+                  if (el) pageRefs.current.set(i, el);
+                  else pageRefs.current.delete(i);
+                }}
+                style={
+                  visiblePages.has(i)
+                    ? undefined
+                    : {
+                        height:
+                          pageHeightsRef.current.get(i) ??
+                          PLACEHOLDER_HEIGHT_PX,
+                      }
+                }
+              >
+                {visiblePages.has(i) ? (
+                  <div ref={measurePage(i)}>
+                    <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed">
+                      {pg.marker}
+                      {pg.content}
+                    </pre>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
         </ScrollArea>
       ) : (
         <ScrollArea className="min-h-0 flex-1">
@@ -244,18 +286,24 @@ export function PreviewPane({
                 style={
                   visiblePages.has(i)
                     ? undefined
-                    : { minHeight: PLACEHOLDER_HEIGHT_PX }
+                    : {
+                        height:
+                          pageHeightsRef.current.get(i) ??
+                          PLACEHOLDER_HEIGHT_PX,
+                      }
                 }
               >
                 {visiblePages.has(i) ? (
-                  showPageMarkers && pg.marker ? (
-                    <div>
-                      <PageBreakMarker marker={pg.marker} />
-                      <MarkdownPageView markdown={pg.content} />
-                    </div>
-                  ) : (
-                    <MarkdownPageView markdown={pg.marker + pg.content} />
-                  )
+                  <div ref={measurePage(i)}>
+                    {showPageMarkers && pg.marker ? (
+                      <div>
+                        <PageBreakMarker marker={pg.marker} />
+                        <MarkdownPageView markdown={pg.content} />
+                      </div>
+                    ) : (
+                      <MarkdownPageView markdown={pg.marker + pg.content} />
+                    )}
+                  </div>
                 ) : null}
               </div>
             ))}

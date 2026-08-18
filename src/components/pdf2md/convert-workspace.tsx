@@ -294,6 +294,7 @@ export function ConvertWorkspace({
                 processingTimeMs={result.processingTimeMs}
                 onExport={handleExport}
                 className="h-full"
+                showPageMarkers
               />
             ) : null}
           </div>
