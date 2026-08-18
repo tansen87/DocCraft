@@ -21,9 +21,11 @@ and Simplified Chinese — switchable at runtime.
   pages need OCR (`pages_needing_ocr`). Pure-text PDFs never touch the network.
 - **Local markdown extraction** — headings, lists, code blocks, tables, links,
   and repeated-header/footer stripping — no OCR needed for native text PDFs.
-  Every converted page is delimited by a `<!-- Page N -->` marker (invisible
-  in rendered preview), which lets downstream tooling like the Excel export
-  attribute tables to their source page.
+  Every converted page is delimited by a `<!-- Page N -->` marker, which lets
+  downstream tooling like the Excel export attribute tables to their source
+  page. The preview can surface these markers as visible **"Page N" dividers**,
+  and both the render and raw preview tabs paginate by marker, rendering pages
+  lazily so large documents are never parsed in full at once.
 - **Configurable OCR providers** — any **OpenAI-chat-completions-compatible**
   vision API (`base_url`, per-vendor multiple models). API keys are encrypted
   at rest (DPAPI on Windows) and never sent back to the frontend. The first
@@ -44,12 +46,17 @@ and Simplified Chinese — switchable at runtime.
   overlay confirms the drop target; auto-detect runs immediately on select.
 - **Markdown → Excel** — batch-analyze `.md` files, auto-detect tables
   (count + rows), preview each table, and export to `.xlsx` (single file or
-  export-all into a chosen directory). Each table in the workbook is labeled
+  export-all into a chosen directory). The preview lazy-mounts table sections
+  and windows rows as you scroll, so even files with hundreds of tables /
+  thousands of rows stay responsive. Each table in the workbook is labeled
   with its source PDF page (`Page N`) when the file was produced by this app's
   PDF conversion; otherwise it falls back to `Table N`.
 - **Draw-a-table extraction** — in the PDF workspace, manually draw vertical
   separators over a rendered page to define table regions, then extract them
   into the Markdown output (undo/redo, per-page lines, Enter to extract).
+  Each extracted block is prefixed with its source page's `<!-- Page N -->`
+  marker, so merged tables keep their page attribution in the preview and
+  Excel export.
 - **Bilingual UI (i18n)** — English (default) and 中文 (Simplified Chinese)
   switched via a dropdown next to the theme toggle; the choice persists in
   `localStorage` and every string goes through a typed translation layer.
@@ -90,7 +97,7 @@ doccraft/
 │  │  │  ├─ drag-overlay.tsx     # Whole-window drag overlay
 │  │  │  ├─ use-pdf-drop.ts      # Whole-window drag & drop hook
 │  │  │  ├─ pdf-preview.tsx      # pdf.js inline preview (ScrollArea + dark mode)
-│  │  │  ├─ preview-pane.tsx     # Markdown preview (render / raw toggle)
+│  │  │  ├─ preview-pane.tsx     # Markdown preview (render / raw toggle, paginated + lazy)
 │  │  │  ├─ render-pdf-pages.ts  # Renders OCR pages to PNG base64 for the backend
 │  │  │  └─ status-bar.tsx       # Bottom status (type / pages / confidence / OCR)
 │  │  ├─ draw-table/             # Manual "draw-a-table" extraction
@@ -98,7 +105,7 @@ doccraft/
 │  │  │  ├─ draw-table-panel.tsx # Overlay + per-page lines + undo/redo
 │  │  │  ├─ canvas-overlay.tsx   # Draw/edit vertical separator lines
 │  │  │  └─ pdf-preview-with-draw.tsx
-│  │  ├─ md2xlsx/table-preview.tsx # Table-by-table preview of parsed .md
+│  │  ├─ md2xlsx/table-preview.tsx # Lazy table preview of parsed .md (IO-windowed rows)
 │  │  ├─ layout/app-header.tsx   # Top bar (brand, tabs, language + theme toggles)
 │  │  ├─ language-toggle.tsx     # English / 中文 dropdown
 │  │  ├─ theme-toggle.tsx
@@ -174,7 +181,7 @@ Result fields are serialized in camelCase; `PdfTypeDto` mirrors `pdf-inspector`'
     hybrid_page_ocr(session, p, im) → OCR provider per image, streamed one page at a time
     hybrid_session_finish(session)  → reassemble in doc order; abort on cancel/error
 [5] PDF preview                     → pdf.js fetches file via asset protocol → canvas pages
-[6] Markdown preview / export       → raw / rendered views, copy, save via dialog
+[6] Markdown preview / export       → paginated raw / rendered views (lazy per page), copy, save via dialog
 ```
 
 `hybrid_page_ocr` runs async so OCR HTTP calls never block the UI, and pages
@@ -239,8 +246,11 @@ cargo check --manifest-path src-tauri/Cargo.toml
   detection, table-by-table preview, and `.xlsx` export (single or all).
   Plus manual **draw-a-table** extraction for scanned PDF regions.
 - **M4 (mostly done)** — Polish: **bilingual i18n (en/zh, runtime toggle)**
-  and dark mode. (Config import/export and release packaging MSI/NSIS still
-  planned.)
+  and dark mode. **Large-document performance**: the Markdown preview and the
+  Excel table preview both render lazily (page / table sections + windowed
+  rows via IntersectionObserver, real-height placeholders), so big files no
+  longer freeze the UI. (Config import/export and release packaging MSI/NSIS
+  still planned.)
 
 ## Configuration
 
