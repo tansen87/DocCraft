@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { join } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
@@ -26,7 +26,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { analyzeMarkdown, exportMarkdownTables } from "@/lib/ipc";
+import {
+  analyzeMarkdown,
+  exportMarkdownTables,
+  getAppSettings,
+} from "@/lib/ipc";
 import { useI18n } from "@/i18n";
 import type { MdAnalyzeResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -91,6 +95,31 @@ export function MdToXlsxView() {
     new Set(),
   );
   const [exportingAll, setExportingAll] = useState(false);
+  const [tablesOnly, setTablesOnly] = useState(true);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTablesOnly() {
+      try {
+        const s = await getAppSettings();
+        if (!cancelled) setTablesOnly(s.excelTablesOnly);
+      } catch {
+        /* keep the last known value */
+      }
+    }
+    void loadTablesOnly();
+    const el = rootRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth > 0) void loadTablesOnly();
+    });
+    ro.observe(el);
+    return () => {
+      cancelled = true;
+      ro.disconnect();
+    };
+  }, []);
 
   const itemsRef = useRef<MdItem[]>([]);
   const mutate = useCallback((fn: (prev: MdItem[]) => MdItem[]) => {
@@ -173,7 +202,7 @@ export function MdToXlsxView() {
   }
 
   async function exportItem(item: MdItem): Promise<void> {
-    if (!item.result || item.result.tableCount === 0) return;
+    if (!item.result || (tablesOnly && item.result.tableCount === 0)) return;
     setExportingIds((prev) => new Set(prev).add(item.id));
     try {
       const base = item.name.replace(/\.md$/i, "") || "document";
@@ -202,7 +231,10 @@ export function MdToXlsxView() {
 
   async function exportAll(): Promise<void> {
     const ready = itemsRef.current.filter(
-      (it) => it.status === "ready" && it.result && it.result.tableCount > 0,
+      (it) =>
+        it.status === "ready" &&
+        it.result &&
+        (it.result.tableCount > 0 || !tablesOnly),
     );
     if (ready.length === 0) {
       toast.error(t("toast.noAvailableDocs"), {
@@ -247,7 +279,10 @@ export function MdToXlsxView() {
   const previewing = Boolean(activeItem);
   if (previewing && activeItem) {
     return (
-      <div className="relative flex min-h-0 flex-1 flex-col gap-3">
+      <div
+        ref={rootRef}
+        className="relative flex min-h-0 flex-1 flex-col gap-3"
+      >
         {dragging ? (
           <DragOverlay
             title={t("overlay.releaseToAdd")}
@@ -273,7 +308,10 @@ export function MdToXlsxView() {
   if (items.length > 1) {
     const readyCount = items.filter((it) => it.status === "ready").length;
     return (
-      <div className="relative flex min-h-0 flex-1 flex-col gap-3">
+      <div
+        ref={rootRef}
+        className="relative flex min-h-0 flex-1 flex-col gap-3"
+      >
         {dragging ? (
           <DragOverlay
             title={t("overlay.releaseToAdd")}
@@ -391,7 +429,7 @@ export function MdToXlsxView() {
                         <div className="flex items-center justify-end gap-1">
                           {item.status === "ready" &&
                           item.result &&
-                          item.result.tableCount > 0 ? (
+                          (item.result.tableCount > 0 || !tablesOnly) ? (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Button
@@ -458,7 +496,10 @@ export function MdToXlsxView() {
   if (items.length === 1) {
     const item = items[0];
     return (
-      <div className="relative flex min-h-0 flex-1 flex-col gap-3">
+      <div
+        ref={rootRef}
+        className="relative flex min-h-0 flex-1 flex-col gap-3"
+      >
         {dragging ? (
           <DragOverlay
             title={t("overlay.releaseToAdd")}
@@ -501,7 +542,7 @@ export function MdToXlsxView() {
               disabled={
                 item.status !== "ready" ||
                 !item.result ||
-                item.result.tableCount === 0 ||
+                (tablesOnly && item.result.tableCount === 0) ||
                 exportingIds.has(item.id)
               }
             >
@@ -525,7 +566,7 @@ export function MdToXlsxView() {
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col gap-3">
+    <div ref={rootRef} className="relative flex min-h-0 flex-1 flex-col gap-3">
       {dragging ? (
         <DragOverlay
           title={t("overlay.releaseToAdd")}

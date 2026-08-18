@@ -105,7 +105,6 @@ const en = {
   "settings.noVendorsDesc":
     "Add an OpenAI-compatible OCR service (e.g. OpenAI / vLLM / Ollama).",
   "settings.addVendor": "Add vendor",
-  "settings.saveConfig": "Save configuration",
   "settings.defaultVendorName": "Vendor {n}",
   "settings.vendorName": "Vendor name",
   "settings.baseUrl": "Base URL (OpenAI-compatible)",
@@ -134,6 +133,12 @@ const en = {
   "settings.cache": "Text Cache",
   "settings.cacheDesc":
     "Controls the in-memory cache of decoded PDF text used by draw-table extraction. Caching avoids re-parsing the document on every extraction, at the cost of holding one decoded copy in memory.",
+  "settings.excel": "Excel Export",
+  "settings.excelDesc":
+    "Controls how Markdown is written into an Excel workbook when exporting.",
+  "settings.excelTablesOnly": "Only convert tables to Excel",
+  "settings.excelTablesOnlyDesc":
+    "When enabled, only the GFM tables of the document are exported. Turn it off to write the whole document — tables and plain text — into the workbook.",
 
   "toolbar.remove": "Remove",
   "toolbar.drawTable": "Draw Table",
@@ -303,7 +308,6 @@ const zh: Record<TranslationKey, string> = {
   "settings.noVendorsDesc":
     "添加一个 OpenAI 兼容的 OCR 服务(如 OpenAI / vLLM / Ollama).",
   "settings.addVendor": "添加供应商",
-  "settings.saveConfig": "保存配置",
   "settings.defaultVendorName": "供应商 {n}",
   "settings.vendorName": "供应商名称",
   "settings.baseUrl": "服务地址 (OpenAI 兼容 Base URL)",
@@ -332,6 +336,11 @@ const zh: Record<TranslationKey, string> = {
   "settings.cache": "文本缓存",
   "settings.cacheDesc":
     "控制划线表格提取时解码后 PDF 文本的内存缓存. 缓存可避免每次提取都重新解析文档,代价是在内存中保留一份解码副本.",
+  "settings.excel": "Excel 导出",
+  "settings.excelDesc": "控制 Markdown 导出到 Excel 工作簿时的写入内容.",
+  "settings.excelTablesOnly": "仅将表格转换为 Excel",
+  "settings.excelTablesOnlyDesc":
+    "开启时只导出文档中的 GFM 表格;关闭后会将整个文档内容(表格和普通文本)都写入工作簿.",
 
   "toolbar.remove": "移除",
   "toolbar.drawTable": "划线表格",

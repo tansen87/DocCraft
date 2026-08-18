@@ -1,9 +1,15 @@
 use std::time::Instant;
 
-use rust_xlsxwriter::{Format, FormatAlign, FormatBorder, Workbook};
+use rust_xlsxwriter::{Format, FormatAlign, FormatBorder, Workbook, Worksheet};
 
 use crate::core::page_marker::page_from_line;
 use crate::models::{MdAnalyzeResult, MdExportResult, MdTable};
+
+/// A block of Markdown content: either a GFM table or a plain text line.
+enum MdBlock {
+  Table(MdTable),
+  Line(String),
+}
 
 /// A line is a GFM table delimiter when it only contains `-`, `:`, `|` and
 /// spaces between the surrounding pipes, e.g. `| --- | :---: | --------- |`.
@@ -46,11 +52,12 @@ fn split_cells(line: &str) -> Vec<String> {
   cells
 }
 
-/// Extract every GitHub-Flavored Markdown table from a document. Tables that
-/// follow a `<!-- Page N -->` marker are tagged with that source page.
-pub fn parse_md_tables(content: &str) -> Vec<MdTable> {
+/// Split a Markdown document into ordered blocks: GFM tables and plain text
+/// lines. Tables that follow a `<!-- Page N -->` marker are tagged with that
+/// source page; the marker persists across following blocks.
+fn parse_md_blocks(content: &str) -> Vec<MdBlock> {
   let lines: Vec<&str> = content.lines().collect();
-  let mut tables = Vec::new();
+  let mut blocks = Vec::new();
   let mut current_page: Option<u32> = None;
   let mut i = 0usize;
   while i < lines.len() {
@@ -79,17 +86,33 @@ pub fn parse_md_tables(content: &str) -> Vec<MdTable> {
         rows.push(padded);
         j += 1;
       }
-      tables.push(MdTable {
+      blocks.push(MdBlock::Table(MdTable {
         columns,
         rows,
         page: current_page,
-      });
+      }));
       i = j;
     } else {
+      let text = lines[i].trim().to_string();
+      if !text.is_empty() {
+        blocks.push(MdBlock::Line(text));
+      }
       i += 1;
     }
   }
-  tables
+  blocks
+}
+
+/// Extract every GitHub-Flavored Markdown table from a document. Tables that
+/// follow a `<!-- Page N -->` marker are tagged with that source page.
+pub fn parse_md_tables(content: &str) -> Vec<MdTable> {
+  parse_md_blocks(content)
+    .into_iter()
+    .filter_map(|block| match block {
+      MdBlock::Table(table) => Some(table),
+      MdBlock::Line(_) => None,
+    })
+    .collect()
 }
 
 fn read_file(path: &str) -> Result<String, String> {
@@ -110,18 +133,56 @@ pub fn analyze_markdown(path: &str) -> Result<MdAnalyzeResult, String> {
   })
 }
 
-/// Parse the tables from `md_path` and stack them one below the other into a
-/// single worksheet of the workbook written to `xlsx_path`.
-pub fn export_markdown_tables(md_path: &str, xlsx_path: &str) -> Result<MdExportResult, String> {
+/// Write one table block (label row + header row + data rows + blank row) at
+/// the current `row`, advancing it afterwards.
+fn write_table(
+  ws: &mut Worksheet,
+  table: &MdTable,
+  idx: usize,
+  row: &mut u32,
+  total_rows: &mut usize,
+  header_fmt: &Format,
+  cell_fmt: &Format,
+  label_fmt: &Format,
+) -> Result<(), String> {
+  let label = match table.page {
+    Some(page) => format!("Page {page}"),
+    None => format!("Table {}", idx + 1),
+  };
+  ws.write_string_with_format(*row, 0, &label, label_fmt)
+    .map_err(|e| e.to_string())?;
+  *row += 1;
+  for (col, name) in table.columns.iter().enumerate() {
+    ws.write_string_with_format(*row, col as u16, name, header_fmt)
+      .map_err(|e| e.to_string())?;
+  }
+  *row += 1;
+  for r in &table.rows {
+    for (col, value) in r.iter().enumerate() {
+      ws.write_string_with_format(*row, col as u16, value, cell_fmt)
+        .map_err(|e| e.to_string())?;
+    }
+    *row += 1;
+    *total_rows += 1;
+  }
+  *row += 1;
+  Ok(())
+}
+
+/// Parse the Markdown file at `md_path` and write it into the workbook at
+/// `xlsx_path`. When `tables_only` is `true` only the GFM tables are exported;
+/// otherwise the whole document (tables and plain text lines, in order) is
+/// written into a single worksheet.
+pub fn export_markdown_tables(
+  md_path: &str,
+  xlsx_path: &str,
+  tables_only: bool,
+) -> Result<MdExportResult, String> {
   let content = read_file(md_path)?;
   let start = Instant::now();
-  let tables = parse_md_tables(&content);
-  if tables.is_empty() {
-    return Err("Table not found in Markdown".to_string());
-  }
 
   let mut workbook = Workbook::new();
-  let ws = workbook.add_worksheet();
+  let mut ws = workbook.add_worksheet();
 
   let header_fmt = Format::new()
     .set_bold()
@@ -136,34 +197,61 @@ pub fn export_markdown_tables(md_path: &str, xlsx_path: &str) -> Result<MdExport
 
   let mut row: u32 = 0;
   let mut total_rows = 0usize;
-  for (idx, table) in tables.iter().enumerate() {
-    let label = match table.page {
-      Some(page) => format!("Page {page}"),
-      None => format!("Table {}", idx + 1),
-    };
-    ws.write_string_with_format(row, 0, &label, &label_fmt)
-      .map_err(|e| e.to_string())?;
-    row += 1;
-    for (col, name) in table.columns.iter().enumerate() {
-      ws.write_string_with_format(row, col as u16, name, &header_fmt)
-        .map_err(|e| e.to_string())?;
+  let mut table_count = 0usize;
+
+  if tables_only {
+    let tables = parse_md_tables(&content);
+    if tables.is_empty() {
+      return Err("Table not found in Markdown".to_string());
     }
-    row += 1;
-    for r in &table.rows {
-      for (col, value) in r.iter().enumerate() {
-        ws.write_string_with_format(row, col as u16, value, &cell_fmt)
-          .map_err(|e| e.to_string())?;
+    for (idx, table) in tables.iter().enumerate() {
+      write_table(
+        &mut ws,
+        table,
+        idx,
+        &mut row,
+        &mut total_rows,
+        &header_fmt,
+        &cell_fmt,
+        &label_fmt,
+      )?;
+    }
+    table_count = tables.len();
+  } else {
+    let blocks = parse_md_blocks(&content);
+    if blocks.is_empty() {
+      return Err("No content found in Markdown".to_string());
+    }
+    for block in &blocks {
+      match block {
+        MdBlock::Table(table) => {
+          write_table(
+            &mut ws,
+            table,
+            table_count,
+            &mut row,
+            &mut total_rows,
+            &header_fmt,
+            &cell_fmt,
+            &label_fmt,
+          )?;
+          table_count += 1;
+        }
+        MdBlock::Line(text) => {
+          ws.write_string_with_format(row, 0, text, &cell_fmt)
+            .map_err(|e| e.to_string())?;
+          row += 1;
+          total_rows += 1;
+        }
       }
-      row += 1;
-      total_rows += 1;
     }
-    row += 1;
   }
+
   ws.autofit();
   workbook.save(xlsx_path).map_err(|e| e.to_string())?;
 
   Ok(MdExportResult {
-    table_count: tables.len(),
+    table_count,
     total_rows,
     processing_time_ms: start.elapsed().as_millis() as u64,
   })
@@ -249,9 +337,32 @@ mod tests {
     )
     .unwrap();
     let res =
-      export_markdown_tables(md_path.to_str().unwrap(), xlsx_path.to_str().unwrap()).unwrap();
+      export_markdown_tables(md_path.to_str().unwrap(), xlsx_path.to_str().unwrap(), true).unwrap();
     assert_eq!(res.table_count, 1);
     assert_eq!(res.total_rows, 2);
+    assert!(xlsx_path.exists());
+    assert!(xlsx_path.metadata().unwrap().len() > 0);
+    std::fs::remove_file(&md_path).ok();
+    std::fs::remove_file(&xlsx_path).ok();
+  }
+
+  #[test]
+  fn export_all_data_includes_plain_text() {
+    let md_path = std::env::temp_dir().join("md2xlsx_all_data.md");
+    let xlsx_path = std::env::temp_dir().join("md2xlsx_all_data_out.xlsx");
+    std::fs::write(
+      &md_path,
+      "intro paragraph\n\n| Col A | Col B |\n|---|---|\n| 1 | x |\n\noutro text\n",
+    )
+    .unwrap();
+    let res = export_markdown_tables(
+      md_path.to_str().unwrap(),
+      xlsx_path.to_str().unwrap(),
+      false,
+    )
+    .unwrap();
+    assert_eq!(res.table_count, 1);
+    assert_eq!(res.total_rows, 3); // intro, 1 table row, outro
     assert!(xlsx_path.exists());
     assert!(xlsx_path.metadata().unwrap().len() > 0);
     std::fs::remove_file(&md_path).ok();
@@ -263,7 +374,7 @@ mod tests {
     let md_path = std::env::temp_dir().join("md2xlsx_sample2.md");
     let xlsx_path = std::env::temp_dir().join("md2xlsx_sample2_out.xlsx");
     std::fs::write(&md_path, "just some text\n").unwrap();
-    let res = export_markdown_tables(md_path.to_str().unwrap(), xlsx_path.to_str().unwrap());
+    let res = export_markdown_tables(md_path.to_str().unwrap(), xlsx_path.to_str().unwrap(), true);
     assert!(res.is_err());
     std::fs::remove_file(&md_path).ok();
   }

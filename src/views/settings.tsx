@@ -4,6 +4,7 @@ import {
   Database,
   Eye,
   EyeOff,
+  FileSpreadsheet,
   KeyRound,
   Loader2,
   Plus,
@@ -34,11 +35,15 @@ import { useI18n } from "@/i18n";
 import type { OcrModel, OcrVendor, OcrVendorInput } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type SettingsSection = "ocr" | "threads" | "cache";
+type SettingsSection = "ocr" | "threads" | "cache" | "excel";
 
 const SECTIONS: {
   id: SettingsSection;
-  labelKey: "settings.ocr" | "settings.threads" | "settings.cache";
+  labelKey:
+    | "settings.ocr"
+    | "settings.threads"
+    | "settings.cache"
+    | "settings.excel";
   icon: typeof ScanText;
 }[] = [
   {
@@ -55,6 +60,11 @@ const SECTIONS: {
     id: "cache",
     labelKey: "settings.cache",
     icon: Database,
+  },
+  {
+    id: "excel",
+    labelKey: "settings.excel",
+    icon: FileSpreadsheet,
   },
 ];
 
@@ -226,6 +236,13 @@ export function SettingsView() {
             <section id="settings-cache" className="scroll-mt-3">
               <SectionHeader icon={Database} title={t("settings.cache")} />
               <CacheSettingsPanel />
+            </section>
+            <section id="settings-excel" className="scroll-mt-3">
+              <SectionHeader
+                icon={FileSpreadsheet}
+                title={t("settings.excel")}
+              />
+              <ExcelSettingsPanel />
             </section>
           </div>
         </div>
@@ -419,7 +436,7 @@ function OcrSettingsPanel() {
                 {t("settings.noVendorsDesc")}
               </p>
             </div>
-            <Button variant="outline" size="sm" onClick={addVendor}>
+            <Button variant="secondary" size="sm" onClick={addVendor}>
               <Plus />
               {t("settings.addVendor")}
             </Button>
@@ -442,13 +459,13 @@ function OcrSettingsPanel() {
 
       {vendors.length > 0 ? (
         <div className="flex items-center justify-between">
-          <Button variant="outline" size="sm" onClick={addVendor}>
+          <Button variant="secondary" size="sm" onClick={addVendor}>
             <Plus />
             {t("settings.addVendor")}
           </Button>
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleSave} disabled={saving} variant="secondary">
             {saving ? <Loader2 className="animate-spin" /> : <Save />}
-            {t("settings.saveConfig")}
+            {t("settings.save")}
           </Button>
         </div>
       ) : null}
@@ -467,6 +484,7 @@ function ThreadSettingsPanel() {
   const { t } = useI18n();
   const [value, setValue] = useState<number>(1);
   const [cacheExtracted, setCacheExtracted] = useState<boolean>(true);
+  const [excelTablesOnly, setExcelTablesOnly] = useState<boolean>(true);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -477,6 +495,7 @@ function ThreadSettingsPanel() {
         if (cancelled) return;
         setValue(clampThread(s.maxConcurrent));
         setCacheExtracted(s.cacheExtractedText);
+        setExcelTablesOnly(s.excelTablesOnly);
         setLoaded(true);
       })
       .catch((e) =>
@@ -492,9 +511,12 @@ function ThreadSettingsPanel() {
     setSaving(true);
     setValue(n);
     try {
+      const latest = await getAppSettings();
       await setAppSettings({
+        ...latest,
         maxConcurrent: n,
         cacheExtractedText: cacheExtracted,
+        excelTablesOnly,
       });
       setMaxConcurrent(n);
       toast.success(t("toast.concurrencySaved"), {
@@ -531,7 +553,11 @@ function ThreadSettingsPanel() {
               placeholder={t("settings.threadPlaceholder")}
             />
           </div>
-          <Button onClick={handleSave} disabled={saving || !loaded}>
+          <Button
+            onClick={handleSave}
+            disabled={saving || !loaded}
+            variant="secondary"
+          >
             {saving ? <Loader2 className="animate-spin" /> : <Save />}
             {t("settings.save")}
           </Button>
@@ -548,6 +574,7 @@ function CacheSettingsPanel() {
   const { t } = useI18n();
   const [maxConcurrent, setMaxConcurrentValue] = useState<number>(1);
   const [cacheExtracted, setCacheExtracted] = useState<boolean>(true);
+  const [excelTablesOnly, setExcelTablesOnly] = useState<boolean>(true);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -558,6 +585,7 @@ function CacheSettingsPanel() {
         if (cancelled) return;
         setMaxConcurrentValue(clampThread(s.maxConcurrent));
         setCacheExtracted(s.cacheExtractedText);
+        setExcelTablesOnly(s.excelTablesOnly);
         setLoaded(true);
       })
       .catch((e) =>
@@ -571,9 +599,12 @@ function CacheSettingsPanel() {
   async function handleSave() {
     setSaving(true);
     try {
+      const latest = await getAppSettings();
       await setAppSettings({
+        ...latest,
         maxConcurrent,
         cacheExtractedText: cacheExtracted,
+        excelTablesOnly,
       });
       toast.success(t("toast.configSaved"));
     } catch (e) {
@@ -609,7 +640,86 @@ function CacheSettingsPanel() {
           {t("settings.cacheExtractedHint")}
         </p>
         <div className="flex justify-end">
-          <Button onClick={handleSave} disabled={saving || !loaded}>
+          <Button
+            onClick={handleSave}
+            disabled={saving || !loaded}
+            variant="secondary"
+          >
+            {saving ? <Loader2 className="animate-spin" /> : <Save />}
+            {t("settings.save")}
+          </Button>
+        </div>
+      </Card>
+    </>
+  );
+}
+
+function ExcelSettingsPanel() {
+  const { t } = useI18n();
+  const [excelTablesOnly, setExcelTablesOnly] = useState<boolean>(true);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAppSettings()
+      .then((s) => {
+        if (cancelled) return;
+        setExcelTablesOnly(s.excelTablesOnly);
+        setLoaded(true);
+      })
+      .catch((e) =>
+        toast.error(t("toast.loadSettingsFailed"), { description: String(e) }),
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const latest = await getAppSettings();
+      await setAppSettings({
+        ...latest,
+        excelTablesOnly,
+      });
+      toast.success(t("toast.configSaved"));
+    } catch (e) {
+      toast.error(t("toast.saveFailed"), { description: String(e) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="space-y-1.5">
+        <p className="text-sm text-muted-foreground">
+          {t("settings.excelDesc")}
+        </p>
+      </div>
+
+      <Card className="gap-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label>{t("settings.excelTablesOnly")}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t("settings.excelTablesOnlyDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={excelTablesOnly}
+            onCheckedChange={setExcelTablesOnly}
+            disabled={!loaded}
+          />
+        </div>
+        <div className="flex justify-end">
+          <Button
+            onClick={handleSave}
+            disabled={saving || !loaded}
+            variant="secondary"
+          >
             {saving ? <Loader2 className="animate-spin" /> : <Save />}
             {t("settings.save")}
           </Button>
@@ -738,7 +848,7 @@ function VendorCard({
             </div>
           ))}
         </div>
-        <Button variant="outline" size="sm" onClick={onAddModel}>
+        <Button variant="secondary" size="sm" onClick={onAddModel}>
           <Plus />
           {t("settings.addModel")}
         </Button>

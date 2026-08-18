@@ -76,6 +76,12 @@ export interface AppSettings {
    * document decode stays resident); turn off for very large documents.
    */
   cacheExtractedText: boolean;
+  /**
+   * Only export the GFM tables when converting Markdown to Excel; when false,
+   * the whole document content (tables and plain text) is written into the
+   * workbook.
+   */
+  excelTablesOnly: boolean;
 }
 
 /** A single GitHub-Flavored Markdown table parsed by the backend. */

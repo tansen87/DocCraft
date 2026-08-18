@@ -132,14 +132,17 @@ async fn analyze_markdown(path: String) -> Result<MdAnalyzeResult, String> {
     .map_err(|e| e.to_string())?
 }
 
-/// Export all tables of a Markdown file into a `.xlsx` workbook.
+/// Export the Markdown content of a file (tables only, or the whole document)
+/// into a `.xlsx` workbook.
 #[tauri::command]
 async fn export_markdown_tables(
+  app: tauri::AppHandle,
   md_path: String,
   xlsx_path: String,
 ) -> Result<MdExportResult, String> {
   tauri::async_runtime::spawn_blocking(move || {
-    core::md_to_xlsx::export_markdown_tables(&md_path, &xlsx_path)
+    let tables_only = core::settings::get_app_settings(&app)?.excel_tables_only;
+    core::md_to_xlsx::export_markdown_tables(&md_path, &xlsx_path, tables_only)
   })
   .await
   .map_err(|e| e.to_string())?

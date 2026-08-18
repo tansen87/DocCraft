@@ -284,6 +284,11 @@ pub struct AppSettings {
   /// off for very large documents.
   #[serde(default = "default_true")]
   pub cache_extracted_text: bool,
+  /// Only export the GFM tables when converting Markdown to Excel. When
+  /// `false`, the whole document content (tables and plain text) is written
+  /// into the workbook.
+  #[serde(default = "default_true")]
+  pub excel_tables_only: bool,
 }
 
 fn default_true() -> bool {
@@ -295,6 +300,7 @@ impl Default for AppSettings {
     Self {
       max_concurrent: 1,
       cache_extracted_text: true,
+      excel_tables_only: true,
     }
   }
 }
