@@ -4,6 +4,7 @@ use std::time::Instant;
 use pdf_inspector::TextItem;
 use pdf_inspector::extractor::ItemType;
 
+use crate::core::page_marker::page_marker;
 use crate::models::{
   DrawTableRegion, DrawTableRequest, DrawTableResult, MdTable, PageDrawTable, TableRegionInfo,
 };
@@ -650,12 +651,23 @@ pub fn extract_tables_and_merge(
     };
   }
 
-  // Build the table markdown section
+  // Build the table markdown section. Each table was recorded alongside a
+  // region carrying its source page, so we emit a `<!-- Page N -->` marker
+  // before each new page's tables. The frontend Markdown preview paginates on
+  // these markers, so extracting a large document never renders every table at
+  // once on the UI thread.
   let mut table_md = String::new();
+  let mut current_page: Option<u32> = None;
 
-  for (idx, table) in result.tables.iter().enumerate() {
+  for (idx, (table, region)) in result.tables.iter().zip(result.regions.iter()).enumerate() {
     if idx > 0 {
       table_md.push_str("\n\n---\n\n");
+    }
+
+    if current_page != Some(region.page) {
+      current_page = Some(region.page);
+      table_md.push_str(&page_marker(region.page));
+      table_md.push_str("\n\n");
     }
 
     // Build GFM table

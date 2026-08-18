@@ -24,20 +24,26 @@ interface MarkdownPage {
   content: string;
 }
 
-/** Split markdown into per-page chunks using the app's own page markers. */
+/**
+ * Split markdown into per-page chunks using the app's own page markers.
+ * Each chunk carries the marker that PRECEDES its content, so page N's
+ * content is labelled by the `<!-- Page N -->` marker at its start.
+ */
 function splitMarkdownPages(markdown: string): MarkdownPage[] {
   const pages: MarkdownPage[] = [];
   const re = new RegExp(PAGE_MARKER_RE.source, "g");
   let lastIndex = 0;
   let match: RegExpExecArray | null;
+  let pendingMarker = "";
   while ((match = re.exec(markdown)) !== null) {
     pages.push({
-      marker: match[0],
+      marker: pendingMarker,
       content: markdown.slice(lastIndex, match.index),
     });
+    pendingMarker = match[0];
     lastIndex = match.index + match[0].length;
   }
-  pages.push({ marker: "", content: markdown.slice(lastIndex) });
+  pages.push({ marker: pendingMarker, content: markdown.slice(lastIndex) });
   return pages;
 }
 
@@ -57,11 +63,28 @@ const MarkdownPageView = memo(function MarkdownPageView({
   );
 });
 
+/** Visible "Page N" divider shown at each page marker when enabled. */
+function PageBreakMarker({ marker }: { marker: string }) {
+  const { t } = useI18n();
+  const page = marker.match(/\d+/)?.[0];
+  if (!page) return null;
+  return (
+    <div className="mb-2 flex items-center gap-2">
+      <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+        {t("preview.page", { page })}
+      </span>
+      <div className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
 interface PreviewPaneProps {
   markdown: string;
   processingTimeMs: number;
   /** Export the markdown. The caller shows its own success/failure toast. */
   onExport: () => Promise<void>;
+  /** Render visible "Page N" dividers at each page marker (default: hidden). */
+  showPageMarkers?: boolean;
   className?: string;
 }
 
@@ -69,6 +92,7 @@ export function PreviewPane({
   markdown,
   processingTimeMs,
   onExport,
+  showPageMarkers = false,
   className,
 }: PreviewPaneProps) {
   const { t } = useI18n();
@@ -224,7 +248,14 @@ export function PreviewPane({
                 }
               >
                 {visiblePages.has(i) ? (
-                  <MarkdownPageView markdown={pg.marker + pg.content} />
+                  showPageMarkers && pg.marker ? (
+                    <div>
+                      <PageBreakMarker marker={pg.marker} />
+                      <MarkdownPageView markdown={pg.content} />
+                    </div>
+                  ) : (
+                    <MarkdownPageView markdown={pg.marker + pg.content} />
+                  )
                 ) : null}
               </div>
             ))}

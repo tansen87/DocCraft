@@ -167,10 +167,12 @@ const en = {
   "preview.timeChars": "Converted in {time} ms · {chars} chars",
   "preview.render": "Render",
   "preview.raw": "Raw",
+  "preview.page": "Page {page}",
 
   "tablepreview.title": "Table Preview",
   "tablepreview.summary": "{count} tables · {rows} rows of data",
   "tablepreview.table": "Table {index}",
+  "tablepreview.loadMore": "Scroll to load more rows",
   "tablepreview.empty": "No tables detected",
 
   "drawtable.instruction":
@@ -357,10 +359,12 @@ const zh: Record<TranslationKey, string> = {
   "preview.timeChars": "转换耗时 {time} ms · {chars} 字符",
   "preview.render": "渲染",
   "preview.raw": "原始",
+  "preview.page": "第 {page} 页",
 
   "tablepreview.title": "表格预览",
   "tablepreview.summary": "共 {count} 张表格 · {rows} 行数据",
   "tablepreview.table": "表格 {index}",
+  "tablepreview.loadMore": "滚动加载更多行",
   "tablepreview.empty": "未检测到表格",
 
   "drawtable.instruction": "点击添加竖线 · 双击删除 · 拖拽调整位置",
