@@ -278,10 +278,23 @@ pub struct DrawTableResult {
 pub struct AppSettings {
   /// Max concurrent batch conversions (clamped to 1–16).
   pub max_concurrent: u32,
+  /// Cache decoded line-draw text items per document, so repeated extractions
+  /// reuse the font/CMap + content-stream decode instead of paying for it every
+  /// time. Costs memory (one full-document decode stays resident); switch it
+  /// off for very large documents.
+  #[serde(default = "default_true")]
+  pub cache_extracted_text: bool,
+}
+
+fn default_true() -> bool {
+  true
 }
 
 impl Default for AppSettings {
   fn default() -> Self {
-    Self { max_concurrent: 1 }
+    Self {
+      max_concurrent: 1,
+      cache_extracted_text: true,
+    }
   }
 }

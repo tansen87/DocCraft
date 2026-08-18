@@ -148,11 +148,13 @@ async fn export_markdown_tables(
 /// Extract tables from a PDF based on user-drawn lines.
 #[tauri::command]
 async fn extract_draw_table(
+  app: tauri::AppHandle,
   path: String,
   draw_data: DrawTableRequest,
 ) -> Result<DrawTableResult, String> {
   tauri::async_runtime::spawn_blocking(move || {
-    core::line_draw::extract_tables_from_draw_lines(&path, &draw_data)
+    let use_cache = core::settings::get_app_settings(&app)?.cache_extracted_text;
+    core::line_draw::extract_tables_from_draw_lines(&path, &draw_data, use_cache)
   })
   .await
   .map_err(|e| e.to_string())?
@@ -161,12 +163,19 @@ async fn extract_draw_table(
 /// Extract tables from user-drawn lines and merge them into an existing Markdown document.
 #[tauri::command]
 async fn extract_draw_table_to_markdown(
+  app: tauri::AppHandle,
   path: String,
   draw_data: DrawTableRequest,
   existing_markdown: Option<String>,
 ) -> Result<String, String> {
   tauri::async_runtime::spawn_blocking(move || {
-    core::line_draw::extract_tables_and_merge(&path, &draw_data, existing_markdown.as_deref())
+    let use_cache = core::settings::get_app_settings(&app)?.cache_extracted_text;
+    core::line_draw::extract_tables_and_merge(
+      &path,
+      &draw_data,
+      existing_markdown.as_deref(),
+      use_cache,
+    )
   })
   .await
   .map_err(|e| e.to_string())?

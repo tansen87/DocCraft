@@ -128,6 +128,11 @@ const en = {
   "settings.save": "Save",
   "settings.threadsHint2":
     "Keeping the default value of 1 is recommended; each task uses extra network requests when converting OCR documents.",
+  "settings.cacheExtracted": "Cache extracted text (draw-table)",
+  "settings.cacheExtractedDesc":
+    "Keep the decoded text of the current PDF in memory so repeated draw-table extractions reuse the font decode instead of re-parsing the document each time.",
+  "settings.cacheExtractedHint":
+    "Enabled by default. The cache is only filled by full-document extraction — the first-5-pages preview never caches — and is cleared automatically when you open another file. Disable for very large documents to free memory.",
 
   "toolbar.remove": "Remove",
   "toolbar.drawTable": "Draw Table",
@@ -320,6 +325,11 @@ const zh: Record<TranslationKey, string> = {
   "settings.save": "保存",
   "settings.threadsHint2":
     "建议保持默认值 1;转换含 OCR 的文档时,每个任务会额外占用网络请求.",
+  "settings.cacheExtracted": "缓存提取文本(划线表格)",
+  "settings.cacheExtractedDesc":
+    "将当前 PDF 解码后的文本驻留在内存中,重复划线提取时直接复用字体解码结果,而无需每次重新解析文档.",
+  "settings.cacheExtractedHint":
+    "默认开启. 缓存仅在提取全部页时填充,前5页预览不会缓存;切换打开其他文件时缓存自动清空. 超大文档可关闭以释放内存.",
 
   "toolbar.remove": "移除",
   "toolbar.drawTable": "划线表格",

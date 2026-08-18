@@ -70,6 +70,12 @@ export interface HybridSessionInfo extends DetectResult {
 export interface AppSettings {
   /** Max concurrent batch conversions (1–16). */
   maxConcurrent: number;
+  /**
+   * Cache decoded line-draw text items per document so repeated extractions
+   * reuse the font/CMap + content-stream decode. Costs memory (one full
+   * document decode stays resident); turn off for very large documents.
+   */
+  cacheExtractedText: boolean;
 }
 
 /** A single GitHub-Flavored Markdown table parsed by the backend. */

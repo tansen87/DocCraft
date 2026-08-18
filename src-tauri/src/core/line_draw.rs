@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Mutex;
 use std::time::Instant;
 
 use pdf_inspector::TextItem;
@@ -37,6 +38,38 @@ fn extract_text_elements(
 ) -> Result<Vec<TextItem>, String> {
   pdf_inspector::extract_text_with_positions_pages(path, page_filter)
     .map_err(|e| format!("Text extraction failed: {e}"))
+}
+
+/// Full-document text cache: a single slot holds the decoded items for the
+/// currently open PDF. Extracted text does not depend on the drawn lines, so
+/// full-document extractions decode the whole document once and reuse it on
+/// every subsequent draw/merge — the dominant cost (font `/ToUnicode` CMap +
+/// content-stream decoding) is paid a single time per document instead of on
+/// every extraction. Switching files evicts the old document. The "first-N
+/// pages" preview never populates this cache (it decodes only the previewed
+/// pages), so it stays empty until a real full extraction happens.
+struct PageCache {
+  path: String,
+  items: Vec<TextItem>,
+}
+
+static TEXT_ITEM_CACHE: Mutex<Option<PageCache>> = Mutex::new(None);
+
+/// Return the full-document text items for `path`, populating the single-slot
+/// cache on the first call and cloning it on later calls.
+fn cached_text_elements(path: &str) -> Result<Vec<TextItem>, String> {
+  let mut guard = TEXT_ITEM_CACHE.lock().unwrap();
+  if let Some(cache) = guard.as_ref() {
+    if cache.path == path {
+      return Ok(cache.items.clone());
+    }
+  }
+  let items = extract_text_elements(path, None)?;
+  *guard = Some(PageCache {
+    path: path.to_string(),
+    items: items.clone(),
+  });
+  Ok(items)
 }
 
 /// Map pdf-inspector text items onto the local element type, keeping only
@@ -458,9 +491,14 @@ fn extract_table_from_rectangle(elements: &[TextElement], rect: &DrawTableRegion
 }
 
 /// Main function: extract tables from a PDF based on user-drawn lines.
+///
+/// `use_cache` enables the full-document text cache (see [`cached_text_elements`]):
+/// when on, the first extraction decodes the whole document and later calls
+/// reuse it; when off, only the pages in the request are decoded each time.
 pub fn extract_tables_from_draw_lines(
   path: &str,
   request: &DrawTableRequest,
+  use_cache: bool,
 ) -> Result<DrawTableResult, String> {
   let start = Instant::now();
 
@@ -509,10 +547,25 @@ pub fn extract_tables_from_draw_lines(
     )
   };
 
+  let is_preview = use_for_all_pages && max_pages.is_some();
   // Extract positioned text once; pdf-inspector decodes each font via its
   // `/ToUnicode` CMap so CJK content is not garbled (raw byte decoding would
-  // produce mojibake for Chinese tables).
-  let items = extract_text_elements(path, page_filter.as_ref())?;
+  // produce mojibake for Chinese tables). Only a full-document extraction uses
+  // the cache: previews (first-N pages) decode just what they show and never
+  // populate it, so the whole document isn't parsed just to preview.
+  let items = if !use_cache {
+    extract_text_elements(path, page_filter.as_ref())?
+  } else if is_preview {
+    // Reuse an existing full-document cache if present (instant), otherwise
+    // decode only the previewed pages and leave the cache untouched.
+    let guard = TEXT_ITEM_CACHE.lock().unwrap();
+    match guard.as_ref() {
+      Some(cache) if cache.path == path => cache.items.clone(),
+      _ => extract_text_elements(path, page_filter.as_ref())?,
+    }
+  } else {
+    cached_text_elements(path)?
+  };
 
   let effective_pages: Vec<PageDrawTable> = if use_for_all_pages {
     let template = template.unwrap();
@@ -640,8 +693,9 @@ pub fn extract_tables_and_merge(
   path: &str,
   request: &DrawTableRequest,
   existing_markdown: Option<&str>,
+  use_cache: bool,
 ) -> Result<String, String> {
-  let result = extract_tables_from_draw_lines(path, request)?;
+  let result = extract_tables_from_draw_lines(path, request, use_cache)?;
 
   if result.tables.is_empty() {
     return if let Some(md) = existing_markdown {

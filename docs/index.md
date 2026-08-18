@@ -258,7 +258,10 @@ cargo check --manifest-path src-tauri/Cargo.toml
   (`v1:<DPAPI-encrypted hex>` on Windows, `obf:` fallback elsewhere),
   list of models.
 - `app-settings.json`: `maxConcurrent` (1–16, default 1) driving the batch
-  worker-pool size.
+  worker-pool size, and `cacheExtractedText` (default `true`) — when on, the
+  line-draw table extraction decodes the current PDF's text once and reuses it
+  across draw/merge calls; toggle it off for very large documents to free
+  memory (the cache is evicted when another file is opened).
 
 Both live in the Tauri `app_config_dir` directory. No third-party store plugin
 is required. For privacy, only pages flagged as needing OCR are ever sent to an

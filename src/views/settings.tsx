@@ -19,6 +19,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   getAppSettings,
   getOcrConfig,
@@ -359,6 +360,7 @@ function clampThread(n: number): number {
 function ThreadSettingsPanel() {
   const { t } = useI18n();
   const [value, setValue] = useState<number>(1);
+  const [cacheExtracted, setCacheExtracted] = useState<boolean>(true);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -368,6 +370,7 @@ function ThreadSettingsPanel() {
       .then((s) => {
         if (cancelled) return;
         setValue(clampThread(s.maxConcurrent));
+        setCacheExtracted(s.cacheExtractedText);
         setLoaded(true);
       })
       .catch((e) =>
@@ -383,7 +386,10 @@ function ThreadSettingsPanel() {
     setSaving(true);
     setValue(n);
     try {
-      await setAppSettings({ maxConcurrent: n });
+      await setAppSettings({
+        maxConcurrent: n,
+        cacheExtractedText: cacheExtracted,
+      });
       setMaxConcurrent(n);
       toast.success(t("toast.concurrencySaved"), {
         description: t("toast.concurrencyLimit", { n }),
@@ -426,6 +432,25 @@ function ThreadSettingsPanel() {
         </div>
         <p className="text-xs text-muted-foreground">
           {t("settings.threadsHint2")}
+        </p>
+      </Card>
+
+      <Card className="gap-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label>{t("settings.cacheExtracted")}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t("settings.cacheExtractedDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={cacheExtracted}
+            onCheckedChange={setCacheExtracted}
+            disabled={!loaded}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t("settings.cacheExtractedHint")}
         </p>
       </Card>
     </>
