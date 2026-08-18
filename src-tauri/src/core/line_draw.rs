@@ -58,7 +58,9 @@ static TEXT_ITEM_CACHE: Mutex<Option<PageCache>> = Mutex::new(None);
 /// Return the full-document text items for `path`, populating the single-slot
 /// cache on the first call and cloning it on later calls.
 fn cached_text_elements(path: &str) -> Result<Vec<TextItem>, String> {
-  let mut guard = TEXT_ITEM_CACHE.lock().unwrap();
+  // Recover from poisoning instead of panicking; a lock is only ever held
+  // briefly for the draw-table cache.
+  let mut guard = TEXT_ITEM_CACHE.lock().unwrap_or_else(|e| e.into_inner());
   if let Some(cache) = guard.as_ref() {
     if cache.path == path {
       return Ok(cache.items.clone());
@@ -382,7 +384,7 @@ fn extract_table_from_rectangle(elements: &[TextElement], rect: &DrawTableRegion
 
   if all_x_positions.is_empty() {
     // Single column: each line is a cell
-    let columns = vec!["列 1".to_string()];
+    let columns = vec!["Column 1".to_string()];
     let rows: Vec<Vec<String>> = lines
       .iter()
       .map(|line| {
@@ -411,7 +413,7 @@ fn extract_table_from_rectangle(elements: &[TextElement], rect: &DrawTableRegion
     };
     // If only one row, treat it as a single-row table
     if result.columns.is_empty() {
-      result.columns = vec!["内容".to_string()];
+      result.columns = vec!["Content".to_string()];
     }
     return result;
   }
@@ -423,7 +425,7 @@ fn extract_table_from_rectangle(elements: &[TextElement], rect: &DrawTableRegion
 
   if col_count_hint <= 1 {
     // Single column output
-    let columns = vec!["内容".to_string()];
+    let columns = vec!["Content".to_string()];
     let rows: Vec<Vec<String>> = lines
       .iter()
       .map(|line| {
@@ -450,7 +452,7 @@ fn extract_table_from_rectangle(elements: &[TextElement], rect: &DrawTableRegion
       page: None,
     };
     if result.columns.is_empty() {
-      result.columns = vec!["内容".to_string()];
+      result.columns = vec!["Content".to_string()];
     }
     return result;
   }
@@ -479,7 +481,7 @@ fn extract_table_from_rectangle(elements: &[TextElement], rect: &DrawTableRegion
 
   if columns.is_empty() {
     columns = (0..col_count_hint)
-      .map(|i| format!("列 {}", i + 1))
+      .map(|i| format!("Column {}", i + 1))
       .collect();
   }
 
@@ -558,7 +560,7 @@ pub fn extract_tables_from_draw_lines(
   } else if is_preview {
     // Reuse an existing full-document cache if present (instant), otherwise
     // decode only the previewed pages and leave the cache untouched.
-    let guard = TEXT_ITEM_CACHE.lock().unwrap();
+    let guard = TEXT_ITEM_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     match guard.as_ref() {
       Some(cache) if cache.path == path => cache.items.clone(),
       _ => extract_text_elements(path, page_filter.as_ref())?,
@@ -567,23 +569,23 @@ pub fn extract_tables_from_draw_lines(
     cached_text_elements(path)?
   };
 
-  let effective_pages: Vec<PageDrawTable> = if use_for_all_pages {
-    let template = template.unwrap();
-    // Without a page limit the lines apply to every page, bounded by the last
-    // page that actually has text items (avoids a separate full-document parse
-    // just to read the page count).
-    let total_pages = items.iter().map(|it| it.page).max().unwrap_or(0);
-    let end_page = max_pages.unwrap_or(total_pages);
-    (1..=end_page)
-      .map(|page| {
-        let mut entry = template.clone();
-        entry.page = page;
-        entry
-      })
-      .collect()
-  } else {
-    request.pages.clone()
-  };
+  let effective_pages: Vec<PageDrawTable> =
+    if let Some(template) = template.filter(|_| use_for_all_pages) {
+      // Without a page limit the lines apply to every page, bounded by the last
+      // page that actually has text items (avoids a separate full-document parse
+      // just to read the page count).
+      let total_pages = items.iter().map(|it| it.page).max().unwrap_or(0);
+      let end_page = max_pages.unwrap_or(total_pages);
+      (1..=end_page)
+        .map(|page| {
+          let mut entry = template.clone();
+          entry.page = page;
+          entry
+        })
+        .collect()
+    } else {
+      request.pages.clone()
+    };
 
   let mut tables = Vec::new();
   let mut regions = Vec::new();

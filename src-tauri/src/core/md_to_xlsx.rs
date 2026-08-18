@@ -93,7 +93,7 @@ pub fn parse_md_tables(content: &str) -> Vec<MdTable> {
 }
 
 fn read_file(path: &str) -> Result<String, String> {
-  std::fs::read_to_string(path).map_err(|e| format!("读取文件失败: {e}"))
+  std::fs::read_to_string(path).map_err(|e| format!("Fail to read file: {e}"))
 }
 
 /// Analyze a Markdown file and return every table it contains (for preview).

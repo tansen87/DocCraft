@@ -13,7 +13,7 @@ fn app_config_file(app: &AppHandle, file: &str) -> Result<PathBuf, String> {
   let dir = app
     .path()
     .app_config_dir()
-    .map_err(|e| format!("无法获取配置目录: {e}"))?;
+    .map_err(|e| format!("Unable to obtain configuration directory: {e}"))?;
   Ok(dir.join(file))
 }
 
@@ -73,7 +73,9 @@ pub fn save_ocr_config(app: &AppHandle, inputs: Vec<OcrVendorInput>) -> Result<(
     }
   }
 
-  let dir = path.parent().ok_or_else(|| "配置目录无效".to_string())?;
+  let dir = path
+    .parent()
+    .ok_or_else(|| "Invalid configuration directory".to_string())?;
   std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
   let json = serde_json::to_string_pretty(&vendors).map_err(|e| e.to_string())?;
   std::fs::write(&path, json).map_err(|e| e.to_string())?;
@@ -106,7 +108,9 @@ pub fn get_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
 /// Persist global app settings, normalizing values within valid ranges.
 pub fn set_app_settings(app: &AppHandle, settings: AppSettings) -> Result<(), String> {
   let path = app_settings_path(app)?;
-  let dir = path.parent().ok_or_else(|| "配置目录无效".to_string())?;
+  let dir = path
+    .parent()
+    .ok_or_else(|| "Invalid configuration directory".to_string())?;
   std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
   let json = serde_json::to_string_pretty(&clamp_settings(settings)).map_err(|e| e.to_string())?;
   std::fs::write(&path, json).map_err(|e| e.to_string())?;

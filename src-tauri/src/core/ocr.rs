@@ -79,13 +79,13 @@ async fn ocr_page(
   if !status.is_success() {
     let body = response.text().await.unwrap_or_default();
     let snippet: String = body.chars().take(300).collect();
-    return Err(format!("OCR 服务返回 {status}: {snippet}"));
+    return Err(format!("OCR service return {status}: {snippet}"));
   }
 
   let json: serde_json::Value = response
     .json()
     .await
-    .map_err(|e| format!("OCR 响应解析失败: {e}"))?;
+    .map_err(|e| format!("OCR response parsing failed: {e}"))?;
 
   let text = match &json["choices"][0]["message"]["content"] {
     serde_json::Value::String(s) => Some(s.clone()),
@@ -127,6 +127,14 @@ pub struct HybridSession {
 
 /// Managed store of live hybrid sessions keyed by a generated session id.
 pub struct HybridStore(pub Mutex<HashMap<String, HybridSession>>);
+
+impl HybridStore {
+  /// Lock the session map, recovering from poisoning instead of panicking so a
+  /// panicked OCR task can never take down the whole app.
+  fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, HybridSession>> {
+    self.0.lock().unwrap_or_else(|e| e.into_inner())
+  }
+}
 
 impl Default for HybridStore {
   fn default() -> Self {
@@ -172,7 +180,7 @@ pub fn start_session(
       match resolve_provider(&vendors) {
         Some((vendor, model)) => {
           let key = settings::api_key_for(app, &vendor.id)?
-            .ok_or_else(|| format!("供应商「{}」的 API Key 为空", vendor.name))?;
+            .ok_or_else(|| format!("The API Key of supplier '{}' is empty", vendor.name))?;
           (
             Some((vendor.base_url.clone(), model.id.clone(), key)),
             Vec::new(),
@@ -188,7 +196,7 @@ pub fn start_session(
     .timeout(Duration::from_secs(300))
     .connect_timeout(Duration::from_secs(30))
     .build()
-    .map_err(|e| format!("HTTP 客户端初始化失败: {e}"))?;
+    .map_err(|e| format!("HTTP client initialization failed: {e}"))?;
 
   let info = DetectResult {
     pdf_type: PdfTypeDto::from(det.pdf_type),
@@ -217,7 +225,7 @@ pub fn start_session(
     start,
   };
 
-  let mut map = store.0.lock().unwrap();
+  let mut map = store.lock();
   let now = Instant::now();
   map.retain(|_, s| now.duration_since(s.start) < SESSION_MAX_AGE);
   while map.len() >= SESSION_MAX_COUNT {
@@ -251,21 +259,21 @@ pub async fn ocr_page_in_session(
   image_png: &str,
 ) -> Result<String, String> {
   let (client, (base_url, model_id, api_key)) = {
-    let map = store.0.lock().unwrap();
+    let map = store.lock();
     let session = map
       .get(session_id)
-      .ok_or_else(|| "转换会话不存在或已过期".to_string())?;
+      .ok_or_else(|| "The conversion session does not exist or has expired".to_string())?;
     let resolved = session
       .resolved
       .clone()
-      .ok_or_else(|| "未配置可用的 OCR 供应商".to_string())?;
+      .ok_or_else(|| "No available OCR supplier configured".to_string())?;
     (session.client.clone(), resolved)
   };
 
   let md = match ocr_page(&client, &base_url, &model_id, &api_key, page, image_png).await {
     Ok(m) => m,
     Err(e) => {
-      let mut map = store.0.lock().unwrap();
+      let mut map = store.lock();
       if let Some(session) = map.get_mut(session_id) {
         session.failed_pages.push(page);
       }
@@ -273,7 +281,7 @@ pub async fn ocr_page_in_session(
     }
   };
 
-  let mut map = store.0.lock().unwrap();
+  let mut map = store.lock();
   if let Some(session) = map.get_mut(session_id) {
     session.ocr_results.insert(page, md.clone());
   }
@@ -282,10 +290,10 @@ pub async fn ocr_page_in_session(
 
 /// Reassemble text + OCR pages in document order and drop the session.
 pub fn finish_session(store: &HybridStore, session_id: &str) -> Result<ConvertResult, String> {
-  let mut map = store.0.lock().unwrap();
+  let mut map = store.lock();
   let session = map
     .remove(session_id)
-    .ok_or_else(|| "转换会话不存在或已过期".to_string())?;
+    .ok_or_else(|| "The conversion session does not exist or has expired".to_string())?;
 
   let page_count = session.info.page_count;
   let skipped: HashSet<u32> = session.skipped_pages.iter().copied().collect();
@@ -318,6 +326,6 @@ pub fn finish_session(store: &HybridStore, session_id: &str) -> Result<ConvertRe
 
 /// Abandon a session (cancelled / error before finishing).
 pub fn abort_session(store: &HybridStore, session_id: &str) -> Result<(), String> {
-  store.0.lock().unwrap().remove(session_id);
+  store.lock().remove(session_id);
   Ok(())
 }
