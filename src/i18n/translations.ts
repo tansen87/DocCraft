@@ -97,9 +97,7 @@ const en = {
   "drop.pdfInvalid": "Please drop .pdf files",
 
   "settings.ocr": "OCR Service",
-  "settings.ocrHint": "Scanned page recognition and models",
   "settings.threads": "Concurrency",
-  "settings.threadsHint": "Batch conversion concurrency",
   "settings.ocrDesc":
     "Configure OCR services per vendor; each vendor can have multiple models. API keys are saved with system-level encryption. During conversion, scanned pages are recognized via OCR, using the first configured and valid vendor by default.",
   "settings.loadingConfig": "Loading configuration…",
@@ -133,6 +131,9 @@ const en = {
     "Keep the decoded text of the current PDF in memory so repeated draw-table extractions reuse the font decode instead of re-parsing the document each time.",
   "settings.cacheExtractedHint":
     "Enabled by default. The cache is only filled by full-document extraction — the first-5-pages preview never caches — and is cleared automatically when you open another file. Disable for very large documents to free memory.",
+  "settings.cache": "Text Cache",
+  "settings.cacheDesc":
+    "Controls the in-memory cache of decoded PDF text used by draw-table extraction. Caching avoids re-parsing the document on every extraction, at the cost of holding one decoded copy in memory.",
 
   "toolbar.remove": "Remove",
   "toolbar.drawTable": "Draw Table",
@@ -294,9 +295,7 @@ const zh: Record<TranslationKey, string> = {
   "drop.pdfInvalid": "请拖入 .pdf 文件",
 
   "settings.ocr": "OCR 服务",
-  "settings.ocrHint": "扫描页识别与模型",
   "settings.threads": "并发线程",
-  "settings.threadsHint": "批量转换并发数",
   "settings.ocrDesc":
     "按供应商配置 OCR 服务,每个供应商可配置多个模型;API Key 使用系统级加密保存. 转换时扫描页将调用 OCR 识别,并默认使用第一个已配置且有效的供应商.",
   "settings.loadingConfig": "正在加载配置…",
@@ -330,6 +329,9 @@ const zh: Record<TranslationKey, string> = {
     "将当前 PDF 解码后的文本驻留在内存中,重复划线提取时直接复用字体解码结果,而无需每次重新解析文档.",
   "settings.cacheExtractedHint":
     "默认开启. 缓存仅在提取全部页时填充,前5页预览不会缓存;切换打开其他文件时缓存自动清空. 超大文档可关闭以释放内存.",
+  "settings.cache": "文本缓存",
+  "settings.cacheDesc":
+    "控制划线表格提取时解码后 PDF 文本的内存缓存. 缓存可避免每次提取都重新解析文档,代价是在内存中保留一份解码副本.",
 
   "toolbar.remove": "移除",
   "toolbar.drawTable": "划线表格",

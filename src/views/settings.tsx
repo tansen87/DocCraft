@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Cpu,
+  Database,
   Eye,
   EyeOff,
   KeyRound,
@@ -20,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   getAppSettings,
   getOcrConfig,
@@ -32,25 +34,27 @@ import { useI18n } from "@/i18n";
 import type { OcrModel, OcrVendor, OcrVendorInput } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type SettingsSection = "ocr" | "threads";
+type SettingsSection = "ocr" | "threads" | "cache";
 
 const SECTIONS: {
   id: SettingsSection;
-  labelKey: "settings.ocr" | "settings.threads";
-  hintKey: "settings.ocrHint" | "settings.threadsHint";
+  labelKey: "settings.ocr" | "settings.threads" | "settings.cache";
   icon: typeof ScanText;
 }[] = [
   {
     id: "ocr",
     labelKey: "settings.ocr",
-    hintKey: "settings.ocrHint",
     icon: ScanText,
   },
   {
     id: "threads",
     labelKey: "settings.threads",
-    hintKey: "settings.threadsHint",
     icon: Cpu,
+  },
+  {
+    id: "cache",
+    labelKey: "settings.cache",
+    icon: Database,
   },
 ];
 
@@ -81,66 +85,168 @@ function toForm(v: OcrVendor): VendorForm {
 export function SettingsView() {
   const { t } = useI18n();
   const [section, setSection] = useState<SettingsSection>("ocr");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const pinnedRef = useRef<SettingsSection | null>(null);
+
+  function scrollAreaViewport(): HTMLElement | null {
+    return (
+      containerRef.current?.querySelector<HTMLElement>(
+        '[data-slot="scroll-area-viewport"]',
+      ) ?? null
+    );
+  }
+
+  useEffect(() => {
+    const vp = scrollAreaViewport();
+    if (!vp) return;
+    const viewport: HTMLElement = vp;
+    const containerEl = containerRef.current;
+
+    function updateActive() {
+      // After a click the chosen section stays pinned until the user scrolls
+      // manually; otherwise the smooth-scroll animation would re-pick a
+      // different section mid-flight.
+      if (pinnedRef.current) return;
+      if (viewport.clientHeight === 0) return;
+      const vpRect = viewport.getBoundingClientRect();
+      // Reference line at 25% below the top of the scroll viewport; the active
+      // section is the last one whose top edge has passed above it.
+      const line = vpRect.top + viewport.clientHeight * 0.25;
+      let active: SettingsSection = SECTIONS[0].id;
+      for (const s of SECTIONS) {
+        const el = document.getElementById(`settings-${s.id}`);
+        if (!el) continue;
+        if (el.getBoundingClientRect().top <= line) active = s.id;
+      }
+      // When the viewport is scrolled to the very bottom, a short last section
+      // may never cross the line — fall back to the last section.
+      if (
+        viewport.scrollTop + viewport.clientHeight >=
+        viewport.scrollHeight - 1
+      ) {
+        active = SECTIONS[SECTIONS.length - 1].id;
+      }
+      setSection(active);
+    }
+
+    function beginUserScroll() {
+      pinnedRef.current = null;
+    }
+
+    function onPointerDown(e: PointerEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('[data-slot="scroll-area-scrollbar"]')) {
+        beginUserScroll();
+      }
+    }
+
+    updateActive();
+    viewport.addEventListener("scroll", updateActive, { passive: true });
+    window.addEventListener("resize", updateActive);
+    const resizeObserver = new ResizeObserver(updateActive);
+    resizeObserver.observe(viewport);
+    containerEl?.addEventListener("wheel", beginUserScroll, { passive: true });
+    containerEl?.addEventListener("touchstart", beginUserScroll, {
+      passive: true,
+    });
+    containerEl?.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      viewport.removeEventListener("scroll", updateActive);
+      window.removeEventListener("resize", updateActive);
+      resizeObserver.disconnect();
+      containerEl?.removeEventListener("wheel", beginUserScroll);
+      containerEl?.removeEventListener("touchstart", beginUserScroll);
+      containerEl?.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, []);
+
+  function jumpTo(id: SettingsSection) {
+    pinnedRef.current = id;
+    setSection(id);
+    const vp = scrollAreaViewport();
+    const el = document.getElementById(`settings-${id}`);
+    if (vp && el) {
+      const top =
+        el.getBoundingClientRect().top -
+        vp.getBoundingClientRect().top +
+        vp.scrollTop;
+      vp.scrollTo({ top: Math.max(top - 12, 0), behavior: "smooth" });
+    }
+  }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-      <div className="flex min-h-0 flex-1 gap-3">
-        <aside className="flex shrink-0 flex-col gap-1.5 md:w-56">
-          {SECTIONS.map((s) => {
-            const Icon = s.icon;
-            const active = section === s.id;
-            return (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setSection(s.id)}
+    <div
+      ref={containerRef}
+      className="mx-auto flex w-full max-w-5xl min-h-0 flex-1 gap-3"
+    >
+      <aside className="flex shrink-0 flex-col gap-1.5 md:w-56">
+        {SECTIONS.map((s) => {
+          const Icon = s.icon;
+          const active = section === s.id;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => jumpTo(s.id)}
+              className={cn(
+                "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
+                active
+                  ? "bg-muted/40 text-foreground before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-5 before:w-1 before:rounded-full before:bg-muted-foreground/80"
+                  : "text-muted-foreground hover:bg-muted/60",
+              )}
+            >
+              <span
                 className={cn(
-                  "flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors",
-                  active
-                    ? "border-primary/30 bg-primary/10"
-                    : "border-transparent text-muted-foreground hover:bg-muted/60",
+                  "flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground",
                 )}
               >
-                <span
-                  className={cn(
-                    "flex size-9 shrink-0 items-center justify-center rounded-lg",
-                    active
-                      ? "bg-primary/15 text-primary"
-                      : "bg-muted text-muted-foreground",
-                  )}
-                >
-                  <Icon className="size-4" />
+                <Icon className="size-4" />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">
+                  {t(s.labelKey)}
                 </span>
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">
-                    {t(s.labelKey)}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {t(s.hintKey)}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
-        </aside>
+              </span>
+            </button>
+          );
+        })}
+      </aside>
 
-        <div
-          className={cn(
-            "min-w-0 flex-1 space-y-3",
-            section !== "ocr" && "hidden",
-          )}
-        >
-          <OcrSettingsPanel />
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="pb-4 pr-3">
+          <div className="space-y-8">
+            <section id="settings-ocr" className="scroll-mt-3">
+              <SectionHeader icon={ScanText} title={t("settings.ocr")} />
+              <OcrSettingsPanel />
+            </section>
+            <section id="settings-threads" className="scroll-mt-3">
+              <SectionHeader icon={Cpu} title={t("settings.threads")} />
+              <ThreadSettingsPanel />
+            </section>
+            <section id="settings-cache" className="scroll-mt-3">
+              <SectionHeader icon={Database} title={t("settings.cache")} />
+              <CacheSettingsPanel />
+            </section>
+          </div>
         </div>
-        <div
-          className={cn(
-            "min-w-0 flex-1 space-y-3",
-            section !== "threads" && "hidden",
-          )}
-        >
-          <ThreadSettingsPanel />
-        </div>
-      </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+function SectionHeader({
+  icon: Icon,
+  title,
+}: {
+  icon: typeof ScanText;
+  title: string;
+}) {
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <span className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+        <Icon className="size-4" />
+      </span>
+      <h2 className="text-base font-semibold">{title}</h2>
     </div>
   );
 }
@@ -434,6 +540,56 @@ function ThreadSettingsPanel() {
           {t("settings.threadsHint2")}
         </p>
       </Card>
+    </>
+  );
+}
+
+function CacheSettingsPanel() {
+  const { t } = useI18n();
+  const [maxConcurrent, setMaxConcurrentValue] = useState<number>(1);
+  const [cacheExtracted, setCacheExtracted] = useState<boolean>(true);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAppSettings()
+      .then((s) => {
+        if (cancelled) return;
+        setMaxConcurrentValue(clampThread(s.maxConcurrent));
+        setCacheExtracted(s.cacheExtractedText);
+        setLoaded(true);
+      })
+      .catch((e) =>
+        toast.error(t("toast.loadSettingsFailed"), { description: String(e) }),
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await setAppSettings({
+        maxConcurrent,
+        cacheExtractedText: cacheExtracted,
+      });
+      toast.success(t("toast.configSaved"));
+    } catch (e) {
+      toast.error(t("toast.saveFailed"), { description: String(e) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="space-y-1.5">
+        <p className="text-sm text-muted-foreground">
+          {t("settings.cacheDesc")}
+        </p>
+      </div>
 
       <Card className="gap-3 p-4">
         <div className="flex items-start justify-between gap-3">
@@ -452,6 +608,12 @@ function ThreadSettingsPanel() {
         <p className="text-xs text-muted-foreground">
           {t("settings.cacheExtractedHint")}
         </p>
+        <div className="flex justify-end">
+          <Button onClick={handleSave} disabled={saving || !loaded}>
+            {saving ? <Loader2 className="animate-spin" /> : <Save />}
+            {t("settings.save")}
+          </Button>
+        </div>
       </Card>
     </>
   );
