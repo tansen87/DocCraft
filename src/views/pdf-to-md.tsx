@@ -28,7 +28,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { convertPdf, detectPdf, exportMarkdown } from "@/lib/ipc";
+import {
+  convertPdf,
+  detectPdf,
+  exportMarkdown,
+  getAppSettings,
+} from "@/lib/ipc";
 import { ensureMaxConcurrent } from "@/lib/concurrency";
 import { useI18n } from "@/i18n";
 import type { ConvertResult } from "@/lib/types";
@@ -150,11 +155,13 @@ export function BatchView() {
         let result: ConvertResult;
         const det = await detectPdf(job.path);
         const needOcr = det.pagesNeedingOcr;
-        if (needOcr.length > 0) {
-          result = await convertWithOcr(job.path, needOcr);
-        } else {
-          result = await convertPdf(job.path);
-        }
+        // Route by the OCR toggle: when enabled the backend also OCRs pages
+        // whose local text extraction came up empty (image pages detection may
+        // miss).
+        const settings = await getAppSettings();
+        result = settings.ocrEnabled
+          ? await convertWithOcr(job.path, needOcr)
+          : await convertPdf(job.path);
         patchItem(job.id, { status: "done", result });
       } catch (e) {
         patchItem(job.id, { status: "error", error: String(e) });

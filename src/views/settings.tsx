@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { SetStateAction } from "react";
 import {
   Cpu,
   Database,
@@ -11,6 +12,7 @@ import {
   Save,
   ScanText,
   ShieldCheck,
+  Star,
   Trash2,
   X,
 } from "lucide-react";
@@ -24,15 +26,25 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   getAppSettings,
   getOcrConfig,
   revealOcrKey,
   saveOcrConfig,
   setAppSettings,
 } from "@/lib/ipc";
-import { setMaxConcurrent } from "@/lib/concurrency";
+import { setMaxConcurrent as applyRuntimeConcurrency } from "@/lib/concurrency";
 import { useI18n } from "@/i18n";
-import type { OcrModel, OcrVendor, OcrVendorInput } from "@/lib/types";
+import type {
+  AppSettings,
+  OcrModel,
+  OcrVendor,
+  OcrVendorInput,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type SettingsSection = "ocr" | "threads" | "cache" | "excel";
@@ -98,6 +110,106 @@ export function SettingsView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef<SettingsSection | null>(null);
 
+  const [vendors, setVendors] = useState<VendorForm[]>([]);
+  const [ocrEnabled, setOcrEnabled] = useState(true);
+  const [maxConcurrent, setMaxConcurrent] = useState(1);
+  const [cacheExtracted, setCacheExtracted] = useState(true);
+  const [excelTablesOnly, setExcelTablesOnly] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([getOcrConfig(), getAppSettings()])
+      .then(([ocrVendors, settings]) => {
+        if (cancelled) return;
+        setVendors(ocrVendors.map(toForm));
+        setOcrEnabled(settings.ocrEnabled);
+        setMaxConcurrent(clampThread(settings.maxConcurrent));
+        setCacheExtracted(settings.cacheExtractedText);
+        setExcelTablesOnly(settings.excelTablesOnly);
+        setLoaded(true);
+      })
+      .catch((e) =>
+        toast.error(t("toast.loadSettingsFailed"), { description: String(e) }),
+      )
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
+
+  const markDirty = () => {
+    if (loaded) setDirty(true);
+  };
+
+  const updateVendors = useCallback(
+    (updater: SetStateAction<VendorForm[]>) => {
+      setVendors(updater);
+      if (loaded) setDirty(true);
+    },
+    [loaded],
+  );
+
+  async function handleSave() {
+    setSaving(true);
+    const entries = vendors.map((v) => {
+      const input: OcrVendorInput = {
+        id: v.id,
+        name: v.name.trim(),
+        baseUrl: v.baseUrl.trim(),
+        apiKey: v.apiKey,
+        clearApiKey: v.clearApiKey,
+        models: v.models
+          .map((m) => ({ ...m, name: m.name.trim() }))
+          .filter((m) => m.name.length > 0),
+      };
+      return {
+        input,
+        apiKeySet: !v.clearApiKey && (v.apiKey.length > 0 || v.apiKeySet),
+      };
+    });
+    const settings: AppSettings = {
+      maxConcurrent: clampThread(
+        Number.isFinite(maxConcurrent) ? maxConcurrent : 1,
+      ),
+      cacheExtractedText: cacheExtracted,
+      excelTablesOnly,
+      ocrEnabled,
+    };
+    try {
+      await Promise.all([
+        setAppSettings(settings),
+        saveOcrConfig(entries.map((e) => e.input)),
+      ]);
+      setMaxConcurrent(settings.maxConcurrent);
+      applyRuntimeConcurrency(settings.maxConcurrent);
+      setVendors(
+        entries.map((e) => ({
+          id: e.input.id,
+          name: e.input.name,
+          baseUrl: e.input.baseUrl,
+          apiKey: "",
+          apiKeySet: e.apiKeySet,
+          clearApiKey: false,
+          showKey: false,
+          models: e.input.models,
+        })),
+      );
+      setDirty(false);
+      toast.success(t("toast.configSaved"));
+    } catch (e) {
+      toast.error(t("toast.saveFailed"), { description: String(e) });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function scrollAreaViewport(): HTMLElement | null {
     return (
       containerRef.current?.querySelector<HTMLElement>(
@@ -129,7 +241,7 @@ export function SettingsView() {
         if (el.getBoundingClientRect().top <= line) active = s.id;
       }
       // When the viewport is scrolled to the very bottom, a short last section
-      // may never cross the line — fall back to the last section.
+      // may never cross the line �?fall back to the last section.
       if (
         viewport.scrollTop + viewport.clientHeight >=
         viewport.scrollHeight - 1
@@ -222,31 +334,79 @@ export function SettingsView() {
         })}
       </aside>
 
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="pb-4 pr-3">
-          <div className="space-y-8">
-            <section id="settings-ocr" className="scroll-mt-3">
-              <SectionHeader icon={ScanText} title={t("settings.ocr")} />
-              <OcrSettingsPanel />
-            </section>
-            <section id="settings-threads" className="scroll-mt-3">
-              <SectionHeader icon={Cpu} title={t("settings.threads")} />
-              <ThreadSettingsPanel />
-            </section>
-            <section id="settings-cache" className="scroll-mt-3">
-              <SectionHeader icon={Database} title={t("settings.cache")} />
-              <CacheSettingsPanel />
-            </section>
-            <section id="settings-excel" className="scroll-mt-3">
-              <SectionHeader
-                icon={FileSpreadsheet}
-                title={t("settings.excel")}
-              />
-              <ExcelSettingsPanel />
-            </section>
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="pb-4 pr-3">
+            <div className="space-y-8">
+              <section id="settings-ocr" className="scroll-mt-3">
+                <SectionHeader icon={ScanText} title={t("settings.ocr")} />
+                <OcrSettingsPanel
+                  vendors={vendors}
+                  onChange={updateVendors}
+                  ocrEnabled={ocrEnabled}
+                  onOcrEnabledChange={(v) => {
+                    setOcrEnabled(v);
+                    markDirty();
+                  }}
+                  loading={loading}
+                />
+              </section>
+              <section id="settings-threads" className="scroll-mt-3">
+                <SectionHeader icon={Cpu} title={t("settings.threads")} />
+                <ThreadSettingsPanel
+                  value={maxConcurrent}
+                  onChange={(n) => {
+                    setMaxConcurrent(n);
+                    markDirty();
+                  }}
+                  disabled={loading}
+                />
+              </section>
+              <section id="settings-cache" className="scroll-mt-3">
+                <SectionHeader icon={Database} title={t("settings.cache")} />
+                <CacheSettingsPanel
+                  value={cacheExtracted}
+                  onChange={(v) => {
+                    setCacheExtracted(v);
+                    markDirty();
+                  }}
+                  disabled={loading}
+                />
+              </section>
+              <section id="settings-excel" className="scroll-mt-3">
+                <SectionHeader
+                  icon={FileSpreadsheet}
+                  title={t("settings.excel")}
+                />
+                <ExcelSettingsPanel
+                  value={excelTablesOnly}
+                  onChange={(v) => {
+                    setExcelTablesOnly(v);
+                    markDirty();
+                  }}
+                  disabled={loading}
+                />
+              </section>
+            </div>
           </div>
-        </div>
-      </ScrollArea>
+        </ScrollArea>
+
+        {dirty ? (
+          <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border bg-card px-4 py-2.5 shadow-sm">
+            <span className="text-xs text-muted-foreground">
+              {t("settings.unsavedChanges")}
+            </span>
+            <Button
+              onClick={handleSave}
+              disabled={saving || !loaded}
+              variant="secondary"
+            >
+              {saving ? <Loader2 className="animate-spin" /> : <Save />}
+              {t("settings.save")}
+            </Button>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -268,39 +428,33 @@ function SectionHeader({
   );
 }
 
-function OcrSettingsPanel() {
+function OcrSettingsPanel({
+  vendors,
+  onChange,
+  ocrEnabled,
+  onOcrEnabledChange,
+  loading,
+}: {
+  vendors: VendorForm[];
+  onChange: (updater: SetStateAction<VendorForm[]>) => void;
+  ocrEnabled: boolean;
+  onOcrEnabledChange: (v: boolean) => void;
+  loading: boolean;
+}) {
   const { t } = useI18n();
-  const [vendors, setVendors] = useState<VendorForm[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    getOcrConfig()
-      .then((data) => {
-        if (!cancelled) setVendors(data.map(toForm));
-      })
-      .catch((e) =>
-        toast.error(t("toast.loadConfigFailed"), { description: String(e) }),
-      )
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [t]);
-
-  const updateVendor = useCallback((id: string, patch: Partial<VendorForm>) => {
-    setVendors((prev) =>
-      prev.map((v) => (v.id === id ? { ...v, ...patch } : v)),
-    );
-  }, []);
+  const updateVendor = useCallback(
+    (id: string, patch: Partial<VendorForm>) => {
+      onChange((prev) =>
+        prev.map((v) => (v.id === id ? { ...v, ...patch } : v)),
+      );
+    },
+    [onChange],
+  );
 
   const updateModel = useCallback(
     (vendorId: string, modelId: string, name: string) => {
-      setVendors((prev) =>
+      onChange((prev) =>
         prev.map((v) =>
           v.id === vendorId
             ? {
@@ -313,12 +467,31 @@ function OcrSettingsPanel() {
         ),
       );
     },
-    [],
+    [onChange],
+  );
+
+  const setDefaultModel = useCallback(
+    (vendorId: string, modelId: string) => {
+      onChange((prev) =>
+        prev.map((v) =>
+          v.id === vendorId
+            ? {
+                ...v,
+                models: v.models.map((m) => ({
+                  ...m,
+                  default: m.id === modelId,
+                })),
+              }
+            : v,
+        ),
+      );
+    },
+    [onChange],
   );
 
   function addVendor() {
     const id = crypto.randomUUID();
-    setVendors((prev) => [
+    onChange((prev) => [
       ...prev,
       {
         id,
@@ -328,26 +501,33 @@ function OcrSettingsPanel() {
         apiKeySet: false,
         clearApiKey: false,
         showKey: false,
-        models: [{ id: crypto.randomUUID(), name: "" }],
+        models: [{ id: crypto.randomUUID(), name: "", default: false }],
       },
     ]);
   }
 
   function removeVendor(id: string) {
-    setVendors((prev) => prev.filter((v) => v.id !== id));
+    onChange((prev) => prev.filter((v) => v.id !== id));
   }
 
   function addModel(vendorId: string) {
-    updateVendor(vendorId, {
-      models: [
-        ...(vendors.find((v) => v.id === vendorId)?.models ?? []),
-        { id: crypto.randomUUID(), name: "" },
-      ],
-    });
+    onChange((prev) =>
+      prev.map((v) =>
+        v.id === vendorId
+          ? {
+              ...v,
+              models: [
+                ...v.models,
+                { id: crypto.randomUUID(), name: "", default: false },
+              ],
+            }
+          : v,
+      ),
+    );
   }
 
   function removeModel(vendorId: string, modelId: string) {
-    setVendors((prev) =>
+    onChange((prev) =>
       prev.map((v) =>
         v.id === vendorId
           ? { ...v, models: v.models.filter((m) => m.id !== modelId) }
@@ -373,51 +553,27 @@ function OcrSettingsPanel() {
     updateVendor(v.id, { showKey: true, apiKey: val });
   }
 
-  async function handleSave() {
-    setSaving(true);
-    const entries = vendors.map((v) => {
-      const input: OcrVendorInput = {
-        id: v.id,
-        name: v.name.trim(),
-        baseUrl: v.baseUrl.trim(),
-        apiKey: v.apiKey,
-        clearApiKey: v.clearApiKey,
-        models: v.models
-          .map((m) => ({ ...m, name: m.name.trim() }))
-          .filter((m) => m.name.length > 0),
-      };
-      return {
-        input,
-        apiKeySet: !v.clearApiKey && (v.apiKey.length > 0 || v.apiKeySet),
-      };
-    });
-    try {
-      await saveOcrConfig(entries.map((e) => e.input));
-      setVendors(
-        entries.map((e) => ({
-          id: e.input.id,
-          name: e.input.name,
-          baseUrl: e.input.baseUrl,
-          apiKey: "",
-          apiKeySet: e.apiKeySet,
-          clearApiKey: false,
-          showKey: false,
-          models: e.input.models,
-        })),
-      );
-      toast.success(t("toast.configSaved"));
-    } catch (e) {
-      toast.error(t("toast.saveFailed"), { description: String(e) });
-    } finally {
-      setSaving(false);
-    }
-  }
-
   return (
     <>
       <div className="space-y-1.5">
         <p className="text-sm text-muted-foreground">{t("settings.ocrDesc")}</p>
       </div>
+
+      <Card className="gap-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label>{t("settings.ocrEnabled")}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t("settings.ocrEnabledDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={ocrEnabled}
+            onCheckedChange={onOcrEnabledChange}
+            disabled={loading}
+          />
+        </div>
+      </Card>
 
       <div className="space-y-3">
         {loading ? (
@@ -450,6 +606,7 @@ function OcrSettingsPanel() {
               onRemove={() => removeVendor(v.id)}
               onAddModel={() => addModel(v.id)}
               onUpdateModel={(m, name) => updateModel(v.id, m, name)}
+              onSetDefaultModel={(m) => setDefaultModel(v.id, m)}
               onRemoveModel={(m) => removeModel(v.id, m)}
               onToggleKey={() => toggleShowKey(v)}
             />
@@ -458,14 +615,10 @@ function OcrSettingsPanel() {
       </div>
 
       {vendors.length > 0 ? (
-        <div className="flex items-center justify-between">
+        <div className="flex items-center">
           <Button variant="secondary" size="sm" onClick={addVendor}>
             <Plus />
             {t("settings.addVendor")}
-          </Button>
-          <Button onClick={handleSave} disabled={saving} variant="secondary">
-            {saving ? <Loader2 className="animate-spin" /> : <Save />}
-            {t("settings.save")}
           </Button>
         </div>
       ) : null}
@@ -480,54 +633,16 @@ function clampThread(n: number): number {
   return Math.min(THREAD_MAX, Math.max(THREAD_MIN, Math.round(n)));
 }
 
-function ThreadSettingsPanel() {
+function ThreadSettingsPanel({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  disabled?: boolean;
+}) {
   const { t } = useI18n();
-  const [value, setValue] = useState<number>(1);
-  const [cacheExtracted, setCacheExtracted] = useState<boolean>(true);
-  const [excelTablesOnly, setExcelTablesOnly] = useState<boolean>(true);
-  const [loaded, setLoaded] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    getAppSettings()
-      .then((s) => {
-        if (cancelled) return;
-        setValue(clampThread(s.maxConcurrent));
-        setCacheExtracted(s.cacheExtractedText);
-        setExcelTablesOnly(s.excelTablesOnly);
-        setLoaded(true);
-      })
-      .catch((e) =>
-        toast.error(t("toast.loadSettingsFailed"), { description: String(e) }),
-      );
-    return () => {
-      cancelled = true;
-    };
-  }, [t]);
-
-  async function handleSave() {
-    const n = clampThread(Number.isFinite(value) ? value : 1);
-    setSaving(true);
-    setValue(n);
-    try {
-      const latest = await getAppSettings();
-      await setAppSettings({
-        ...latest,
-        maxConcurrent: n,
-        cacheExtractedText: cacheExtracted,
-        excelTablesOnly,
-      });
-      setMaxConcurrent(n);
-      toast.success(t("toast.concurrencySaved"), {
-        description: t("toast.concurrencyLimit", { n }),
-      });
-    } catch (e) {
-      toast.error(t("toast.saveFailed"), { description: String(e) });
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <>
@@ -548,19 +663,11 @@ function ThreadSettingsPanel() {
               max={THREAD_MAX}
               step={1}
               value={Number.isFinite(value) ? value : ""}
-              onChange={(e) => setValue(e.target.valueAsNumber)}
-              disabled={!loaded}
+              onChange={(e) => onChange(e.target.valueAsNumber)}
+              disabled={disabled}
               placeholder={t("settings.threadPlaceholder")}
             />
           </div>
-          <Button
-            onClick={handleSave}
-            disabled={saving || !loaded}
-            variant="secondary"
-          >
-            {saving ? <Loader2 className="animate-spin" /> : <Save />}
-            {t("settings.save")}
-          </Button>
         </div>
         <p className="text-xs text-muted-foreground">
           {t("settings.threadsHint2")}
@@ -570,49 +677,16 @@ function ThreadSettingsPanel() {
   );
 }
 
-function CacheSettingsPanel() {
+function CacheSettingsPanel({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
   const { t } = useI18n();
-  const [maxConcurrent, setMaxConcurrentValue] = useState<number>(1);
-  const [cacheExtracted, setCacheExtracted] = useState<boolean>(true);
-  const [excelTablesOnly, setExcelTablesOnly] = useState<boolean>(true);
-  const [loaded, setLoaded] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    getAppSettings()
-      .then((s) => {
-        if (cancelled) return;
-        setMaxConcurrentValue(clampThread(s.maxConcurrent));
-        setCacheExtracted(s.cacheExtractedText);
-        setExcelTablesOnly(s.excelTablesOnly);
-        setLoaded(true);
-      })
-      .catch((e) =>
-        toast.error(t("toast.loadSettingsFailed"), { description: String(e) }),
-      );
-    return () => {
-      cancelled = true;
-    };
-  }, [t]);
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      const latest = await getAppSettings();
-      await setAppSettings({
-        ...latest,
-        maxConcurrent,
-        cacheExtractedText: cacheExtracted,
-        excelTablesOnly,
-      });
-      toast.success(t("toast.configSaved"));
-    } catch (e) {
-      toast.error(t("toast.saveFailed"), { description: String(e) });
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <>
@@ -631,66 +705,29 @@ function CacheSettingsPanel() {
             </p>
           </div>
           <Switch
-            checked={cacheExtracted}
-            onCheckedChange={setCacheExtracted}
-            disabled={!loaded}
+            checked={value}
+            onCheckedChange={onChange}
+            disabled={disabled}
           />
         </div>
         <p className="text-xs text-muted-foreground">
           {t("settings.cacheExtractedHint")}
         </p>
-        <div className="flex justify-end">
-          <Button
-            onClick={handleSave}
-            disabled={saving || !loaded}
-            variant="secondary"
-          >
-            {saving ? <Loader2 className="animate-spin" /> : <Save />}
-            {t("settings.save")}
-          </Button>
-        </div>
       </Card>
     </>
   );
 }
 
-function ExcelSettingsPanel() {
+function ExcelSettingsPanel({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
   const { t } = useI18n();
-  const [excelTablesOnly, setExcelTablesOnly] = useState<boolean>(true);
-  const [loaded, setLoaded] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    getAppSettings()
-      .then((s) => {
-        if (cancelled) return;
-        setExcelTablesOnly(s.excelTablesOnly);
-        setLoaded(true);
-      })
-      .catch((e) =>
-        toast.error(t("toast.loadSettingsFailed"), { description: String(e) }),
-      );
-    return () => {
-      cancelled = true;
-    };
-  }, [t]);
-
-  async function handleSave() {
-    setSaving(true);
-    try {
-      const latest = await getAppSettings();
-      await setAppSettings({
-        ...latest,
-        excelTablesOnly,
-      });
-      toast.success(t("toast.configSaved"));
-    } catch (e) {
-      toast.error(t("toast.saveFailed"), { description: String(e) });
-    } finally {
-      setSaving(false);
-    }
-  }
 
   return (
     <>
@@ -709,20 +746,10 @@ function ExcelSettingsPanel() {
             </p>
           </div>
           <Switch
-            checked={excelTablesOnly}
-            onCheckedChange={setExcelTablesOnly}
-            disabled={!loaded}
+            checked={value}
+            onCheckedChange={onChange}
+            disabled={disabled}
           />
-        </div>
-        <div className="flex justify-end">
-          <Button
-            onClick={handleSave}
-            disabled={saving || !loaded}
-            variant="secondary"
-          >
-            {saving ? <Loader2 className="animate-spin" /> : <Save />}
-            {t("settings.save")}
-          </Button>
         </div>
       </Card>
     </>
@@ -735,6 +762,7 @@ function VendorCard({
   onRemove,
   onAddModel,
   onUpdateModel,
+  onSetDefaultModel,
   onRemoveModel,
   onToggleKey,
 }: {
@@ -743,6 +771,7 @@ function VendorCard({
   onRemove: () => void;
   onAddModel: () => void;
   onUpdateModel: (modelId: string, name: string) => void;
+  onSetDefaultModel: (modelId: string) => void;
   onRemoveModel: (modelId: string) => void;
   onToggleKey: () => void;
 }) {
@@ -804,25 +833,6 @@ function VendorCard({
           >
             {v.showKey ? <EyeOff /> : <Eye />}
           </Button>
-          {v.apiKeySet ? (
-            v.clearApiKey ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onPatch({ clearApiKey: false })}
-              >
-                {t("settings.cancelClear")}
-              </Button>
-            ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => onPatch({ clearApiKey: true, apiKey: "" })}
-              >
-                {t("settings.clear")}
-              </Button>
-            )
-          ) : null}
         </div>
       </div>
 
@@ -833,6 +843,23 @@ function VendorCard({
         <div className="space-y-2">
           {v.models.map((m) => (
             <div key={m.id} className="flex items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => onSetDefaultModel(m.id)}
+                    className={
+                      m.default
+                        ? "text-amber-500 hover:text-amber-500"
+                        : "text-muted-foreground"
+                    }
+                  >
+                    <Star className={m.default ? "fill-current" : ""} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("settings.defaultModel")}</TooltipContent>
+              </Tooltip>
               <Input
                 value={m.name}
                 onChange={(e) => onUpdateModel(m.id, e.target.value)}

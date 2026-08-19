@@ -28,6 +28,8 @@ export interface ConvertResult extends DetectResult {
 export interface OcrModel {
   id: string;
   name: string;
+  /** Whether this is the model used for OCR when the vendor is selected. */
+  default: boolean;
 }
 
 /** OCR vendor as loaded from the backend (never includes the secret). */
@@ -82,6 +84,11 @@ export interface AppSettings {
    * workbook.
    */
   excelTablesOnly: boolean;
+  /**
+   * Master switch for OCR. When false, pages that would need OCR are skipped
+   * even if a provider is configured, so no page image ever leaves the machine.
+   */
+  ocrEnabled: boolean;
 }
 
 /** A single GitHub-Flavored Markdown table parsed by the backend. */

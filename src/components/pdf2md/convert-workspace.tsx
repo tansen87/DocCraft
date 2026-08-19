@@ -10,7 +10,12 @@ import { convertWithOcr } from "./render-pdf-pages";
 import { StatusBar } from "./status-bar";
 import { DrawTablePanel } from "@/components/draw-table/draw-table-panel";
 import { useI18n } from "@/i18n";
-import { convertPdf, detectPdf, exportMarkdown } from "@/lib/ipc";
+import {
+  convertPdf,
+  detectPdf,
+  exportMarkdown,
+  getAppSettings,
+} from "@/lib/ipc";
 import type { ConvertResult, DetectResult } from "@/lib/types";
 import * as pdfjs from "pdfjs-dist";
 
@@ -162,10 +167,12 @@ export function ConvertWorkspace({
     setConverting(true);
     try {
       const needOcr = detect?.pagesNeedingOcr ?? [];
-      const r =
-        needOcr.length > 0
-          ? await convertWithOcr(filePath, needOcr)
-          : await convertPdf(filePath);
+      // Route by the OCR toggle: when enabled the backend also OCRs pages whose
+      // local text extraction came up empty (image pages detection may miss).
+      const settings = await getAppSettings();
+      const r = settings.ocrEnabled
+        ? await convertWithOcr(filePath, needOcr)
+        : await convertPdf(filePath);
       setResult(r);
       setDetect(r);
       onConverted?.(r);

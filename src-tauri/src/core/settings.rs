@@ -38,40 +38,36 @@ pub fn get_ocr_config(app: &AppHandle) -> Result<Vec<OcrVendor>, String> {
   Ok(load_vendors(&config_path(app)?))
 }
 
-/// Persist vendors, merging secrets:
+/// Persist vendors, replacing the whole list. Secrets are resolved per entry:
 /// - `clear_api_key` empties the stored key.
 /// - otherwise an empty `api_key` keeps the previously stored secret.
 /// - otherwise the new key is protected and stored.
 pub fn save_ocr_config(app: &AppHandle, inputs: Vec<OcrVendorInput>) -> Result<(), String> {
   let path = config_path(app)?;
-  let mut vendors = load_vendors(&path);
+  let existing = load_vendors(&path);
 
-  for input in inputs {
-    let key = if input.clear_api_key {
-      None
-    } else if input.api_key.trim().is_empty() {
-      vendors
-        .iter()
-        .find(|v| v.id == input.id)
-        .and_then(|v| v.api_key.clone())
-    } else {
-      Some(secret::protect(input.api_key.trim())?)
-    };
-
-    let merged = OcrVendor {
-      id: input.id.clone(),
-      name: input.name,
-      base_url: input.base_url,
-      api_key: key,
-      models: input.models,
-    };
-
-    if let Some(existing) = vendors.iter_mut().find(|v| v.id == merged.id) {
-      *existing = merged;
-    } else {
-      vendors.push(merged);
-    }
-  }
+  let vendors: Vec<OcrVendor> = inputs
+    .into_iter()
+    .map(|input| {
+      let key = if input.clear_api_key {
+        None
+      } else if input.api_key.trim().is_empty() {
+        existing
+          .iter()
+          .find(|v| v.id == input.id)
+          .and_then(|v| v.api_key.clone())
+      } else {
+        Some(secret::protect(input.api_key.trim())?)
+      };
+      Ok(OcrVendor {
+        id: input.id,
+        name: input.name,
+        base_url: input.base_url,
+        api_key: key,
+        models: input.models,
+      })
+    })
+    .collect::<Result<Vec<_>, String>>()?;
 
   let dir = path
     .parent()

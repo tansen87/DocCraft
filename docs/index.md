@@ -19,6 +19,10 @@ and Simplified Chinese — switchable at runtime.
 - **Smart PDF routing** — `pdf-inspector` classifies each PDF (~10–50ms) as
   `TextBased` / `Scanned` / `ImageBased` / `Mixed` and reports exactly which
   pages need OCR (`pages_needing_ocr`). Pure-text PDFs never touch the network.
+  Because classification and per-page OCR flagging can disagree (a `Mixed` doc
+  may have image pages that are never flagged), the backend also OCRs every
+  page whose local text extraction came up empty whenever OCR is enabled and a
+  provider is configured — so image-only pages are never silently dropped.
 - **Local markdown extraction** — headings, lists, code blocks, tables, links,
   and repeated-header/footer stripping — no OCR needed for native text PDFs.
   Every converted page is delimited by a `<!-- Page N -->` marker, which lets
@@ -28,8 +32,12 @@ and Simplified Chinese — switchable at runtime.
   lazily so large documents are never parsed in full at once.
 - **Configurable OCR providers** — any **OpenAI-chat-completions-compatible**
   vision API (`base_url`, per-vendor multiple models). API keys are encrypted
-  at rest (DPAPI on Windows) and never sent back to the frontend. The first
-  configured vendor with a key + model is used by default.
+  at rest (DPAPI on Windows) and never sent back to the frontend. Each model
+  can be marked with a ★ **default** flag; the backend prefers a vendor that
+  has a default model and uses that model (falling back to the first keyed
+  vendor / first model otherwise). A **master "enable OCR" switch** in Settings
+  lets you turn OCR off entirely — scanned pages are then skipped locally and
+  no image ever leaves the machine.
 - **Graceful OCR fallback** — when no usable OCR provider is configured, the
   conversion still completes: pages flagged for OCR are skipped (marked with a
   `<!-- OCR 跳过 … -->` comment) and recorded instead of failing the document.
@@ -160,7 +168,7 @@ Commands (invoked from `src/lib/ipc.ts`):
 | `get_ocr_config`     | —                                       | `OcrVendor[]` (keys never returned, only `apiKeySet`) |
 | `save_ocr_config`    | `{ vendors }`                           | `void` (merges/encrypts API keys) |
 | `reveal_ocr_key`     | `{ vendorId }`                          | `string \| null` (decrypted key, "show key") |
-| `get_app_settings`   | —                                       | `AppSettings` (`maxConcurrent`) |
+| `get_app_settings`   | —                                       | `AppSettings` (`maxConcurrent`, `cacheExtractedText`, `excelTablesOnly`, `ocrEnabled`) |
 | `set_app_settings`   | `{ settings }`                          | `void` (clamped 1–16) |
 
 Result fields are serialized in camelCase; `PdfTypeDto` mirrors `pdf-inspector`'s
@@ -171,13 +179,16 @@ Result fields are serialized in camelCase; `PdfTypeDto` mirrors `pdf-inspector`'
 ```
 [1] User drops / picks a PDF        → whole-window drag & drop or dialog plugin → absolute path
 [2] detect_pdf(path)                → auto-runs on select → classification + OCR routing signals
-[3] Convert (pure text PDF)
+[3] Convert (OCR disabled)
     convert_pdf(path)               → pdf-inspector::process_pdf → full local Markdown
-[4] Convert (mixed / scanned PDF)
-    startHybridSession(path, N)     → backend extracts text pages once, resolves OCR provider
-                                      (if none configured → pages are skipped and recorded)
+[4] Convert (OCR enabled)
+    startHybridSession(path, N)     → backend extracts text pages once, resolves OCR provider;
+                                      when a provider is available it also adds any page whose
+                                      local text extraction is empty (image-only pages that
+                                      detection can miss); if none configured → pages are
+                                      skipped and recorded
     renderPdfPagesForOcr(path, N)   → pdf.js renders ONE OCR page to PNG (base64) at a time
-                                      (skipped entirely when OCR is not configured)
+                                      (skipped entirely when no OCR provider is configured)
     hybrid_page_ocr(session, p, im) → OCR provider per image, streamed one page at a time
     hybrid_session_finish(session)  → reassemble in doc order; abort on cancel/error
 [5] PDF preview                     → pdf.js fetches file via asset protocol → canvas pages
@@ -256,16 +267,24 @@ cargo check --manifest-path src-tauri/Cargo.toml
 
 - `ocr-config.json` (per-vendor): name, base URL, protected API key
   (`v1:<DPAPI-encrypted hex>` on Windows, `obf:` fallback elsewhere),
-  list of models.
+  list of models (each with a `default` flag; a ★-marked model is the one used
+  for OCR).
 - `app-settings.json`: `maxConcurrent` (1–16, default 1) driving the batch
-  worker-pool size, and `cacheExtractedText` (default `true`) — when on, the
+  worker-pool size, `cacheExtractedText` (default `true`) — when on, the
   line-draw table extraction decodes the current PDF's text once and reuses it
   across draw/merge calls; toggle it off for very large documents to free
-  memory (the cache is evicted when another file is opened).
+  memory (the cache is evicted when another file is opened) — and
+  `ocrEnabled` (default `true`), a master switch for OCR. When `ocrEnabled` is
+  off, pages that need OCR are skipped (recorded in `skippedPages` and
+  commented `<!-- OCR skipped (page N): OCR is disabled in settings -->`), so
+  no page image ever leaves the machine even if a provider is configured. When
+  it is on, conversion routes through the hybrid session and — in addition to
+  the pages detection flagged — any page whose local text extraction produced
+  no content is also sent to the OCR provider.
 
 Both live in the Tauri `app_config_dir` directory. No third-party store plugin
-is required. For privacy, only pages flagged as needing OCR are ever sent to an
-external OCR provider.
+is required. For privacy, only pages that need OCR (detected or empty
+extraction) are ever sent to an external OCR provider.
 
 ## License
 

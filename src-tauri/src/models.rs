@@ -102,6 +102,9 @@ impl From<&PdfProcessResult> for ConvertResult {
 pub struct OcrModel {
   pub id: String,
   pub name: String,
+  /// Whether this is the model used for OCR when its vendor is selected.
+  #[serde(default)]
+  pub default: bool,
 }
 
 /// Persisted vendor entry. `api_key` holds the *protected* secret
@@ -289,6 +292,11 @@ pub struct AppSettings {
   /// into the workbook.
   #[serde(default = "default_true")]
   pub excel_tables_only: bool,
+  /// Master switch for OCR. When `false`, pages that would need OCR are
+  /// skipped (recorded in `skippedPages`) even if a provider is configured,
+  /// so no page image ever leaves the machine.
+  #[serde(default = "default_true")]
+  pub ocr_enabled: bool,
 }
 
 fn default_true() -> bool {
@@ -301,6 +309,7 @@ impl Default for AppSettings {
       max_concurrent: 1,
       cache_extracted_text: true,
       excel_tables_only: true,
+      ocr_enabled: true,
     }
   }
 }

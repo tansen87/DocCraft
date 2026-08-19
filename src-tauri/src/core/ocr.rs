@@ -31,13 +31,21 @@ fn completions_url(base_url: &str) -> String {
   }
 }
 
-/// Pick the provider used for OCR: the first configured vendor that has a
-/// stored key and at least one model.
+/// Pick the provider used for OCR: prefer a configured vendor that has a
+/// stored key, at least one model, and a model explicitly marked as default;
+/// otherwise fall back to the first vendor with a stored key and a model.
 fn resolve_provider(vendors: &[OcrVendor]) -> Option<(&OcrVendor, &crate::models::OcrModel)> {
-  vendors
+  let usable = |v: &&OcrVendor| v.api_key.is_some() && !v.models.is_empty();
+  let vendor = vendors
     .iter()
-    .filter(|v| v.api_key.is_some())
-    .find_map(|v| v.models.first().map(|m| (v, m)))
+    .find(|v| usable(v) && v.models.iter().any(|m| m.default))
+    .or_else(|| vendors.iter().find(usable))?;
+  let model = vendor
+    .models
+    .iter()
+    .find(|m| m.default)
+    .or_else(|| vendor.models.first())?;
+  Some((vendor, model))
 }
 
 /// Send one page image to an OpenAI-compatible `/chat/completions` endpoint
@@ -122,6 +130,8 @@ pub struct HybridSession {
   pub skipped_pages: Vec<u32>,
   /// Pages whose OCR request failed (degraded to a placeholder comment).
   pub failed_pages: Vec<u32>,
+  /// Reason shown in the skip comment for skipped OCR pages.
+  pub skip_reason: &'static str,
   pub start: Instant,
 }
 
@@ -171,26 +181,51 @@ pub fn start_session(
   ocr_set.sort_unstable();
   ocr_set.dedup();
 
-  // Resolve the OCR provider when pages need OCR. If none is configured, the
-  // conversion still proceeds — those pages are skipped and recorded instead of
-  // aborting the whole document.
-  let (resolved, skipped_pages): (Option<(String, String, String)>, Vec<u32>) =
-    if !ocr_set.is_empty() {
-      let vendors = settings::get_ocr_config(app)?;
-      match resolve_provider(&vendors) {
-        Some((vendor, model)) => {
-          let key = settings::api_key_for(app, &vendor.id)?
-            .ok_or_else(|| format!("The API Key of supplier '{}' is empty", vendor.name))?;
-          (
-            Some((vendor.base_url.clone(), model.id.clone(), key)),
-            Vec::new(),
-          )
-        }
-        None => (None, ocr_set.clone()),
+  // Resolve the OCR provider whenever OCR is enabled in settings. If OCR is
+  // disabled, or no provider is configured, the conversion still proceeds —
+  // those pages are skipped and recorded instead of aborting the whole
+  // document.
+  const OCR_DISABLED_REASON: &str = "OCR is disabled in settings";
+  const NO_PROVIDER_REASON: &str = "no OCR provider configured";
+  let ocr_enabled = settings::get_app_settings(app)?.ocr_enabled;
+  let mut resolved: Option<(String, String, String)> = None;
+  if ocr_enabled {
+    let vendors = settings::get_ocr_config(app)?;
+    if let Some((vendor, model)) = resolve_provider(&vendors) {
+      let key = settings::api_key_for(app, &vendor.id)?
+        .ok_or_else(|| format!("The API Key of supplier '{}' is empty", vendor.name))?;
+      resolved = Some((vendor.base_url.clone(), model.name.clone(), key));
+    }
+  }
+
+  // Detection can classify a document as Mixed (image pages present) without
+  // flagging any page for OCR. When a provider is available, also OCR pages
+  // whose local text extraction produced nothing — those are the image-only
+  // pages the detector missed.
+  if resolved.is_some() {
+    for (i, md) in page_markdowns.iter().enumerate() {
+      let page_1 = (i + 1) as u32;
+      if md.trim().is_empty() && !ocr_set.contains(&page_1) {
+        ocr_set.push(page_1);
       }
-    } else {
-      (None, Vec::new())
-    };
+    }
+    ocr_set.sort_unstable();
+    ocr_set.dedup();
+  }
+
+  let (resolved, skipped_pages, skip_reason): (
+    Option<(String, String, String)>,
+    Vec<u32>,
+    &'static str,
+  ) = if ocr_set.is_empty() {
+    (None, Vec::new(), NO_PROVIDER_REASON)
+  } else if !ocr_enabled {
+    (None, ocr_set.clone(), OCR_DISABLED_REASON)
+  } else if let Some(r) = resolved {
+    (Some(r), Vec::new(), NO_PROVIDER_REASON)
+  } else {
+    (None, ocr_set.clone(), NO_PROVIDER_REASON)
+  };
 
   let client = Client::builder()
     .timeout(Duration::from_secs(300))
@@ -222,6 +257,7 @@ pub fn start_session(
     ocr_results: HashMap::new(),
     skipped_pages,
     failed_pages: Vec::new(),
+    skip_reason,
     start,
   };
 
@@ -301,7 +337,10 @@ pub fn finish_session(store: &HybridStore, session_id: &str) -> Result<ConvertRe
   for i in 0..page_count {
     let page_1 = i + 1;
     let md = if skipped.contains(&page_1) {
-      format!("<!-- OCR skipped (page {page_1}): no OCR provider configured -->")
+      format!(
+        "<!-- OCR skipped (page {page_1}): {} -->",
+        session.skip_reason
+      )
     } else {
       match session.ocr_results.get(&page_1) {
         Some(m) => m.clone(),

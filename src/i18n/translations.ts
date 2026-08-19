@@ -100,6 +100,9 @@ const en = {
   "settings.threads": "Concurrency",
   "settings.ocrDesc":
     "Configure OCR services per vendor; each vendor can have multiple models. API keys are saved with system-level encryption. During conversion, scanned pages are recognized via OCR, using the first configured and valid vendor by default.",
+  "settings.ocrEnabled": "Enable OCR",
+  "settings.ocrEnabledDesc":
+    "Turn OCR on to recognize scanned / image pages through a configured provider. When off, pages that need OCR are skipped and no page image ever leaves this machine.",
   "settings.loadingConfig": "Loading configuration…",
   "settings.noVendors": "No vendors configured yet",
   "settings.noVendorsDesc":
@@ -117,12 +120,14 @@ const en = {
   "settings.clear": "Clear",
   "settings.models": "Models",
   "settings.modelPlaceholder": "e.g. gpt-4o-mini / qwen2.5-vl",
+  "settings.defaultModel": "Use this model for OCR",
   "settings.addModel": "Add model",
   "settings.threadsDesc":
     "Controls the number of concurrent threads used for batch conversion (1-16). Higher values convert faster overall but consume more CPU and memory.",
   "settings.maxConcurrent": "Max batch conversion concurrency",
   "settings.threadPlaceholder": "Enter thread count (1~16)",
   "settings.save": "Save",
+  "settings.unsavedChanges": "Unsaved changes",
   "settings.threadsHint2":
     "Keeping the default value of 1 is recommended; each task uses extra network requests when converting OCR documents.",
   "settings.cacheExtracted": "Cache extracted text (draw-table)",
@@ -303,6 +308,9 @@ const zh: Record<TranslationKey, string> = {
   "settings.threads": "并发线程",
   "settings.ocrDesc":
     "按供应商配置 OCR 服务,每个供应商可配置多个模型;API Key 使用系统级加密保存. 转换时扫描页将调用 OCR 识别,并默认使用第一个已配置且有效的供应商.",
+  "settings.ocrEnabled": "启用 OCR",
+  "settings.ocrEnabledDesc":
+    "开启后扫描/图片页将通过已配置的供应商进行 OCR 识别;关闭时需要 OCR 的页面会被跳过,不会有任何页面图片离开本机.",
   "settings.loadingConfig": "正在加载配置…",
   "settings.noVendors": "还没有配置供应商",
   "settings.noVendorsDesc":
@@ -320,12 +328,14 @@ const zh: Record<TranslationKey, string> = {
   "settings.clear": "清除",
   "settings.models": "模型",
   "settings.modelPlaceholder": "例如 gpt-4o-mini / qwen2.5-vl",
+  "settings.defaultModel": "使用此模型进行 OCR",
   "settings.addModel": "添加模型",
   "settings.threadsDesc":
     "控制批量转换使用的并发线程数(1-16),数值越高整体转换越快,但会占用更多 CPU 与内存.",
   "settings.maxConcurrent": "批量转换最大并发数",
   "settings.threadPlaceholder": "请输入线程数(1~16)",
   "settings.save": "保存",
+  "settings.unsavedChanges": "有未保存的更改",
   "settings.threadsHint2":
     "建议保持默认值 1;转换含 OCR 的文档时,每个任务会额外占用网络请求.",
   "settings.cacheExtracted": "缓存提取文本(划线表格)",
