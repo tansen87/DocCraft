@@ -161,6 +161,7 @@ const en = {
   "status.mode": "Mode",
   "status.skippedPages": "Skipped pages: {pages}",
   "status.failedPages": "Failed pages: {pages}",
+  "status.notices": "Notifications",
   "status.noticesEmpty": "No skipped or failed pages",
 
   "pdfmeta.text": "Text",
@@ -368,6 +369,7 @@ const zh: Record<TranslationKey, string> = {
   "status.mode": "模式",
   "status.skippedPages": "跳过的页: {pages}",
   "status.failedPages": "转换失败的页: {pages}",
+  "status.notices": "通知",
   "status.noticesEmpty": "无跳过或失败的页面",
 
   "pdfmeta.text": "文本型",

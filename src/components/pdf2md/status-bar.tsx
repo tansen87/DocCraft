@@ -1,11 +1,11 @@
 import { Bell } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/i18n";
 import { pdfTypeMeta } from "@/lib/pdf-meta";
 import type { DetectResult } from "@/lib/types";
@@ -135,10 +135,11 @@ export function StatusBar({
       ) : null}
 
       <div className="ml-auto">
-        <Tooltip>
-          <TooltipTrigger asChild>
+        <Popover>
+          <PopoverTrigger asChild>
             <button
               type="button"
+              aria-label={t("status.notices")}
               className={cn(
                 "relative flex size-8 items-center justify-center rounded-lg transition-colors",
                 noticeCount > 0
@@ -153,30 +154,43 @@ export function StatusBar({
                 </span>
               ) : null}
             </button>
-          </TooltipTrigger>
-          <TooltipContent>
-            {noticeCount === 0 ? (
-              t("status.noticesEmpty")
-            ) : (
-              <div className="space-y-1">
-                {skipped.length > 0 ? (
-                  <p>
-                    {t("status.skippedPages", {
-                      pages: skipped.join(", "),
-                    })}
-                  </p>
+          </PopoverTrigger>
+          <PopoverContent className="w-64">
+            <div className="space-y-2">
+              <p className="flex items-center gap-2 text-xs font-medium">
+                <Bell className="size-3.5" />
+                {t("status.notices")}
+                {noticeCount > 0 ? (
+                  <Badge variant="secondary" className="px-1.5 text-[10px]">
+                    {noticeCount}
+                  </Badge>
                 ) : null}
-                {failed.length > 0 ? (
-                  <p>
-                    {t("status.failedPages", {
-                      pages: failed.join(", "),
-                    })}
-                  </p>
-                ) : null}
-              </div>
-            )}
-          </TooltipContent>
-        </Tooltip>
+              </p>
+              {noticeCount === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("status.noticesEmpty")}
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {skipped.length > 0 ? (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      {t("status.skippedPages", {
+                        pages: skipped.join(", "),
+                      })}
+                    </p>
+                  ) : null}
+                  {failed.length > 0 ? (
+                    <p className="text-xs text-red-600 dark:text-red-400">
+                      {t("status.failedPages", {
+                        pages: failed.join(", "),
+                      })}
+                    </p>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
     </div>
   );

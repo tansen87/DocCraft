@@ -313,7 +313,11 @@ export function ConvertWorkspace({
           result={detect}
           loading={detecting}
           extra={drawMode ? t("mode.drawTable") : undefined}
-          skippedPages={result?.skippedPages}
+          skippedPages={
+            drawMode
+              ? detect?.pagesNeedingOcr
+              : (result?.skippedPages ?? detect?.pagesNeedingOcr)
+          }
           failedPages={result?.failedPages}
         />
       </div>

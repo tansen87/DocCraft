@@ -10,10 +10,12 @@ use crate::models::{
 };
 
 /// Classify a PDF without extracting: returns type, confidence and which
-/// pages need OCR.
+/// pages need OCR. The extraction behind `pages_needing_ocr` is cached so a
+/// following conversion reuses it.
 #[tauri::command]
-async fn detect_pdf(path: String) -> Result<DetectResult, String> {
-  tauri::async_runtime::spawn_blocking(move || core::convert::detect_pdf(&path))
+async fn detect_pdf(app: tauri::AppHandle, path: String) -> Result<DetectResult, String> {
+  let use_cache = core::settings::get_app_settings(&app)?.cache_extracted_text;
+  tauri::async_runtime::spawn_blocking(move || core::convert::detect_pdf(&path, use_cache))
     .await
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())
@@ -21,8 +23,9 @@ async fn detect_pdf(path: String) -> Result<DetectResult, String> {
 
 /// Convert a PDF to Markdown locally via pdf-inspector.
 #[tauri::command]
-async fn convert_pdf(path: String) -> Result<ConvertResult, String> {
-  tauri::async_runtime::spawn_blocking(move || core::convert::convert_pdf(&path))
+async fn convert_pdf(app: tauri::AppHandle, path: String) -> Result<ConvertResult, String> {
+  let use_cache = core::settings::get_app_settings(&app)?.cache_extracted_text;
+  tauri::async_runtime::spawn_blocking(move || core::convert::convert_pdf(&path, use_cache))
     .await
     .map_err(|e| e.to_string())?
     .map_err(|e| e.to_string())

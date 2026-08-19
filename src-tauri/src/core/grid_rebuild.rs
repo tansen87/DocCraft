@@ -45,21 +45,32 @@ pub fn rebuild_pages(
   parts
 }
 
-/// Convenience wrapper around [`rebuild_pages`] that joins pages with a blank
-/// line, matching pdf-inspector's document-level output, and prefixes every
-/// page with a `<!-- Page N -->` marker so downstream tooling can attribute
-/// content (e.g. tables) to its source PDF page.
-pub fn rebuild_document(
-  pages: &[pdf_inspector::PageMarkdown],
-  items: &[TextItem],
-  pages_with_tables: &[u32],
-) -> String {
-  rebuild_pages(pages, items, pages_with_tables)
+/// Join already-rebuilt per-page markdowns into a single document string with
+/// `<!-- Page N -->` markers, so callers that rebuilt pages once (e.g. from the
+/// shared extraction cache) do not run the rebuild a second time.
+pub fn rebuild_document_from_markdowns(page_markdowns: Vec<String>) -> String {
+  page_markdowns
     .into_iter()
     .enumerate()
     .map(|(i, page)| format!("{}\n\n{page}", page_marker(i as u32 + 1)))
     .collect::<Vec<_>>()
     .join("\n\n")
+}
+
+/// Pages that truly need OCR: detection-flagged pages plus any page whose
+/// rebuilt markdown is empty (image-only pages the detector can miss).
+/// Derived from the real extraction, so the result is independent of whether
+/// OCR is enabled.
+pub fn merge_ocr_pages(detected: &[u32], page_markdowns: &[String]) -> Vec<u32> {
+  let mut pages: Vec<u32> = detected.to_vec();
+  for (i, md) in page_markdowns.iter().enumerate() {
+    if md.trim().is_empty() {
+      pages.push((i + 1) as u32);
+    }
+  }
+  pages.sort_unstable();
+  pages.dedup();
+  pages
 }
 
 /// Group positioned items into visual lines (top-to-bottom, then left-to-right).

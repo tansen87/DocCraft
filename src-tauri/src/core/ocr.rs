@@ -6,7 +6,7 @@ use reqwest::Client;
 use tauri::AppHandle;
 use uuid::Uuid;
 
-use crate::core::grid_rebuild;
+use crate::core::extract_cache;
 use crate::core::page_marker::page_marker;
 use crate::core::settings;
 use crate::models::{
@@ -162,15 +162,11 @@ pub fn start_session(
 ) -> Result<HybridSessionInfo, String> {
   let start = Instant::now();
 
-  let pages =
-    pdf_inspector::extract_pages_markdown(path, None).map_err(|e| format!("文本提取失败: {e}"))?;
-  let page_count = pages.pages.len() as u32;
-
-  // Recover line breaks on text pages.
-  let items =
-    pdf_inspector::extract_text_with_positions(path).map_err(|e| format!("文本提取失败: {e}"))?;
-  let page_markdowns: Vec<String> =
-    grid_rebuild::rebuild_pages(&pages.pages, &items, &pages.pages_with_tables);
+  let use_cache = settings::get_app_settings(app)?.cache_extracted_text;
+  let ext = extract_cache::cached_extraction(path, use_cache)
+    .map_err(|e| format!("Text extraction failed: {e}"))?;
+  let page_markdowns = ext.page_markdowns;
+  let page_count = page_markdowns.len() as u32;
 
   let det = pdf_inspector::detect_pdf(path).map_err(|e| e.to_string())?;
 
@@ -199,19 +195,18 @@ pub fn start_session(
   }
 
   // Detection can classify a document as Mixed (image pages present) without
-  // flagging any page for OCR. When a provider is available, also OCR pages
-  // whose local text extraction produced nothing — those are the image-only
-  // pages the detector missed.
-  if resolved.is_some() {
-    for (i, md) in page_markdowns.iter().enumerate() {
-      let page_1 = (i + 1) as u32;
-      if md.trim().is_empty() && !ocr_set.contains(&page_1) {
-        ocr_set.push(page_1);
-      }
+  // flagging any page for OCR. Always record pages whose local text extraction
+  // produced nothing — those are the image-only pages the detector missed — so
+  // `pages_needing_ocr` reflects the real situation regardless of the OCR
+  // toggle or whether a provider was resolved.
+  for (i, md) in page_markdowns.iter().enumerate() {
+    let page_1 = (i + 1) as u32;
+    if md.trim().is_empty() && !ocr_set.contains(&page_1) {
+      ocr_set.push(page_1);
     }
-    ocr_set.sort_unstable();
-    ocr_set.dedup();
   }
+  ocr_set.sort_unstable();
+  ocr_set.dedup();
 
   let (resolved, skipped_pages, skip_reason): (
     Option<(String, String, String)>,
@@ -239,11 +234,11 @@ pub fn start_session(
     page_count,
     pages_needing_ocr: ocr_set.clone(),
     title: det.title.clone(),
-    has_encoding_issues: !ocr_set.is_empty() || pages.pages.iter().any(|p| p.needs_ocr),
+    has_encoding_issues: !ocr_set.is_empty() || ext.needs_ocr_flags.iter().any(|&f| f),
     layout: LayoutDto {
-      is_complex: pages.is_complex,
-      pages_with_tables: pages.pages_with_tables.clone(),
-      pages_with_columns: pages.pages_with_columns.clone(),
+      is_complex: ext.is_complex,
+      pages_with_tables: ext.pages_with_tables,
+      pages_with_columns: ext.pages_with_columns,
     },
   };
 
