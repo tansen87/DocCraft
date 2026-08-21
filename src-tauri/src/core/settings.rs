@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
+use crate::core::get_resources_dir;
 use crate::core::secret;
 use crate::models::{AppSettings, OcrVendor, OcrVendorInput};
 
@@ -9,11 +10,16 @@ const CONFIG_FILE: &str = "ocr-config.json";
 const APP_SETTINGS_FILE: &str = "app-settings.json";
 const MAX_CONCURRENT_LIMIT: u32 = 16;
 
+fn data_dir(_app: &AppHandle) -> Result<PathBuf, String> {
+  let dir = get_resources_dir().join("data");
+  if !dir.exists() {
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create data directory: {e}"))?;
+  }
+  Ok(dir)
+}
+
 fn app_config_file(app: &AppHandle, file: &str) -> Result<PathBuf, String> {
-  let dir = app
-    .path()
-    .app_config_dir()
-    .map_err(|e| format!("Unable to obtain configuration directory: {e}"))?;
+  let dir = data_dir(app)?;
   Ok(dir.join(file))
 }
 

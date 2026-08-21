@@ -25,6 +25,8 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { OcrMode } from "@/lib/types";
 import {
   Tooltip,
   TooltipContent,
@@ -109,10 +111,8 @@ export function SettingsView() {
   const [section, setSection] = useState<SettingsSection>("ocr");
   const containerRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef<SettingsSection | null>(null);
-
   const [vendors, setVendors] = useState<VendorForm[]>([]);
-  const [ocrEnabled, setOcrEnabled] = useState(true);
-  const [localOcrEnabled, setLocalOcrEnabled] = useState(true);
+  const [ocrMode, setOcrMode] = useState<OcrMode>("disabled");
   const [maxConcurrent, setMaxConcurrent] = useState(1);
   const [cacheExtracted, setCacheExtracted] = useState(true);
   const [excelTablesOnly, setExcelTablesOnly] = useState(true);
@@ -128,8 +128,7 @@ export function SettingsView() {
       .then(([ocrVendors, settings]) => {
         if (cancelled) return;
         setVendors(ocrVendors.map(toForm));
-        setOcrEnabled(settings.ocrEnabled);
-        setLocalOcrEnabled(settings.localOcrEnabled);
+        setOcrMode(settings.ocrMode);
         setMaxConcurrent(clampThread(settings.maxConcurrent));
         setCacheExtracted(settings.cacheExtractedText);
         setExcelTablesOnly(settings.excelTablesOnly);
@@ -149,14 +148,6 @@ export function SettingsView() {
   const markDirty = () => {
     if (loaded) setDirty(true);
   };
-
-  const updateVendors = useCallback(
-    (updater: SetStateAction<VendorForm[]>) => {
-      setVendors(updater);
-      if (loaded) setDirty(true);
-    },
-    [loaded],
-  );
 
   async function handleSave() {
     setSaving(true);
@@ -182,8 +173,7 @@ export function SettingsView() {
       ),
       cacheExtractedText: cacheExtracted,
       excelTablesOnly,
-      ocrEnabled,
-      localOcrEnabled,
+      ocrMode,
     };
     try {
       await Promise.all([
@@ -345,15 +335,10 @@ export function SettingsView() {
                 <SectionHeader icon={ScanText} title={t("settings.ocr")} />
                 <OcrSettingsPanel
                   vendors={vendors}
-                  onChange={updateVendors}
-                  ocrEnabled={ocrEnabled}
-                  onOcrEnabledChange={(v) => {
-                    setOcrEnabled(v);
-                    markDirty();
-                  }}
-                  localOcrEnabled={localOcrEnabled}
-                  onLocalOcrEnabledChange={(v) => {
-                    setLocalOcrEnabled(v);
+                  onChange={setVendors}
+                  ocrMode={ocrMode}
+                  onOcrModeChange={(v) => {
+                    setOcrMode(v);
                     markDirty();
                   }}
                   loading={loading}
@@ -439,18 +424,14 @@ function SectionHeader({
 function OcrSettingsPanel({
   vendors,
   onChange,
-  ocrEnabled,
-  onOcrEnabledChange,
-  localOcrEnabled,
-  onLocalOcrEnabledChange,
+  ocrMode,
+  onOcrModeChange,
   loading,
 }: {
   vendors: VendorForm[];
   onChange: (updater: SetStateAction<VendorForm[]>) => void;
-  ocrEnabled: boolean;
-  onOcrEnabledChange: (v: boolean) => void;
-  localOcrEnabled: boolean;
-  onLocalOcrEnabledChange: (v: boolean) => void;
+  ocrMode: OcrMode;
+  onOcrModeChange: (v: OcrMode) => void;
   loading: boolean;
 }) {
   const { t } = useI18n();
@@ -567,39 +548,54 @@ function OcrSettingsPanel({
 
   return (
     <>
-      <div className="space-y-1.5">
-        <p className="text-sm text-muted-foreground">{t("settings.ocrDesc")}</p>
-      </div>
-
       <Card className="gap-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1 space-y-1">
-            <Label>{t("settings.ocrEnabled")}</Label>
-            <p className="text-xs text-muted-foreground">
-              {t("settings.ocrEnabledDesc")}
-            </p>
-          </div>
-          <Switch
-            checked={ocrEnabled}
-            onCheckedChange={onOcrEnabledChange}
-            disabled={loading}
-          />
-        </div>
-      </Card>
-
-      <Card className="gap-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1 space-y-1">
-            <Label>{t("settings.localOcrEnabled")}</Label>
-            <p className="text-xs text-muted-foreground">
-              {t("settings.localOcrEnabledDesc")}
-            </p>
-          </div>
-          <Switch
-            checked={localOcrEnabled}
-            onCheckedChange={onLocalOcrEnabledChange}
-            disabled={loading || !ocrEnabled}
-          />
+        <div className="space-y-2">
+          <Label>{t("settings.ocrEnabled")}</Label>
+          <Tabs
+            value={ocrMode}
+            onValueChange={(v) => onOcrModeChange(v as OcrMode)}
+          >
+            <TabsList className="w-full">
+              <TabsTrigger
+                value="forceLocal"
+                disabled={loading}
+                className="flex-1 text-xs"
+              >
+                {t("settings.ocrMode.forceLocal")}
+              </TabsTrigger>
+              <TabsTrigger
+                value="forceAi"
+                disabled={loading}
+                className="flex-1 text-xs"
+              >
+                {t("settings.ocrMode.forceAi")}
+              </TabsTrigger>
+              <TabsTrigger
+                value="nonTextLocal"
+                disabled={loading}
+                className="flex-1 text-xs"
+              >
+                {t("settings.ocrMode.nonTextLocal")}
+              </TabsTrigger>
+              <TabsTrigger
+                value="nonTextAi"
+                disabled={loading}
+                className="flex-1 text-xs"
+              >
+                {t("settings.ocrMode.nonTextAi")}
+              </TabsTrigger>
+              <TabsTrigger
+                value="disabled"
+                disabled={loading}
+                className="flex-1 text-xs"
+              >
+                {t("settings.ocrMode.disabled")}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <p className="text-xs text-muted-foreground">
+            {t(`settings.ocrMode.${ocrMode}Desc`)}
+          </p>
         </div>
       </Card>
 
@@ -674,12 +670,6 @@ function ThreadSettingsPanel({
 
   return (
     <>
-      <div className="space-y-1.5">
-        <p className="text-sm text-muted-foreground">
-          {t("settings.threadsDesc")}
-        </p>
-      </div>
-
       <Card className="gap-3 p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-0 flex-1 space-y-1.5">
@@ -718,12 +708,6 @@ function CacheSettingsPanel({
 
   return (
     <>
-      <div className="space-y-1.5">
-        <p className="text-sm text-muted-foreground">
-          {t("settings.cacheDesc")}
-        </p>
-      </div>
-
       <Card className="gap-3 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1 space-y-1">
@@ -738,9 +722,6 @@ function CacheSettingsPanel({
             disabled={disabled}
           />
         </div>
-        <p className="text-xs text-muted-foreground">
-          {t("settings.cacheExtractedHint")}
-        </p>
       </Card>
     </>
   );
@@ -759,12 +740,6 @@ function ExcelSettingsPanel({
 
   return (
     <>
-      <div className="space-y-1.5">
-        <p className="text-sm text-muted-foreground">
-          {t("settings.excelDesc")}
-        </p>
-      </div>
-
       <Card className="gap-3 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1 space-y-1">

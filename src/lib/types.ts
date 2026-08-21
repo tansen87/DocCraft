@@ -85,17 +85,22 @@ export interface AppSettings {
    */
   excelTablesOnly: boolean;
   /**
-   * Master switch for OCR. When false, pages that would need OCR are skipped
-   * even if a provider is configured, so no page image ever leaves the machine.
+   * OCR mode: controls when and how OCR is performed.
+   *  - forceOcr: OCR every page regardless of text extraction.
+   *  - nonTextOnly: OCR only pages with no extracted text.
+   *  - disabled: skip OCR entirely.
+   *  - local: use local PaddleOCR engine.
+   *  - ai: use remote AI vision providers.
    */
-  ocrEnabled: boolean;
-  /**
-   * Use local OCR engine (PaddleOCR) instead of remote OCR providers.
-   * When true, pages that need OCR are processed locally without sending
-   * any data to external services.
-   */
-  localOcrEnabled: boolean;
+  ocrMode: OcrMode;
 }
+
+export type OcrMode =
+  | "forceLocal"
+  | "forceAi"
+  | "nonTextLocal"
+  | "nonTextAi"
+  | "disabled";
 
 /** A single GitHub-Flavored Markdown table parsed by the backend. */
 export interface MdTable {

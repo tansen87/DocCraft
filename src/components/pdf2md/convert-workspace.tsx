@@ -170,9 +170,16 @@ export function ConvertWorkspace({
       // Route by the OCR toggle: when enabled the backend also OCRs pages whose
       // local text extraction came up empty (image pages detection may miss).
       const settings = await getAppSettings();
-      const r = settings.ocrEnabled
-        ? await convertWithOcr(filePath, needOcr)
-        : await convertPdf(filePath);
+      const isForce =
+        settings.ocrMode === "forceLocal" || settings.ocrMode === "forceAi";
+      const ocrPages =
+        isForce && detect
+          ? Array.from({ length: detect.pageCount }, (_, i) => i + 1)
+          : needOcr;
+      const r =
+        settings.ocrMode !== "disabled"
+          ? await convertWithOcr(filePath, ocrPages)
+          : await convertPdf(filePath);
       setResult(r);
       setDetect(r);
       onConverted?.(r);

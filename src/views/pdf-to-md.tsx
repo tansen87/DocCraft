@@ -159,9 +159,15 @@ export function BatchView() {
         // whose local text extraction came up empty (image pages detection may
         // miss).
         const settings = await getAppSettings();
-        result = settings.ocrEnabled
-          ? await convertWithOcr(job.path, needOcr)
-          : await convertPdf(job.path);
+        const isForce =
+          settings.ocrMode === "forceLocal" || settings.ocrMode === "forceAi";
+        const ocrPages = isForce
+          ? Array.from({ length: det.pageCount }, (_, i) => i + 1)
+          : needOcr;
+        result =
+          settings.ocrMode !== "disabled"
+            ? await convertWithOcr(job.path, ocrPages)
+            : await convertPdf(job.path);
         patchItem(job.id, { status: "done", result });
       } catch (e) {
         patchItem(job.id, { status: "error", error: String(e) });

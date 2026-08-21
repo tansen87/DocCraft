@@ -276,7 +276,7 @@ pub struct DrawTableResult {
 }
 
 /// Global application settings (persisted in `app-settings.json`).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
   /// Max concurrent batch conversions (clamped to 1–16).
@@ -292,16 +292,48 @@ pub struct AppSettings {
   /// into the workbook.
   #[serde(default = "default_true")]
   pub excel_tables_only: bool,
-  /// Master switch for OCR. When `false`, pages that would need OCR are
-  /// skipped (recorded in `skippedPages`) even if a provider is configured,
-  /// so no page image ever leaves the machine.
-  #[serde(default = "default_true")]
-  pub ocr_enabled: bool,
-  /// Use local OCR engine (PaddleOCR) instead of remote OCR providers.
-  /// When `true`, pages that need OCR are processed locally without sending
-  /// any data to external services.
+  /// OCR mode: controls when and how OCR is performed.
   #[serde(default)]
-  pub local_ocr_enabled: bool,
+  pub ocr_mode: OcrMode,
+}
+
+/// Controls when and how OCR is applied during conversion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OcrMode {
+  /// OCR every page using the local PaddleOCR engine.
+  ForceLocal,
+  /// OCR every page using remote AI vision providers.
+  ForceAi,
+  /// OCR only non-text pages using the local PaddleOCR engine.
+  NonTextLocal,
+  /// OCR only non-text pages using remote AI vision providers.
+  NonTextAi,
+  /// Disable OCR entirely.
+  Disabled,
+}
+
+impl OcrMode {
+  /// Returns true if this mode uses the local engine.
+  pub fn is_local(&self) -> bool {
+    matches!(self, Self::ForceLocal | Self::NonTextLocal)
+  }
+
+  /// Returns true if this mode requires OCR (not disabled).
+  pub fn is_enabled(&self) -> bool {
+    !matches!(self, Self::Disabled)
+  }
+
+  /// Returns true if OCR should be forced on all pages.
+  pub fn is_force(&self) -> bool {
+    matches!(self, Self::ForceLocal | Self::ForceAi)
+  }
+}
+
+impl Default for OcrMode {
+  fn default() -> Self {
+    Self::Disabled
+  }
 }
 
 fn default_true() -> bool {
@@ -314,8 +346,7 @@ impl Default for AppSettings {
       max_concurrent: 1,
       cache_extracted_text: true,
       excel_tables_only: true,
-      ocr_enabled: true,
-      local_ocr_enabled: true,
+      ocr_mode: OcrMode::default(),
     }
   }
 }

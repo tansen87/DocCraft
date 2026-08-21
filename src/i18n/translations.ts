@@ -98,14 +98,21 @@ const en = {
 
   "settings.ocr": "OCR Service",
   "settings.threads": "Concurrency",
-  "settings.ocrDesc":
-    "Configure OCR services per vendor; each vendor can have multiple models. API keys are saved with system-level encryption. During conversion, scanned pages are recognized via OCR, using the first configured and valid vendor by default.",
-  "settings.ocrEnabled": "Enable OCR",
-  "settings.ocrEnabledDesc":
-    "Turn OCR on to recognize scanned / image pages through a configured provider. When off, pages that need OCR are skipped and no page image ever leaves this machine.",
-  "settings.localOcrEnabled": "Use Local OCR",
-  "settings.localOcrEnabledDesc":
-    "Use the built-in PaddleOCR engine for OCR processing. When enabled, pages are processed locally without sending data to external services. This requires the local OCR models to be available in the resources directory.",
+  "settings.ocrEnabled": "OCR Mode",
+  "settings.ocrMode.forceLocal": "Force OCR (Local)",
+  "settings.ocrMode.forceLocalDesc":
+    "OCR every page using local PaddleOCR engine",
+  "settings.ocrMode.forceAi": "Force OCR (AI)",
+  "settings.ocrMode.forceAiDesc":
+    "OCR every page using remote AI vision providers",
+  "settings.ocrMode.nonTextLocal": "Non-text Only (Local)",
+  "settings.ocrMode.nonTextLocalDesc":
+    "OCR only non-text pages using local PaddleOCR engine",
+  "settings.ocrMode.nonTextAi": "Non-text Only (AI)",
+  "settings.ocrMode.nonTextAiDesc":
+    "OCR only non-text pages using remote AI vision providers",
+  "settings.ocrMode.disabled": "Disabled",
+  "settings.ocrMode.disabledDesc": "Skip OCR entirely",
   "settings.loadingConfig": "Loading configuration…",
   "settings.noVendors": "No vendors configured yet",
   "settings.noVendorsDesc":
@@ -125,8 +132,6 @@ const en = {
   "settings.modelPlaceholder": "e.g. gpt-4o-mini / qwen2.5-vl",
   "settings.defaultModel": "Use this model for OCR",
   "settings.addModel": "Add model",
-  "settings.threadsDesc":
-    "Controls the number of concurrent threads used for batch conversion (1-16). Higher values convert faster overall but consume more CPU and memory.",
   "settings.maxConcurrent": "Max batch conversion concurrency",
   "settings.threadPlaceholder": "Enter thread count (1~16)",
   "settings.save": "Save",
@@ -135,18 +140,12 @@ const en = {
     "Keeping the default value of 1 is recommended; each task uses extra network requests when converting OCR documents.",
   "settings.cacheExtracted": "Cache extracted text (draw-table)",
   "settings.cacheExtractedDesc":
-    "Keep the decoded text of the current PDF in memory so repeated draw-table extractions reuse the font decode instead of re-parsing the document each time.",
-  "settings.cacheExtractedHint":
-    "Enabled by default. The cache is only filled by full-document extraction — the first-5-pages preview never caches — and is cleared automatically when you open another file. Disable for very large documents to free memory.",
+    "When enabled, store the decoded text of the current PDF in memory to accelerate PDF extraction",
   "settings.cache": "Text Cache",
-  "settings.cacheDesc":
-    "Controls the in-memory cache of decoded PDF text used by draw-table extraction. Caching avoids re-parsing the document on every extraction, at the cost of holding one decoded copy in memory.",
   "settings.excel": "Excel Export",
-  "settings.excelDesc":
-    "Controls how Markdown is written into an Excel workbook when exporting.",
   "settings.excelTablesOnly": "Only convert tables to Excel",
   "settings.excelTablesOnlyDesc":
-    "When enabled, only the GFM tables of the document are exported. Turn it off to write the whole document — tables and plain text — into the workbook.",
+    "When enabled, only export GFM tables from the document; After closing, the entire document content (tables and plain text) will be written to Excel",
 
   "toolbar.remove": "Remove",
   "toolbar.drawTable": "Draw Table",
@@ -310,14 +309,20 @@ const zh: Record<TranslationKey, string> = {
 
   "settings.ocr": "OCR 服务",
   "settings.threads": "并发线程",
-  "settings.ocrDesc":
-    "按供应商配置 OCR 服务,每个供应商可配置多个模型;API Key 使用系统级加密保存. 转换时扫描页将调用 OCR 识别,并默认使用第一个已配置且有效的供应商.",
-  "settings.ocrEnabled": "启用 OCR",
-  "settings.ocrEnabledDesc":
-    "开启后扫描/图片页将通过已配置的供应商进行 OCR 识别;关闭时需要 OCR 的页面会被跳过,不会有任何页面图片离开本机.",
-  "settings.localOcrEnabled": "使用本地 OCR",
-  "settings.localOcrEnabledDesc":
-    "使用内置的 PaddleOCR 引擎进行 OCR 处理。启用后,页面将在本地处理,不会将数据发送到外部服务。需要资源目录中包含本地 OCR 模型文件。",
+  "settings.ocrEnabled": "OCR 模式",
+  "settings.ocrMode.forceLocal": "强制OCR(本地)",
+  "settings.ocrMode.forceLocalDesc":
+    "对所有页面使用本地 PaddleOCR 引擎进行 OCR",
+  "settings.ocrMode.forceAi": "强制OCR(AI)",
+  "settings.ocrMode.forceAiDesc": "对所有页面使用远程 AI 视觉模型进行 OCR",
+  "settings.ocrMode.nonTextLocal": "仅非文本页(本地)",
+  "settings.ocrMode.nonTextLocalDesc":
+    "仅对非文本页面使用本地 PaddleOCR 引擎进行 OCR",
+  "settings.ocrMode.nonTextAi": "仅非文本页(AI)",
+  "settings.ocrMode.nonTextAiDesc":
+    "仅对非文本页面使用远程 AI 视觉模型进行 OCR",
+  "settings.ocrMode.disabled": "不使用 OCR",
+  "settings.ocrMode.disabledDesc": "完全跳过 OCR",
   "settings.loadingConfig": "正在加载配置…",
   "settings.noVendors": "还没有配置供应商",
   "settings.noVendorsDesc":
@@ -337,8 +342,6 @@ const zh: Record<TranslationKey, string> = {
   "settings.modelPlaceholder": "例如 gpt-4o-mini / qwen2.5-vl",
   "settings.defaultModel": "使用此模型进行 OCR",
   "settings.addModel": "添加模型",
-  "settings.threadsDesc":
-    "控制批量转换使用的并发线程数(1-16),数值越高整体转换越快,但会占用更多 CPU 与内存.",
   "settings.maxConcurrent": "批量转换最大并发数",
   "settings.threadPlaceholder": "请输入线程数(1~16)",
   "settings.save": "保存",
@@ -347,17 +350,12 @@ const zh: Record<TranslationKey, string> = {
     "建议保持默认值 1;转换含 OCR 的文档时,每个任务会额外占用网络请求.",
   "settings.cacheExtracted": "缓存提取文本(划线表格)",
   "settings.cacheExtractedDesc":
-    "将当前 PDF 解码后的文本驻留在内存中,重复划线提取时直接复用字体解码结果,而无需每次重新解析文档.",
-  "settings.cacheExtractedHint":
-    "默认开启. 缓存仅在提取全部页时填充,前5页预览不会缓存;切换打开其他文件时缓存自动清空. 超大文档可关闭以释放内存.",
+    "开启时,将当前PDF解码后的文本驻留在内存中,加速PDF提取",
   "settings.cache": "文本缓存",
-  "settings.cacheDesc":
-    "控制划线表格提取时解码后 PDF 文本的内存缓存. 缓存可避免每次提取都重新解析文档,代价是在内存中保留一份解码副本.",
   "settings.excel": "Excel 导出",
-  "settings.excelDesc": "控制 Markdown 导出到 Excel 工作簿时的写入内容.",
   "settings.excelTablesOnly": "仅将表格转换为 Excel",
   "settings.excelTablesOnlyDesc":
-    "开启时只导出文档中的 GFM 表格;关闭后会将整个文档内容(表格和普通文本)都写入工作簿.",
+    "开启时,只导出文档中的GFM表格;关闭后会将整个文档内容(表格和普通文本)都写入Excel",
 
   "toolbar.remove": "移除",
   "toolbar.drawTable": "划线表格",

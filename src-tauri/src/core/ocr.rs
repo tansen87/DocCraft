@@ -5,14 +5,14 @@ use std::time::{Duration, Instant};
 
 use ocr_rs::OcrEngine;
 use reqwest::Client;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use uuid::Uuid;
 
-use crate::core::extract_cache;
 use crate::core::page_marker::page_marker;
 use crate::core::settings;
+use crate::core::{extract_cache, get_resources_dir};
 use crate::models::{
-  ConvertResult, DetectResult, HybridSessionInfo, LayoutDto, OcrVendor, PdfTypeDto,
+  ConvertResult, DetectResult, HybridSessionInfo, LayoutDto, OcrMode, OcrVendor, PdfTypeDto,
 };
 
 /// Prompt sent to the vision model for every OCR page.
@@ -101,50 +101,14 @@ impl LocalOcrEngine {
 }
 
 /// Helper to build the resource directory path for OCR models.
-fn ocr_resource_dir(app: &AppHandle) -> Result<PathBuf, String> {
-  // 1) Bundled mode: resources are copied alongside the binary.
-  if let Ok(resource_dir) = app.path().resource_dir() {
-    let ppocr_dir = resource_dir.join("ppocr");
-    if ppocr_dir.exists() {
-      return Ok(ppocr_dir);
-    }
+fn ocr_resource_dir(_app: &AppHandle) -> Result<PathBuf, String> {
+  let base = get_resources_dir().join("ppocr");
+  if base.exists() {
+    return Ok(base);
   }
-
-  let exe_dir = std::env::current_exe()
-    .map_err(|e| format!("Failed to get exe path: {e}"))?
-    .parent()
-    .ok_or_else(|| "Failed to get exe parent".to_string())?
-    .to_path_buf();
-
-  // 2) Models next to the exe: <exe_dir>/doccraft_resources/ppocr/
-  //    Works for both dev (target/debug/) and packaged install.
-  let exe_sibling = exe_dir.join("doccraft_resources").join("ppocr");
-  if let Ok(canonical) = std::fs::canonicalize(&exe_sibling) {
-    if canonical.exists() {
-      return Ok(canonical);
-    }
-  }
-
-  // 3) Dev fallback: project root doccraft_resources/ppocr/
-  //    exe is at target/{debug,release}/, go up 2 levels to project root.
-  let dev_dir = exe_dir.join("../../doccraft_resources/ppocr");
-  if let Ok(canonical) = std::fs::canonicalize(&dev_dir) {
-    if canonical.exists() {
-      return Ok(canonical);
-    }
-  }
-
-  // 4) Legacy dev fallback: src-tauri/resources/ppocr/
-  let legacy_dir = exe_dir.join("../../src-tauri/resources/ppocr");
-  if let Ok(canonical) = std::fs::canonicalize(&legacy_dir) {
-    if canonical.exists() {
-      return Ok(canonical);
-    }
-  }
-
   Err(format!(
     "OCR model directory not found. Please place models at:\n  {}",
-    exe_sibling.display(),
+    base.display(),
   ))
 }
 
@@ -299,8 +263,8 @@ pub struct HybridSession {
   /// Reason shown in the skip comment for skipped OCR pages.
   pub skip_reason: &'static str,
   pub start: Instant,
-  /// Whether to use local OCR instead of remote OCR.
-  pub use_local_ocr: bool,
+  /// The OCR mode chosen by the user for this session.
+  pub ocr_mode: OcrMode,
 }
 
 /// Managed store of live hybrid sessions keyed by a generated session id.
@@ -352,21 +316,27 @@ pub fn start_session(
   const OCR_DISABLED_REASON: &str = "OCR is disabled in settings";
   const NO_PROVIDER_REASON: &str = "no OCR provider configured";
   let app_settings = settings::get_app_settings(app)?;
-  let ocr_enabled = app_settings.ocr_enabled;
+  let ocr_mode = app_settings.ocr_mode;
   let mut resolved: Option<(String, String, String)> = None;
-  let mut use_local_ocr = false;
 
-  if ocr_enabled {
-    // Check if local OCR is enabled in settings
-    if app_settings.local_ocr_enabled {
-      use_local_ocr = true;
-    } else {
-      let vendors = settings::get_ocr_config(app)?;
-      if let Some((vendor, model)) = resolve_provider(&vendors) {
-        let key = settings::api_key_for(app, &vendor.id)?
-          .ok_or_else(|| format!("The API Key of supplier '{}' is empty", vendor.name))?;
-        resolved = Some((vendor.base_url.clone(), model.name.clone(), key));
+  // Force modes: add every page to the OCR set.
+  if ocr_mode.is_force() {
+    for p in 1..=page_count {
+      if !ocr_set.contains(&p) {
+        ocr_set.push(p);
       }
+    }
+    ocr_set.sort_unstable();
+    ocr_set.dedup();
+  }
+
+  // For AI-based modes, resolve the remote provider.
+  if !ocr_mode.is_local() {
+    let vendors = settings::get_ocr_config(app)?;
+    if let Some((vendor, model)) = resolve_provider(&vendors) {
+      let key = settings::api_key_for(app, &vendor.id)?
+        .ok_or_else(|| format!("The API Key of supplier '{}' is empty", vendor.name))?;
+      resolved = Some((vendor.base_url.clone(), model.name.clone(), key));
     }
   }
 
@@ -390,11 +360,13 @@ pub fn start_session(
     &'static str,
   ) = if ocr_set.is_empty() {
     (None, Vec::new(), NO_PROVIDER_REASON)
-  } else if !ocr_enabled {
+  } else if !ocr_mode.is_enabled() {
     (None, ocr_set.clone(), OCR_DISABLED_REASON)
-  } else if use_local_ocr {
+  } else if ocr_mode.is_local() {
+    // Local OCR: no remote provider needed.
     (None, Vec::new(), NO_PROVIDER_REASON)
   } else if let Some(r) = resolved {
+    // AI-based modes with a configured provider.
     (Some(r), Vec::new(), NO_PROVIDER_REASON)
   } else {
     (None, ocr_set.clone(), NO_PROVIDER_REASON)
@@ -420,7 +392,7 @@ pub fn start_session(
     },
   };
 
-  let ocr_configured = resolved.is_some() || use_local_ocr;
+  let ocr_configured = resolved.is_some() || ocr_mode.is_local();
 
   let session = HybridSession {
     pages: page_markdowns,
@@ -432,7 +404,7 @@ pub fn start_session(
     failed_pages: Vec::new(),
     skip_reason,
     start,
-    use_local_ocr,
+    ocr_mode,
   };
 
   let mut map = store.lock();
@@ -469,17 +441,17 @@ pub async fn ocr_page_in_session(
   image_png: &str,
   app: &AppHandle,
 ) -> Result<String, String> {
-  let (client, resolved, use_local_ocr) = {
+  let (client, resolved, ocr_mode) = {
     let map = store.lock();
     let session = map
       .get(session_id)
       .ok_or_else(|| "The conversion session does not exist or has expired".to_string())?;
     let resolved = session.resolved.clone();
-    let use_local_ocr = session.use_local_ocr;
-    (session.client.clone(), resolved, use_local_ocr)
+    let ocr_mode = session.ocr_mode;
+    (session.client.clone(), resolved, ocr_mode)
   };
 
-  let md = if use_local_ocr {
+  let md = if ocr_mode.is_local() {
     // Use local OCR engine
     match local_ocr_page(app, page, image_png) {
       Ok(m) => m,
@@ -492,7 +464,7 @@ pub async fn ocr_page_in_session(
       }
     }
   } else {
-    // Use remote OCR provider
+    // Use remote OCR provider (Ai, NonTextOnly, ForceOcr)
     let (base_url, model_id, api_key) =
       resolved.ok_or_else(|| "No available OCR supplier configured".to_string())?;
     match ocr_page(&client, &base_url, &model_id, &api_key, page, image_png).await {
