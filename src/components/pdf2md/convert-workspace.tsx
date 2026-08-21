@@ -51,6 +51,8 @@ export function ConvertWorkspace({
   );
   const [drawMode, setDrawMode] = useState(false);
   const [mergedMarkdown, setMergedMarkdown] = useState<string | null>(null);
+  /** Elapsed time (ms) of the last draw-table extraction, shown in the preview header. */
+  const [extractTimeMs, setExtractTimeMs] = useState(0);
   const [pageSize, setPageSize] = useState<{
     pageWidth: number;
     pageHeight: number;
@@ -213,12 +215,14 @@ export function ConvertWorkspace({
     if (!drawMode) {
       // Reset when entering draw mode
       setMergedMarkdown(null);
+      setExtractTimeMs(0);
     }
   }, [drawMode]);
 
   const handleMergeToMarkdown = useCallback(
-    (markdown: string) => {
+    (markdown: string, processingTimeMs?: number) => {
       setMergedMarkdown(markdown);
+      setExtractTimeMs(processingTimeMs ?? 0);
       // If we already have a converted result, merge the table markdown into it
       if (result) {
         const merged =
@@ -277,6 +281,12 @@ export function ConvertWorkspace({
                   pageY={pageSize.pageY}
                   pageWidth={pageSize.pageWidth}
                   pageHeight={pageSize.pageHeight}
+                  mayNeedOcr={
+                    detect
+                      ? detect.pdfType !== "TextBased" ||
+                        detect.pagesNeedingOcr.length > 0
+                      : undefined
+                  }
                   onMergeToMarkdown={handleMergeToMarkdown}
                   className="h-full"
                 />
@@ -288,7 +298,7 @@ export function ConvertWorkspace({
             <div className="shrink-0 max-h-[40vh]">
               <PreviewPane
                 markdown={mergedMarkdown}
-                processingTimeMs={0}
+                processingTimeMs={extractTimeMs}
                 onExport={handleExport}
                 className="h-full"
                 showPageMarkers

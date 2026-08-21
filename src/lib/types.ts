@@ -149,6 +149,16 @@ export interface PageDrawTable {
   pageHeight: number;
 }
 
+/** A page rendered to PNG (base64) for the draw-table local OCR fallback. */
+export interface PageImagePayload {
+  /** 1-indexed page number. */
+  page: number;
+  /** PNG bytes encoded as base64. */
+  imagePng: string;
+  /** Scale (pixels per PDF point) at which the PNG was rendered. */
+  renderScale: number;
+}
+
 /** Request payload for the draw-table extraction command. */
 export interface DrawTableRequest {
   pages: PageDrawTable[];
@@ -163,6 +173,23 @@ export interface DrawTableRequest {
    * lines). When omitted, all pages are extracted.
    */
   maxPages?: number;
+  /**
+   * Total page count of the document. Only needed for apply-to-all-pages
+   * extractions of documents without any text layer, where the page count
+   * cannot be derived from extracted text items.
+   */
+  totalPages?: number;
+  /**
+   * Restrict processing to these 1-indexed pages. Used to batch large OCR
+   * extractions into several requests.
+   */
+  onlyPages?: number[];
+  /**
+   * Rendered page images for the local PaddleOCR fallback. Pages with a text
+   * layer never touch these; an image is consumed only when its page has no
+   * extractable text at all.
+   */
+  pageImages?: PageImagePayload[];
 }
 
 /** Metadata about where a table was extracted from. */
@@ -181,6 +208,10 @@ export interface DrawTableResult {
   regions: TableRegionInfo[];
   totalRows: number;
   processingTimeMs: number;
+  /** 1-indexed pages whose content came from the local PaddleOCR fallback. */
+  ocrPages: number[];
+  /** 1-indexed pages that had no text layer and no usable OCR result. */
+  emptyTextPages: number[];
 }
 
 // ─── Frontend-only types for the canvas overlay ──────────────────────────

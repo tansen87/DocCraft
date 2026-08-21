@@ -6,9 +6,22 @@ import { CanvasOverlay } from "@/components/draw-table/canvas-overlay";
 import { DrawTableToolbar } from "@/components/draw-table/draw-table-toolbar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/i18n";
-import { extractDrawTableToMarkdown } from "@/lib/ipc";
-import type { DrawLine, DrawTableRequest, PageDrawTable } from "@/lib/types";
+import { extractDrawTable, getAppSettings } from "@/lib/ipc";
+import type {
+  DrawLine,
+  DrawTableRequest,
+  DrawTableResult,
+  MdTable,
+  PageDrawTable,
+  PageImagePayload,
+  TableRegionInfo,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+/** Render DPI multiplier for OCR page images (~180 DPI). */
+const OCR_RENDER_SCALE = 2.5;
+/** Max pages rendered per OCR batch to bound peak IPC payload size. */
+const OCR_BATCH_SIZE = 6;
 
 interface DrawTablePanelProps {
   /** PDF file path (filesystem path for the IPC calls) */
@@ -37,8 +50,15 @@ interface DrawTablePanelProps {
   pageWidth: number;
   /** Page height in PDF points (from pdfjs rawDims.pageHeight) */
   pageHeight: number;
-  /** Called when tables are extracted and ready to merge into Markdown */
-  onMergeToMarkdown?: (markdown: string) => void;
+  /**
+   * Whether any page might need the local PaddleOCR fallback (document is not
+   * purely text-based). When omitted, extraction conservatively assumes OCR
+   * may be needed — attaching images is harmless for text pages.
+   */
+  mayNeedOcr?: boolean;
+  /** Called when tables are extracted and ready to merge into Markdown. The
+   * second argument is the total backend extraction time in milliseconds. */
+  onMergeToMarkdown?: (markdown: string, processingTimeMs?: number) => void;
   className?: string;
 }
 
@@ -47,6 +67,59 @@ interface PageDrawState {
 }
 
 type HistoryEntry = PageDrawState;
+
+/** Render extracted tables as GFM markdown, prefixed with `<!-- Page N -->` markers. */
+function buildTablesMarkdown(
+  tables: MdTable[],
+  regions: TableRegionInfo[],
+): string {
+  const chunks: string[] = [];
+  let currentPage: number | null = null;
+  for (let i = 0; i < tables.length; i++) {
+    const table = tables[i];
+    if (!table.columns.length) continue;
+
+    let chunk = "";
+    const page = regions[i]?.page ?? null;
+    if (page !== null && page !== currentPage) {
+      currentPage = page;
+      chunk += `<!-- Page ${page} -->\n\n`;
+    }
+
+    chunk += "|";
+    for (const col of table.columns) {
+      chunk += ` ${col} |`;
+    }
+    chunk += `\n|${table.columns.map(() => " --- |").join("")}\n`;
+    for (const row of table.rows) {
+      chunk += "|";
+      for (const cell of row) {
+        chunk += ` ${cell} |`;
+      }
+      chunk += "\n";
+    }
+    chunks.push(chunk);
+  }
+  return chunks.join("\n\n---\n\n");
+}
+
+/** Merge two draw-table extraction results (batched OCR runs). */
+function mergeDrawResults(
+  a: DrawTableResult,
+  b: DrawTableResult,
+): DrawTableResult {
+  return {
+    tableCount: a.tableCount + b.tableCount,
+    tables: [...a.tables, ...b.tables],
+    regions: [...a.regions, ...b.regions],
+    totalRows: a.totalRows + b.totalRows,
+    processingTimeMs: a.processingTimeMs + b.processingTimeMs,
+    ocrPages: [...a.ocrPages, ...b.ocrPages],
+    emptyTextPages: Array.from(
+      new Set([...a.emptyTextPages, ...b.emptyTextPages]),
+    ),
+  };
+}
 
 export function DrawTablePanel({
   pdfPath,
@@ -62,6 +135,7 @@ export function DrawTablePanel({
   pageY,
   pageWidth,
   pageHeight,
+  mayNeedOcr,
   onMergeToMarkdown,
   className,
 }: DrawTablePanelProps) {
@@ -74,8 +148,61 @@ export function DrawTablePanel({
   // Cache the loaded PDF document so page switches reuse the parsed doc
   // instead of re-downloading/re-parsing the whole file every time.
   const docRef = useRef<pdfjs.PDFDocumentProxy | null>(null);
+  // In-flight document load, shared by the preview canvas and OCR rendering.
+  const docPromiseRef = useRef<Promise<pdfjs.PDFDocumentProxy> | null>(null);
   const loadingTaskRef = useRef<pdfjs.PDFDocumentLoadingTask | null>(null);
   const renderTaskRef = useRef<pdfjs.RenderTask | null>(null);
+
+  /** Load (or reuse) the parsed PDF document shared by preview and OCR renders. */
+  const getDoc = useCallback((): Promise<pdfjs.PDFDocumentProxy> => {
+    if (docRef.current) return Promise.resolve(docRef.current);
+    if (!docPromiseRef.current) {
+      const task = pdfjs.getDocument({ url: path });
+      loadingTaskRef.current = task;
+      docPromiseRef.current = task.promise.then((doc) => {
+        docRef.current = doc;
+        return doc;
+      });
+    }
+    return docPromiseRef.current;
+  }, [path]);
+
+  /**
+   * Render pages to PNG base64 at OCR resolution for the local PaddleOCR
+   * fallback. Each canvas is released as soon as its payload is captured.
+   */
+  const renderPageImages = useCallback(
+    async (pages: number[]): Promise<PageImagePayload[]> => {
+      const doc = await getDoc();
+      const out: PageImagePayload[] = [];
+      for (const pageNum of pages) {
+        const page = await doc.getPage(pageNum);
+        try {
+          const viewport = page.getViewport({ scale: OCR_RENDER_SCALE });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.floor(viewport.width));
+          canvas.height = Math.max(1, Math.floor(viewport.height));
+          const ctx = canvas.getContext("2d");
+          if (!ctx) continue;
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          await page.render({ canvas, viewport }).promise;
+          const dataUrl = canvas.toDataURL("image/png");
+          const comma = dataUrl.indexOf(",");
+          out.push({
+            page: pageNum,
+            imagePng: comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl,
+            renderScale: OCR_RENDER_SCALE,
+          });
+          canvas.width = 0;
+        } finally {
+          page.cleanup();
+        }
+      }
+      return out;
+    },
+    [getDoc],
+  );
 
   // Per-page state storage
   const pageStatesRef = useRef<Map<number, PageDrawState>>(new Map());
@@ -134,19 +261,8 @@ export function DrawTablePanel({
 
     (async () => {
       try {
-        let doc = docRef.current;
-        if (!doc) {
-          const task = pdfjs.getDocument({ url: path });
-          loadingTaskRef.current = task;
-          const loaded = await task.promise;
-          if (cancelled) {
-            task.destroy();
-            loadingTaskRef.current = null;
-            return;
-          }
-          doc = loaded;
-          docRef.current = doc;
-        }
+        const doc = await getDoc();
+        if (cancelled) return;
 
         const page = await doc.getPage(currentPage);
         if (cancelled) return;
@@ -173,7 +289,7 @@ export function DrawTablePanel({
       cancelled = true;
       renderTaskRef.current?.cancel();
     };
-  }, [path, currentPage, scale]);
+  }, [path, currentPage, scale, getDoc]);
 
   // Release the cached document when the PDF path changes or on unmount.
   useEffect(() => {
@@ -182,6 +298,7 @@ export function DrawTablePanel({
       loadingTaskRef.current?.destroy();
       loadingTaskRef.current = null;
       docRef.current = null;
+      docPromiseRef.current = null;
     };
   }, [path]);
 
@@ -243,6 +360,57 @@ export function DrawTablePanel({
     pushHistory(empty);
   }, [pushHistory]);
 
+  /**
+   * Extraction with local PaddleOCR fallback: pages without a text layer are
+   * rendered to PNG and recognized on-device. Small ranges attach all images
+   * in one call; larger ranges first resolve text-layer pages cheaply, then
+   * OCR only the empty ones in bounded batches.
+   */
+  const extractWithOcr = useCallback(
+    async (request: DrawTableRequest): Promise<DrawTableResult> => {
+      const doc = await getDoc();
+      request.totalPages = doc.numPages;
+
+      const rangeEnd =
+        request.useForAllPages && request.maxPages
+          ? Math.min(request.maxPages, doc.numPages)
+          : doc.numPages;
+      const targetPages: number[] = [];
+      if (request.useForAllPages) {
+        for (let p = 1; p <= rangeEnd; p++) targetPages.push(p);
+      } else {
+        for (const p of request.pages) {
+          if (!targetPages.includes(p.page)) targetPages.push(p.page);
+        }
+      }
+
+      if (targetPages.length <= OCR_BATCH_SIZE) {
+        const images = await renderPageImages(targetPages);
+        return extractDrawTable(pdfPath, { ...request, pageImages: images });
+      }
+
+      // Phase 1 over the whole range without images: text-layer pages are
+      // extracted instantly from the backend cache; only pages that came up
+      // empty go through rendering + OCR.
+      let result = await extractDrawTable(pdfPath, request);
+      const ocrNeeded = result.emptyTextPages.filter((p) =>
+        targetPages.includes(p),
+      );
+      for (let i = 0; i < ocrNeeded.length; i += OCR_BATCH_SIZE) {
+        const batch = ocrNeeded.slice(i, i + OCR_BATCH_SIZE);
+        const images = await renderPageImages(batch);
+        const batchResult = await extractDrawTable(pdfPath, {
+          ...request,
+          onlyPages: batch,
+          pageImages: images,
+        });
+        result = mergeDrawResults(result, batchResult);
+      }
+      return result;
+    },
+    [getDoc, renderPageImages, pdfPath],
+  );
+
   const handleExtract = useCallback(
     async (maxPages?: number) => {
       setExtracting(maxPages ? "first5" : "all");
@@ -272,11 +440,32 @@ export function DrawTablePanel({
       };
 
       try {
-        const md = await extractDrawTableToMarkdown(pdfPath, request);
+        // The draw-table OCR fallback is local-only: it runs when a local
+        // PaddleOCR mode is selected in settings and the document is not
+        // purely text-based.
+        const settings = await getAppSettings();
+        const useOcr =
+          (settings.ocrMode === "forceLocal" ||
+            settings.ocrMode === "nonTextLocal") &&
+          (mayNeedOcr ?? true);
+        const result = useOcr
+          ? await extractWithOcr(request)
+          : await extractDrawTable(pdfPath, request);
+
+        const md =
+          result.tableCount > 0
+            ? buildTablesMarkdown(result.tables, result.regions)
+            : "";
 
         if (md.trim()) {
-          onMergeToMarkdown?.(md);
-          toast.success(t("toast.extractDone"));
+          onMergeToMarkdown?.(md, result.processingTimeMs);
+          if (result.ocrPages.length > 0) {
+            toast.success(
+              t("toast.extractDoneOcr", { count: result.ocrPages.length }),
+            );
+          } else {
+            toast.success(t("toast.extractDone"));
+          }
         } else {
           toast.warning(t("toast.noTable"), {
             description: t("toast.noTableDesc"),
@@ -288,7 +477,15 @@ export function DrawTablePanel({
         setExtracting(null);
       }
     },
-    [pdfPath, currentPage, drawState, onMergeToMarkdown, t],
+    [
+      pdfPath,
+      currentPage,
+      drawState,
+      mayNeedOcr,
+      onMergeToMarkdown,
+      extractWithOcr,
+      t,
+    ],
   );
 
   const handleExtractFirst5 = useCallback(() => {

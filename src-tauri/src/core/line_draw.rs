@@ -1,13 +1,15 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
 use pdf_inspector::TextItem;
 use pdf_inspector::extractor::ItemType;
 
 use crate::core::extract_cache;
+use crate::core::ocr::{LocalOcrEngine, OcrRecognition};
 use crate::core::page_marker::page_marker;
 use crate::models::{
-  DrawTableRegion, DrawTableRequest, DrawTableResult, MdTable, PageDrawTable, TableRegionInfo,
+  DrawTableRegion, DrawTableRequest, DrawTableResult, MdTable, PageDrawTable, PageImagePayload,
+  TableRegionInfo,
 };
 
 /// A text element extracted from a PDF page with its position.
@@ -56,6 +58,53 @@ fn to_text_elements(items: &[TextItem], page_num: u32) -> Vec<TextElement> {
       font_size: it.font_size as f64,
     })
     .collect()
+}
+
+/// Map recognized OCR blocks from image pixel space into the same
+/// viewport-relative PDF point space the drawn lines use.
+///
+/// The PNG covers exactly the pdf.js viewport area whose lower-left corner is
+/// the viewBox origin `(page_x, page_y)`, so no further origin shift is needed:
+/// x simply scales by `1 / render_scale`, and y flips from a top-left pixel
+/// origin to the bottom-left PDF origin relative to that corner.
+fn ocr_blocks_to_elements(recognition: &OcrRecognition, render_scale: f64) -> Vec<TextElement> {
+  recognition
+    .blocks
+    .iter()
+    .map(|b| {
+      let x = b.left / render_scale;
+      let width = b.width / render_scale;
+      // Approximate height as the font size, mirroring how text elements use
+      // font_size as their vertical extent in region overlap checks.
+      let font_size = (b.height / render_scale).max(1.0);
+      let y = (recognition.height_px as f64 - (b.top + b.height)) / render_scale;
+      TextElement {
+        text: b.text.clone(),
+        x,
+        y,
+        width,
+        font_size,
+      }
+    })
+    .collect()
+}
+
+/// Run local PaddleOCR on one rendered page image and return positioned text
+/// elements ready for the column-cutting pipeline.
+fn ocr_text_elements(
+  engine: &LocalOcrEngine,
+  payload: &PageImagePayload,
+) -> Result<Vec<TextElement>, String> {
+  let png = base64::Engine::decode(
+    &base64::engine::general_purpose::STANDARD,
+    &payload.image_png,
+  )
+  .map_err(|e| format!("Failed to decode base64 image: {e}"))?;
+  if payload.render_scale <= 0.0 {
+    return Err("Invalid render scale for OCR page image".to_string());
+  }
+  let recognition = engine.recognize_png_blocks(&png)?;
+  Ok(ocr_blocks_to_elements(&recognition, payload.render_scale))
 }
 
 /// Filter text elements that fall within a given rectangular region.
@@ -468,6 +517,7 @@ pub fn extract_tables_from_draw_lines(
   path: &str,
   request: &DrawTableRequest,
   use_cache: bool,
+  ocr_engine: Option<&LocalOcrEngine>,
 ) -> Result<DrawTableResult, String> {
   let start = Instant::now();
 
@@ -489,6 +539,8 @@ pub fn extract_tables_from_draw_lines(
       regions: Vec::new(),
       processing_time_ms: start.elapsed().as_millis() as u64,
       total_rows: 0,
+      ocr_pages: Vec::new(),
+      empty_text_pages: Vec::new(),
     });
   }
 
@@ -540,9 +592,14 @@ pub fn extract_tables_from_draw_lines(
   let effective_pages: Vec<PageDrawTable> =
     if let Some(template) = template.filter(|_| use_for_all_pages) {
       // Without a page limit the lines apply to every page, bounded by the last
-      // page that actually has text items (avoids a separate full-document parse
-      // just to read the page count).
-      let total_pages = items.iter().map(|it| it.page).max().unwrap_or(0);
+      // page that actually has text items — or by the page count reported by
+      // the frontend, since scanned documents have no text items at all.
+      let total_pages = items
+        .iter()
+        .map(|it| it.page)
+        .max()
+        .unwrap_or(0)
+        .max(request.total_pages.unwrap_or(0));
       let end_page = max_pages.unwrap_or(total_pages);
       (1..=end_page)
         .map(|page| {
@@ -555,8 +612,31 @@ pub fn extract_tables_from_draw_lines(
       request.pages.clone()
     };
 
+  // Batched OCR extractions restrict processing to the pages carried by the
+  // current batch's images; everything else was handled in an earlier batch.
+  let effective_pages: Vec<PageDrawTable> = match &request.only_pages {
+    Some(only) => {
+      let set: HashSet<u32> = only.iter().copied().collect();
+      effective_pages
+        .into_iter()
+        .filter(|p| set.contains(&p.page))
+        .collect()
+    }
+    None => effective_pages,
+  };
+
+  // Rendered page images for the local OCR fallback, keyed by page number.
+  let page_images: HashMap<u32, &PageImagePayload> = request
+    .page_images
+    .iter()
+    .flatten()
+    .map(|img| (img.page, img))
+    .collect();
+
   let mut tables = Vec::new();
   let mut regions = Vec::new();
+  let mut ocr_pages = Vec::new();
+  let mut empty_text_pages = Vec::new();
 
   for page_draw in &effective_pages {
     let page_num = page_draw.page;
@@ -570,7 +650,7 @@ pub fn extract_tables_from_draw_lines(
     // The frontend (pdfjs viewport) puts the viewBox's lower-left corner at
     // (0,0), so shift pdf-inspector's absolute user-space coordinates by the
     // viewBox origin to make both sides agree.
-    let elements: Vec<TextElement> = to_text_elements(&items, page_num)
+    let mut elements: Vec<TextElement> = to_text_elements(&items, page_num)
       .into_iter()
       .map(|mut e| {
         e.x -= origin_x;
@@ -578,6 +658,24 @@ pub fn extract_tables_from_draw_lines(
         e
       })
       .collect();
+
+    // Scanned / image-only pages have no text layer at all. When the frontend
+    // supplied a rendered PNG for this page and the local PaddleOCR engine is
+    // available, recognize the image and use its positioned text blocks as
+    // the element source for the same column-cutting pipeline.
+    if elements.is_empty() {
+      if let (Some(engine), Some(img)) = (ocr_engine, page_images.get(&page_num)) {
+        if let Ok(ocr_elements) = ocr_text_elements(engine, img) {
+          if !ocr_elements.is_empty() {
+            elements = ocr_elements;
+            ocr_pages.push(page_num);
+          }
+        }
+      }
+    }
+    if elements.is_empty() {
+      empty_text_pages.push(page_num);
+    }
 
     // Process rectangle-based tables (legacy)
     if let Some(rects) = &page_draw.rectangles {
@@ -655,6 +753,8 @@ pub fn extract_tables_from_draw_lines(
     regions,
     processing_time_ms: start.elapsed().as_millis() as u64,
     total_rows,
+    ocr_pages,
+    empty_text_pages,
   })
 }
 
@@ -664,8 +764,9 @@ pub fn extract_tables_and_merge(
   request: &DrawTableRequest,
   existing_markdown: Option<&str>,
   use_cache: bool,
+  ocr_engine: Option<&LocalOcrEngine>,
 ) -> Result<String, String> {
-  let result = extract_tables_from_draw_lines(path, request, use_cache)?;
+  let result = extract_tables_from_draw_lines(path, request, use_cache, ocr_engine)?;
 
   if result.tables.is_empty() {
     return if let Some(md) = existing_markdown {
@@ -1021,5 +1122,88 @@ mod tests {
     assert_eq!(table.rows[1][0], "李四");
     assert_eq!(table.rows[1][1], "35");
     assert_eq!(table.rows[1][2], "上海");
+  }
+
+  #[test]
+  fn test_ocr_blocks_to_elements_maps_pixel_space_to_pdf_points() {
+    let recognition = OcrRecognition {
+      blocks: vec![
+        crate::core::ocr::OcrBlock {
+          text: "姓名".to_string(),
+          left: 20.0,
+          top: 40.0,
+          width: 50.0,
+          height: 25.0,
+        },
+        crate::core::ocr::OcrBlock {
+          text: "28".to_string(),
+          left: 200.0,
+          top: 100.0,
+          width: 30.0,
+          height: 20.0,
+        },
+      ],
+      height_px: 500,
+    };
+    let elements = ocr_blocks_to_elements(&recognition, 2.5);
+    assert_eq!(elements.len(), 2);
+
+    // x scales by 1/render_scale.
+    assert_eq!(elements[0].x, 8.0);
+    assert_eq!(elements[0].width, 20.0);
+    // y flips from top-left pixel origin to bottom-left point origin.
+    // Block 0: bottom edge at px 65 → (500 - 65) / 2.5 = 174.
+    assert_eq!(elements[0].y, 174.0);
+    assert_eq!(elements[0].font_size, 10.0);
+    // Block 1: bottom edge at px 120 → (500 - 120) / 2.5 = 152.
+    assert_eq!(elements[1].y, 152.0);
+  }
+
+  #[test]
+  fn test_ocr_elements_feed_vertical_line_extraction() {
+    // A scanned-page table recognized by OCR: two rows of blocks that must be
+    // cut into columns exactly like pdf-inspector text items would be.
+    let recognition = OcrRecognition {
+      blocks: vec![
+        crate::core::ocr::OcrBlock {
+          text: "姓名".to_string(),
+          left: 25.0,
+          top: 250.0,
+          width: 60.0,
+          height: 25.0,
+        },
+        crate::core::ocr::OcrBlock {
+          text: "年龄".to_string(),
+          left: 225.0,
+          top: 250.0,
+          width: 60.0,
+          height: 25.0,
+        },
+        crate::core::ocr::OcrBlock {
+          text: "张三".to_string(),
+          left: 25.0,
+          top: 375.0,
+          width: 60.0,
+          height: 25.0,
+        },
+        crate::core::ocr::OcrBlock {
+          text: "28".to_string(),
+          left: 240.0,
+          top: 375.0,
+          width: 30.0,
+          height: 25.0,
+        },
+      ],
+      height_px: 750,
+    };
+
+    let elements = ocr_blocks_to_elements(&recognition, 2.5);
+    let table = extract_table_from_vertical_lines(&elements, &[80.0, 180.0], 300.0, 300.0);
+    assert_eq!(table.columns.len(), 3);
+    assert_eq!(table.columns[0], "姓名");
+    assert_eq!(table.columns[1], "年龄");
+    assert_eq!(table.rows.len(), 1);
+    assert_eq!(table.rows[0][0], "张三");
+    assert_eq!(table.rows[0][1], "28");
   }
 }

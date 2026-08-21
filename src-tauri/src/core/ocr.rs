@@ -100,6 +100,58 @@ impl LocalOcrEngine {
   }
 }
 
+/// One recognized text block with its bounding box in image pixel space
+/// (origin at the top-left corner of the image).
+#[derive(Debug, Clone)]
+pub struct OcrBlock {
+  pub text: String,
+  pub left: f64,
+  pub top: f64,
+  pub width: f64,
+  pub height: f64,
+}
+
+/// Recognition output for one image: positioned text blocks plus the source
+/// image dimensions, so callers can map pixel coordinates into another space.
+#[derive(Debug, Clone)]
+pub struct OcrRecognition {
+  pub blocks: Vec<OcrBlock>,
+  pub height_px: u32,
+}
+
+impl LocalOcrEngine {
+  /// Recognize text blocks **with positions** from PNG bytes. Unlike
+  /// [`recognize_from_png`] this keeps every block's bounding box instead of
+  /// merging blocks into lines, which lets the draw-table extraction cut
+  /// recognized text by user-drawn column boundaries.
+  pub fn recognize_png_blocks(&self, png_data: &[u8]) -> Result<OcrRecognition, String> {
+    let image =
+      image::load_from_memory(png_data).map_err(|e| format!("Failed to load image: {e}"))?;
+
+    let results = self
+      .engine
+      .recognize(&image)
+      .map_err(|e| format!("Local OCR recognition failed: {e}"))?;
+
+    let blocks = results
+      .iter()
+      .filter(|r| !r.text.trim().is_empty())
+      .map(|r| OcrBlock {
+        text: r.text.clone(),
+        left: r.bbox.rect.left().max(0) as f64,
+        top: r.bbox.rect.top().max(0) as f64,
+        width: r.bbox.rect.width() as f64,
+        height: r.bbox.rect.height() as f64,
+      })
+      .collect();
+
+    Ok(OcrRecognition {
+      blocks,
+      height_px: image.height(),
+    })
+  }
+}
+
 /// Helper to build the resource directory path for OCR models.
 fn ocr_resource_dir(_app: &AppHandle) -> Result<PathBuf, String> {
   let base = get_resources_dir().join("ppocr");

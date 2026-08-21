@@ -65,8 +65,7 @@ async fn hybrid_page_ocr(
   page: u32,
   image_png: String,
 ) -> Result<String, String> {
-  core::ocr::ocr_page_in_session(&hybrid_store, &session_id, page, &image_png, &app)
-    .await
+  core::ocr::ocr_page_in_session(&hybrid_store, &session_id, page, &image_png, &app).await
 }
 
 /// Reassemble text + OCR pages in document order and discard the session.
@@ -154,6 +153,11 @@ async fn export_markdown_tables(
 }
 
 /// Extract tables from a PDF based on user-drawn lines.
+///
+/// When the request carries rendered page images, the local PaddleOCR engine
+/// is loaded (once per call) so pages without a text layer can still be
+/// extracted; if the models are unavailable the extraction degrades to
+/// text-only instead of failing.
 #[tauri::command]
 async fn extract_draw_table(
   app: tauri::AppHandle,
@@ -162,7 +166,8 @@ async fn extract_draw_table(
 ) -> Result<DrawTableResult, String> {
   tauri::async_runtime::spawn_blocking(move || {
     let use_cache = core::settings::get_app_settings(&app)?.cache_extracted_text;
-    core::line_draw::extract_tables_from_draw_lines(&path, &draw_data, use_cache)
+    let engine = local_engine_for_draw(&app, &draw_data);
+    core::line_draw::extract_tables_from_draw_lines(&path, &draw_data, use_cache, engine.as_ref())
   })
   .await
   .map_err(|e| e.to_string())?
@@ -178,15 +183,34 @@ async fn extract_draw_table_to_markdown(
 ) -> Result<String, String> {
   tauri::async_runtime::spawn_blocking(move || {
     let use_cache = core::settings::get_app_settings(&app)?.cache_extracted_text;
+    let engine = local_engine_for_draw(&app, &draw_data);
     core::line_draw::extract_tables_and_merge(
       &path,
       &draw_data,
       existing_markdown.as_deref(),
       use_cache,
+      engine.as_ref(),
     )
   })
   .await
   .map_err(|e| e.to_string())?
+}
+
+/// Create the local OCR engine when the draw-table request carries page
+/// images; returns `None` otherwise or when the bundled models are missing.
+fn local_engine_for_draw(
+  app: &tauri::AppHandle,
+  draw_data: &DrawTableRequest,
+) -> Option<core::ocr::LocalOcrEngine> {
+  if draw_data
+    .page_images
+    .as_ref()
+    .is_some_and(|imgs| !imgs.is_empty())
+  {
+    core::ocr::create_local_ocr_engine(app).ok()
+  } else {
+    None
+  }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

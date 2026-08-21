@@ -73,7 +73,14 @@ and Simplified Chinese — switchable at runtime.
   5 pages) for quick preview. Text extraction is cached per document and
   page-filtered to avoid redundant decoding. Each extracted block is prefixed
   with its source page's `<!-- Page N -->` marker, so merged tables keep their
-  page attribution in the preview and Excel export.
+  page attribution in the preview and Excel export. Pages **without a text
+  layer** (scans / image-only pages) fall back to the **local PaddleOCR**
+  engine: the frontend renders those pages to PNG (in batches of 6), the
+  backend recognizes positioned text blocks and cuts them by the drawn column
+  boundaries exactly like text-layer content. This fallback is local-only — it
+  runs when the OCR mode is `forceLocal` / `nonTextLocal`, never sends data to
+  the network, and degrades silently to empty results when the models are not
+  installed.
 - **Bilingual UI (i18n)** — English (default) and 中文 (Simplified Chinese)
   switched via a dropdown next to the theme toggle; the choice persists in
   `localStorage` and every string goes through a typed translation layer.
@@ -188,7 +195,7 @@ Commands (invoked from `src/lib/ipc.ts`):
 | `set_app_settings`   | `{ settings }`                          | `void` (clamped 1–16) |
 | `analyze_markdown`   | `{ path }`                              | `MdAnalyzeResult` (`tableCount`, `tables[]` with columns/rows/page, `totalRows`, `processingTimeMs`) |
 | `export_markdown_tables` | `{ mdPath, xlsxPath }`              | `MdExportResult` (`tableCount`, `totalRows`, `processingTimeMs`) |
-| `extract_draw_table` | `{ path, drawData }`                    | `DrawTableResult` (`tableCount`, `tables[]`, `regions[]`, `totalRows`, `processingTimeMs`) |
+| `extract_draw_table` | `{ path, drawData }` — `drawData` may carry `totalPages`, `onlyPages` (batching) and `pageImages[]` (`{page, imagePng, renderScale}`) for the local OCR fallback | `DrawTableResult` (`tableCount`, `tables[]`, `regions[]`, `totalRows`, `ocrPages`, `emptyTextPages`, `processingTimeMs`) |
 | `extract_draw_table_to_markdown` | `{ path, drawData, existingMarkdown? }` | `string` — merged markdown with extracted tables appended |
 
 Result fields are serialized in camelCase; `PdfTypeDto` mirrors `pdf-inspector`'s
@@ -283,7 +290,8 @@ cargo check --manifest-path src-tauri/Cargo.toml
   detection, table-by-table preview, and `.xlsx` export (single or all) with
   configurable **tables-only** mode. Plus manual **draw-a-table** extraction
   for scanned PDF regions (vertical-line-only mode, "apply to all pages" with
-  page limit, page-filtered text extraction, extraction caching).
+  page limit, page-filtered text extraction, extraction caching, and a local
+  PaddleOCR fallback for pages without a text layer).
 - **M4 (mostly done)** — Polish: **bilingual i18n (en/zh, runtime toggle)**
   and dark mode. **Large-document performance**: the Markdown preview and the
   Excel table preview both render lazily (page / table sections + windowed
@@ -312,7 +320,10 @@ cargo check --manifest-path src-tauri/Cargo.toml
   `disabled` (no OCR — pages needing OCR are skipped and never leave the
   machine). When OCR is enabled, conversion routes through the hybrid session
   and — in addition to the pages detection flagged — any page whose local text
-  extraction produced no content is also sent to the OCR engine.
+  extraction produced no content is also sent to the OCR engine. The same two
+  local modes (`forceLocal` / `nonTextLocal`) also enable the draw-table
+  extraction's on-device PaddleOCR fallback for scanned pages; `forceAi` /
+  `nonTextAi` / `disabled` keep draw-table extraction text-layer-only.
 
 Both live in the Tauri `app_config_dir` directory. No third-party store plugin
 is required. For privacy, only pages that need OCR (detected or empty

@@ -72,6 +72,8 @@ const en = {
   "toast.mergedToMarkdown": "Table merged into Markdown output",
   "toast.tableExtracted": "Table extracted",
   "toast.extractDone": "Extraction complete, merged into Markdown",
+  "toast.extractDoneOcr":
+    "Extraction complete — {count} page(s) recognized via OCR",
   "toast.noTable": "No table extracted",
   "toast.noTableDesc": "Please adjust the vertical lines and retry",
   "toast.extractFailed": "Extraction failed",
@@ -183,7 +185,7 @@ const en = {
     'Cannot preview this PDF. Click "Extract to Markdown" in the top right to continue.',
 
   "preview.markdown": "Markdown",
-  "preview.timeChars": "Converted in {time} ms · {chars} chars",
+  "preview.timeChars": "Completed in {time} · {chars} chars",
   "preview.render": "Render",
   "preview.raw": "Raw",
   "preview.page": "Page {page}",
@@ -282,7 +284,8 @@ const zh: Record<TranslationKey, string> = {
   "toast.convertFailed": "转换失败",
   "toast.mergedToMarkdown": "表格已合并到 Markdown 输出",
   "toast.tableExtracted": "表格已提取",
-  "toast.extractDone": "提取完成，已合并到 Markdown",
+  "toast.extractDone": "提取完成,已合并到 Markdown",
+  "toast.extractDoneOcr": "提取完成,已通过 OCR 识别 {count} 页",
   "toast.noTable": "未提取到表格",
   "toast.noTableDesc": "请调整竖线位置后重试",
   "toast.extractFailed": "提取失败",
@@ -393,7 +396,7 @@ const zh: Record<TranslationKey, string> = {
     "无法预览该 PDF, 可点击右上角「提取为 Markdown」继续",
 
   "preview.markdown": "Markdown",
-  "preview.timeChars": "转换耗时 {time} ms · {chars} 字符",
+  "preview.timeChars": "耗时 {time} · {chars} 字符",
   "preview.render": "渲染",
   "preview.raw": "原始",
   "preview.page": "第 {page} 页",

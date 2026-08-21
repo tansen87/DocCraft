@@ -239,6 +239,20 @@ pub struct PageDrawTable {
   pub page_height: f64,
 }
 
+/// A page rendered to PNG (base64) by the frontend, used as the OCR fallback
+/// source when a drawn page has no extractable text layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageImagePayload {
+  /// 1-indexed page number.
+  pub page: u32,
+  /// PNG bytes encoded as base64.
+  pub image_png: String,
+  /// Scale (pixels per PDF point) at which the PNG was rendered, so backend
+  /// pixel coordinates can be mapped back into PDF point space.
+  pub render_scale: f64,
+}
+
 /// Complete draw-table request payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -251,6 +265,17 @@ pub struct DrawTableRequest {
   /// `max_pages` pages (e.g. a quick preview of the first 5 pages to verify the
   /// drawn lines before extracting the whole document). `None` means all pages.
   pub max_pages: Option<u32>,
+  /// Total page count of the document. Only needed for `use_for_all_pages`
+  /// extractions of documents without any text layer, where the page count
+  /// cannot be derived from extracted text items.
+  pub total_pages: Option<u32>,
+  /// Restrict processing to these 1-indexed pages. Used by the frontend to
+  /// batch large OCR extractions into several requests.
+  pub only_pages: Option<Vec<u32>>,
+  /// Rendered page images for the local PaddleOCR fallback. Pages with a text
+  /// layer never touch these; an image is consumed only when its page has no
+  /// extractable text at all.
+  pub page_images: Option<Vec<PageImagePayload>>,
 }
 
 /// Metadata about where a table was extracted from.
@@ -273,6 +298,12 @@ pub struct DrawTableResult {
   pub regions: Vec<TableRegionInfo>,
   pub total_rows: usize,
   pub processing_time_ms: u64,
+  /// 1-indexed pages whose content came from the local PaddleOCR fallback
+  /// (the page had no extractable text layer).
+  pub ocr_pages: Vec<u32>,
+  /// 1-indexed pages that had no text layer and no usable OCR result — they
+  /// were processed but produced nothing.
+  pub empty_text_pages: Vec<u32>,
 }
 
 /// Global application settings (persisted in `app-settings.json`).

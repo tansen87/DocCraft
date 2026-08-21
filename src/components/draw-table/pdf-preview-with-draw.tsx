@@ -11,7 +11,7 @@ interface PdfPreviewWithDrawProps {
   pdfPath: string;
   className?: string;
   onResultExtracted: (result: DrawTableResult) => void;
-  onMarkdownMerged: (markdown: string) => void;
+  onMarkdownMerged: (markdown: string, processingTimeMs?: number) => void;
   enabled: boolean;
 }
 
