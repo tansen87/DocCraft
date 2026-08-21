@@ -1,9 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use ocr_rs::OcrEngine;
 use reqwest::Client;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 use crate::core::extract_cache;
@@ -14,7 +16,171 @@ use crate::models::{
 };
 
 /// Prompt sent to the vision model for every OCR page.
-const OCR_PROMPT: &str = "你是一个专业的OCR引擎.请完整识别这张PDF页面图片中的内容,并转换为规范的Markdown输出: 保留标题层级(#、##)、段落、列表、表格(使用GFM表格语法)等结构.只输出识别后的Markdown内容,不要添加任何解释或前言.";
+const OCR_PROMPT: &str = "你是一个专业的OCR引擎.请完整识别这张PDF页面图片中的内容,并转换为规范的Markdown输出: 保留标题层级(#、##)、段落、列表、表格(使用GFM表格语法)等结构.只输出识别后的Markdown内容,不要使用任何代码块或代码围栏包裹,不要添加任何解释或前言.";
+
+/// Local OCR engine wrapper for PaddleOCR via ocr-rs.
+pub struct LocalOcrEngine {
+  engine: OcrEngine,
+}
+
+impl LocalOcrEngine {
+  /// Create a new local OCR engine with the provided model paths.
+  pub fn new(det_model: &str, rec_model: &str, keys_file: &str) -> Result<Self, String> {
+    let engine = OcrEngine::new(det_model, rec_model, keys_file, None)
+      .map_err(|e| format!("Failed to initialize local OCR engine: {e}"))?;
+    Ok(Self { engine })
+  }
+
+  /// Recognize text in an image from PNG bytes and return the text.
+  /// Sorts text blocks by reading order: top-to-bottom, then left-to-right
+  /// within each line, and joins same-line blocks with spaces.
+  pub fn recognize_from_png(&self, png_data: &[u8]) -> Result<String, String> {
+    let image =
+      image::load_from_memory(png_data).map_err(|e| format!("Failed to load image: {e}"))?;
+
+    let results = self
+      .engine
+      .recognize(&image)
+      .map_err(|e| format!("Local OCR recognition failed: {e}"))?;
+
+    if results.is_empty() {
+      return Ok(String::new());
+    }
+
+    // Adaptive threshold: ~1.5% of image height, or at least 8px.
+    let line_threshold = (image.height() as f64 * 0.015).max(8.0);
+
+    // Build sortable items with position info.
+    let mut items: Vec<(f64, f64, &str)> = results
+      .iter()
+      .map(|r| {
+        let y = r.bbox.rect.top() as f64;
+        let x = r.bbox.rect.left() as f64;
+        (y, x, r.text.as_str())
+      })
+      .collect();
+
+    // Sort by Y (top-to-bottom).
+    items.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Group into lines: items whose Y difference is within threshold.
+    let mut lines: Vec<Vec<(f64, &str)>> = Vec::new();
+    let mut current_line: Vec<(f64, &str)> = Vec::new();
+    let mut current_y: f64 = items[0].0;
+
+    for (y, x, text) in &items {
+      if (y - current_y).abs() > line_threshold && !current_line.is_empty() {
+        // Sort current line by X (left-to-right) before pushing.
+        current_line.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        lines.push(current_line);
+        current_line = Vec::new();
+      }
+      current_y = *y;
+      current_line.push((*x, text));
+    }
+    if !current_line.is_empty() {
+      current_line.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+      lines.push(current_line);
+    }
+
+    // Join each line's blocks with spaces, separate lines with newlines.
+    let output = lines
+      .iter()
+      .map(|line| {
+        line
+          .iter()
+          .map(|(_, text)| *text)
+          .collect::<Vec<_>>()
+          .join("|")
+      })
+      .collect::<Vec<_>>()
+      .join("\n");
+
+    Ok(output)
+  }
+}
+
+/// Helper to build the resource directory path for OCR models.
+fn ocr_resource_dir(app: &AppHandle) -> Result<PathBuf, String> {
+  // 1) Bundled mode: resources are copied alongside the binary.
+  if let Ok(resource_dir) = app.path().resource_dir() {
+    let ppocr_dir = resource_dir.join("ppocr");
+    if ppocr_dir.exists() {
+      return Ok(ppocr_dir);
+    }
+  }
+
+  let exe_dir = std::env::current_exe()
+    .map_err(|e| format!("Failed to get exe path: {e}"))?
+    .parent()
+    .ok_or_else(|| "Failed to get exe parent".to_string())?
+    .to_path_buf();
+
+  // 2) Models next to the exe: <exe_dir>/doccraft_resources/ppocr/
+  //    Works for both dev (target/debug/) and packaged install.
+  let exe_sibling = exe_dir.join("doccraft_resources").join("ppocr");
+  if let Ok(canonical) = std::fs::canonicalize(&exe_sibling) {
+    if canonical.exists() {
+      return Ok(canonical);
+    }
+  }
+
+  // 3) Dev fallback: project root doccraft_resources/ppocr/
+  //    exe is at target/{debug,release}/, go up 2 levels to project root.
+  let dev_dir = exe_dir.join("../../doccraft_resources/ppocr");
+  if let Ok(canonical) = std::fs::canonicalize(&dev_dir) {
+    if canonical.exists() {
+      return Ok(canonical);
+    }
+  }
+
+  // 4) Legacy dev fallback: src-tauri/resources/ppocr/
+  let legacy_dir = exe_dir.join("../../src-tauri/resources/ppocr");
+  if let Ok(canonical) = std::fs::canonicalize(&legacy_dir) {
+    if canonical.exists() {
+      return Ok(canonical);
+    }
+  }
+
+  Err(format!(
+    "OCR model directory not found. Please place models at:\n  {}",
+    exe_sibling.display(),
+  ))
+}
+
+/// Create a local OCR engine from the bundled models.
+pub fn create_local_ocr_engine(app: &AppHandle) -> Result<LocalOcrEngine, String> {
+  let dir = ocr_resource_dir(app)?;
+  let det = dir.join("PP-OCRv6_medium_det.mnn");
+  let rec = dir.join("PP-OCRv6_medium_rec.mnn");
+  let keys = dir.join("ppocr_keys_v6_medium.txt");
+
+  LocalOcrEngine::new(
+    &det.to_string_lossy(),
+    &rec.to_string_lossy(),
+    &keys.to_string_lossy(),
+  )
+}
+
+/// Some vision models wrap their markdown answer in a fenced code block even
+/// when asked not to. Strip one outer ``` fence so the OCR result is rendered
+/// as markdown instead of being embedded inside a code block.
+fn strip_markdown_fence(text: &str) -> String {
+  let trimmed = text.trim();
+  let lines: Vec<&str> = trimmed.lines().collect();
+  let opens_with_fence = lines
+    .first()
+    .is_some_and(|l| l.trim_start().starts_with("```"));
+  let closes_with_fence = lines.last().is_some_and(|l| l.trim().starts_with("```"));
+  if opens_with_fence && closes_with_fence && lines.len() > 2 {
+    let inner = lines[1..lines.len() - 1].join("\n");
+    let inner_trimmed = inner.trim();
+    if !inner_trimmed.is_empty() {
+      return inner_trimmed.to_string();
+    }
+  }
+  trimmed.to_string()
+}
 
 /// Sessions are dropped after this long even if the frontend never closes them.
 const SESSION_MAX_AGE: Duration = Duration::from_secs(30 * 60);
@@ -108,7 +274,7 @@ async fn ocr_page(
   };
 
   match text {
-    Some(t) if !t.trim().is_empty() => Ok(t.trim().to_string()),
+    Some(t) if !t.trim().is_empty() => Ok(strip_markdown_fence(&t)),
     _ => Err(format!("OCR service returned no content (page {page})")),
   }
 }
@@ -121,7 +287,7 @@ pub struct HybridSession {
   pub pages: Vec<String>,
   /// Detection metadata, computed once at start.
   pub info: DetectResult,
-  /// `(base_url, model_id, api_key)` when at least one page uses OCR.
+  /// `(base_url, model_id, api_key)` when at least one page uses remote OCR.
   pub resolved: Option<(String, String, String)>,
   pub client: Client,
   /// OCR results keyed by 1-indexed page number.
@@ -133,6 +299,8 @@ pub struct HybridSession {
   /// Reason shown in the skip comment for skipped OCR pages.
   pub skip_reason: &'static str,
   pub start: Instant,
+  /// Whether to use local OCR instead of remote OCR.
+  pub use_local_ocr: bool,
 }
 
 /// Managed store of live hybrid sessions keyed by a generated session id.
@@ -183,14 +351,22 @@ pub fn start_session(
   // document.
   const OCR_DISABLED_REASON: &str = "OCR is disabled in settings";
   const NO_PROVIDER_REASON: &str = "no OCR provider configured";
-  let ocr_enabled = settings::get_app_settings(app)?.ocr_enabled;
+  let app_settings = settings::get_app_settings(app)?;
+  let ocr_enabled = app_settings.ocr_enabled;
   let mut resolved: Option<(String, String, String)> = None;
+  let mut use_local_ocr = false;
+
   if ocr_enabled {
-    let vendors = settings::get_ocr_config(app)?;
-    if let Some((vendor, model)) = resolve_provider(&vendors) {
-      let key = settings::api_key_for(app, &vendor.id)?
-        .ok_or_else(|| format!("The API Key of supplier '{}' is empty", vendor.name))?;
-      resolved = Some((vendor.base_url.clone(), model.name.clone(), key));
+    // Check if local OCR is enabled in settings
+    if app_settings.local_ocr_enabled {
+      use_local_ocr = true;
+    } else {
+      let vendors = settings::get_ocr_config(app)?;
+      if let Some((vendor, model)) = resolve_provider(&vendors) {
+        let key = settings::api_key_for(app, &vendor.id)?
+          .ok_or_else(|| format!("The API Key of supplier '{}' is empty", vendor.name))?;
+        resolved = Some((vendor.base_url.clone(), model.name.clone(), key));
+      }
     }
   }
 
@@ -216,6 +392,8 @@ pub fn start_session(
     (None, Vec::new(), NO_PROVIDER_REASON)
   } else if !ocr_enabled {
     (None, ocr_set.clone(), OCR_DISABLED_REASON)
+  } else if use_local_ocr {
+    (None, Vec::new(), NO_PROVIDER_REASON)
   } else if let Some(r) = resolved {
     (Some(r), Vec::new(), NO_PROVIDER_REASON)
   } else {
@@ -242,7 +420,7 @@ pub fn start_session(
     },
   };
 
-  let ocr_configured = resolved.is_some();
+  let ocr_configured = resolved.is_some() || use_local_ocr;
 
   let session = HybridSession {
     pages: page_markdowns,
@@ -254,6 +432,7 @@ pub fn start_session(
     failed_pages: Vec::new(),
     skip_reason,
     start,
+    use_local_ocr,
   };
 
   let mut map = store.lock();
@@ -288,27 +467,43 @@ pub async fn ocr_page_in_session(
   session_id: &str,
   page: u32,
   image_png: &str,
+  app: &AppHandle,
 ) -> Result<String, String> {
-  let (client, (base_url, model_id, api_key)) = {
+  let (client, resolved, use_local_ocr) = {
     let map = store.lock();
     let session = map
       .get(session_id)
       .ok_or_else(|| "The conversion session does not exist or has expired".to_string())?;
-    let resolved = session
-      .resolved
-      .clone()
-      .ok_or_else(|| "No available OCR supplier configured".to_string())?;
-    (session.client.clone(), resolved)
+    let resolved = session.resolved.clone();
+    let use_local_ocr = session.use_local_ocr;
+    (session.client.clone(), resolved, use_local_ocr)
   };
 
-  let md = match ocr_page(&client, &base_url, &model_id, &api_key, page, image_png).await {
-    Ok(m) => m,
-    Err(e) => {
-      let mut map = store.lock();
-      if let Some(session) = map.get_mut(session_id) {
-        session.failed_pages.push(page);
+  let md = if use_local_ocr {
+    // Use local OCR engine
+    match local_ocr_page(app, page, image_png) {
+      Ok(m) => m,
+      Err(e) => {
+        let mut map = store.lock();
+        if let Some(session) = map.get_mut(session_id) {
+          session.failed_pages.push(page);
+        }
+        format!("<!-- OCR failed (page {page}): {e} -->")
       }
-      format!("<!-- OCR failed (page {page}): {e} -->")
+    }
+  } else {
+    // Use remote OCR provider
+    let (base_url, model_id, api_key) =
+      resolved.ok_or_else(|| "No available OCR supplier configured".to_string())?;
+    match ocr_page(&client, &base_url, &model_id, &api_key, page, image_png).await {
+      Ok(m) => m,
+      Err(e) => {
+        let mut map = store.lock();
+        if let Some(session) = map.get_mut(session_id) {
+          session.failed_pages.push(page);
+        }
+        format!("<!-- OCR failed (page {page}): {e} -->")
+      }
     }
   };
 
@@ -317,6 +512,25 @@ pub async fn ocr_page_in_session(
     session.ocr_results.insert(page, md.clone());
   }
   Ok(md)
+}
+
+/// Run one page through the local OCR engine.
+fn local_ocr_page(app: &AppHandle, page: u32, image_png: &str) -> Result<String, String> {
+  // Decode the PNG image from base64
+  let image_data = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, image_png)
+    .map_err(|e| format!("Failed to decode base64 image: {e}"))?;
+
+  // Create the local OCR engine
+  let engine = create_local_ocr_engine(app)?;
+
+  // Run OCR
+  let text = engine.recognize_from_png(&image_data)?;
+
+  if text.trim().is_empty() {
+    return Err(format!("Local OCR returned no content (page {page})"));
+  }
+
+  Ok(text.trim().to_string())
 }
 
 /// Reassemble text + OCR pages in document order and drop the session.

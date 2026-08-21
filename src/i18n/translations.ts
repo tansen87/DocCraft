@@ -103,6 +103,9 @@ const en = {
   "settings.ocrEnabled": "Enable OCR",
   "settings.ocrEnabledDesc":
     "Turn OCR on to recognize scanned / image pages through a configured provider. When off, pages that need OCR are skipped and no page image ever leaves this machine.",
+  "settings.localOcrEnabled": "Use Local OCR",
+  "settings.localOcrEnabledDesc":
+    "Use the built-in PaddleOCR engine for OCR processing. When enabled, pages are processed locally without sending data to external services. This requires the local OCR models to be available in the resources directory.",
   "settings.loadingConfig": "Loading configuration…",
   "settings.noVendors": "No vendors configured yet",
   "settings.noVendorsDesc":
@@ -312,6 +315,9 @@ const zh: Record<TranslationKey, string> = {
   "settings.ocrEnabled": "启用 OCR",
   "settings.ocrEnabledDesc":
     "开启后扫描/图片页将通过已配置的供应商进行 OCR 识别;关闭时需要 OCR 的页面会被跳过,不会有任何页面图片离开本机.",
+  "settings.localOcrEnabled": "使用本地 OCR",
+  "settings.localOcrEnabledDesc":
+    "使用内置的 PaddleOCR 引擎进行 OCR 处理。启用后,页面将在本地处理,不会将数据发送到外部服务。需要资源目录中包含本地 OCR 模型文件。",
   "settings.loadingConfig": "正在加载配置…",
   "settings.noVendors": "还没有配置供应商",
   "settings.noVendorsDesc":

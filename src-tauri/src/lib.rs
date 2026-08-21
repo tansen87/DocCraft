@@ -59,12 +59,14 @@ async fn hybrid_session_start(
 /// dropped as soon as this returns, so only a single page is in memory.
 #[tauri::command]
 async fn hybrid_page_ocr(
-  state: tauri::State<'_, HybridStore>,
+  app: tauri::AppHandle,
+  hybrid_store: tauri::State<'_, HybridStore>,
   session_id: String,
   page: u32,
   image_png: String,
 ) -> Result<String, String> {
-  core::ocr::ocr_page_in_session(&state, &session_id, page, &image_png).await
+  core::ocr::ocr_page_in_session(&hybrid_store, &session_id, page, &image_png, &app)
+    .await
 }
 
 /// Reassemble text + OCR pages in document order and discard the session.

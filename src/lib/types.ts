@@ -89,6 +89,12 @@ export interface AppSettings {
    * even if a provider is configured, so no page image ever leaves the machine.
    */
   ocrEnabled: boolean;
+  /**
+   * Use local OCR engine (PaddleOCR) instead of remote OCR providers.
+   * When true, pages that need OCR are processed locally without sending
+   * any data to external services.
+   */
+  localOcrEnabled: boolean;
 }
 
 /** A single GitHub-Flavored Markdown table parsed by the backend. */

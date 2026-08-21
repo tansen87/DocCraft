@@ -297,6 +297,11 @@ pub struct AppSettings {
   /// so no page image ever leaves the machine.
   #[serde(default = "default_true")]
   pub ocr_enabled: bool,
+  /// Use local OCR engine (PaddleOCR) instead of remote OCR providers.
+  /// When `true`, pages that need OCR are processed locally without sending
+  /// any data to external services.
+  #[serde(default)]
+  pub local_ocr_enabled: bool,
 }
 
 fn default_true() -> bool {
@@ -310,6 +315,7 @@ impl Default for AppSettings {
       cache_extracted_text: true,
       excel_tables_only: true,
       ocr_enabled: true,
+      local_ocr_enabled: true,
     }
   }
 }

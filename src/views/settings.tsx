@@ -112,6 +112,7 @@ export function SettingsView() {
 
   const [vendors, setVendors] = useState<VendorForm[]>([]);
   const [ocrEnabled, setOcrEnabled] = useState(true);
+  const [localOcrEnabled, setLocalOcrEnabled] = useState(true);
   const [maxConcurrent, setMaxConcurrent] = useState(1);
   const [cacheExtracted, setCacheExtracted] = useState(true);
   const [excelTablesOnly, setExcelTablesOnly] = useState(true);
@@ -128,6 +129,7 @@ export function SettingsView() {
         if (cancelled) return;
         setVendors(ocrVendors.map(toForm));
         setOcrEnabled(settings.ocrEnabled);
+        setLocalOcrEnabled(settings.localOcrEnabled);
         setMaxConcurrent(clampThread(settings.maxConcurrent));
         setCacheExtracted(settings.cacheExtractedText);
         setExcelTablesOnly(settings.excelTablesOnly);
@@ -181,6 +183,7 @@ export function SettingsView() {
       cacheExtractedText: cacheExtracted,
       excelTablesOnly,
       ocrEnabled,
+      localOcrEnabled,
     };
     try {
       await Promise.all([
@@ -348,6 +351,11 @@ export function SettingsView() {
                     setOcrEnabled(v);
                     markDirty();
                   }}
+                  localOcrEnabled={localOcrEnabled}
+                  onLocalOcrEnabledChange={(v) => {
+                    setLocalOcrEnabled(v);
+                    markDirty();
+                  }}
                   loading={loading}
                 />
               </section>
@@ -433,12 +441,16 @@ function OcrSettingsPanel({
   onChange,
   ocrEnabled,
   onOcrEnabledChange,
+  localOcrEnabled,
+  onLocalOcrEnabledChange,
   loading,
 }: {
   vendors: VendorForm[];
   onChange: (updater: SetStateAction<VendorForm[]>) => void;
   ocrEnabled: boolean;
   onOcrEnabledChange: (v: boolean) => void;
+  localOcrEnabled: boolean;
+  onLocalOcrEnabledChange: (v: boolean) => void;
   loading: boolean;
 }) {
   const { t } = useI18n();
@@ -571,6 +583,22 @@ function OcrSettingsPanel({
             checked={ocrEnabled}
             onCheckedChange={onOcrEnabledChange}
             disabled={loading}
+          />
+        </div>
+      </Card>
+
+      <Card className="gap-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label>{t("settings.localOcrEnabled")}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t("settings.localOcrEnabledDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={localOcrEnabled}
+            onCheckedChange={onLocalOcrEnabledChange}
+            disabled={loading || !ocrEnabled}
           />
         </div>
       </Card>
