@@ -134,6 +134,7 @@ mod tests {
       is_strikeout: false,
       item_type: ItemType::Text,
       mcid: None,
+      font_tag: "F2".to_string(),
     }
   }
 

@@ -11,6 +11,8 @@ import type {
   OcrImageResult,
   OcrVendor,
   OcrVendorInput,
+  MonitorSnapshot,
+  ShotRegion,
 } from "./types";
 
 export const detectPdf = (path: string) =>
@@ -44,6 +46,17 @@ export const exportMarkdown = (path: string, content: string) =>
 /** Convert one standalone image (PNG / JPEG) to Markdown via OCR. */
 export const ocrImageToMd = (path: string) =>
   invoke<OcrImageResult>("ocr_image_to_md", { path });
+
+/** Freeze every monitor into a snapshot for region selection. */
+export const beginScreenshot = () =>
+  invoke<MonitorSnapshot[]>("screenshot_begin");
+
+/** Recognize the selected monitor region (finishes the snip session). */
+export const screenshotOcrRegion = (region: ShotRegion) =>
+  invoke<OcrImageResult>("screenshot_ocr", { region });
+
+/** Cancel an in-progress snip session (restores cached state + main window). */
+export const cancelScreenshot = () => invoke<void>("screenshot_cancel");
 
 export const getOcrConfig = () => invoke<OcrVendor[]>("get_ocr_config");
 

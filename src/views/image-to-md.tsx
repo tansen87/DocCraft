@@ -1,8 +1,12 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
+import { listen } from "@tauri-apps/api/event";
 import { join } from "@tauri-apps/api/path";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
+  Camera,
   Check,
   Clock,
   Download,
@@ -24,16 +28,32 @@ import { useFileDrop } from "@/components/pdf2md/use-pdf-drop";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { ensureMaxConcurrent } from "@/lib/concurrency";
-import { exportMarkdown, ocrImageToMd } from "@/lib/ipc";
+import {
+  beginScreenshot,
+  cancelScreenshot,
+  exportMarkdown,
+  getAppSettings,
+  ocrImageToMd,
+  screenshotOcrRegion,
+} from "@/lib/ipc";
 import type {
   ActivityProgress,
+  MonitorSnapshot,
   OcrImageResult,
+  ShotRegion,
   StatusNotice,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -49,6 +69,8 @@ interface ImageItem {
   status: ImageStatus;
   error?: string;
   result?: OcrImageResult;
+  /** Inline thumbnail (data URL) for screenshot items without a real file yet. */
+  thumbUrl?: string;
 }
 
 function ItemStatusBadge({
@@ -104,13 +126,18 @@ export function ImageToMdView() {
   const [running, setRunning] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportingAll, setExportingAll] = useState(false);
+  /** A region-selection session is in progress (overlays open). */
+  const [snipping, setSnipping] = useState(false);
   /** In-flight recognition shown in the status bar. */
   const [activity, setActivity] = useState<ActivityProgress | null>(null);
   /** Item briefly highlighted after jumping from a notice chip. */
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  /** Item whose markdown is shown in the preview pane (null = merged view). */
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const itemsRef = useRef<ImageItem[]>([]);
   const runningRef = useRef(false);
+  const snippingRef = useRef(false);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -217,6 +244,195 @@ export function ImageToMdView() {
     runningRef.current = false;
     setRunning(false);
     setActivity(null);
+  }, []);
+
+  /**
+   * Recognize one captured screen region: insert a converting row, run the
+   * backend snip OCR and merge the result. The saved screenshot copy becomes
+   * the item path, so retry / export behave exactly like an imported file.
+   */
+  const recognizeShot = useCallback(
+    async (region: ShotRegion) => {
+      const id = crypto.randomUUID();
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const name = `screenshot-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.png`;
+
+      mutate((prev) => [
+        ...prev,
+        { id, path: "", name, status: "converting" as const },
+      ]);
+      setActivity({ phase: "imageOcr", current: 0, total: 1 });
+      try {
+        const result = await screenshotOcrRegion(region);
+        mutate((prev) =>
+          prev.map((it) =>
+            it.id === id
+              ? {
+                  ...it,
+                  path: result.savedPath ?? "",
+                  thumbUrl: result.pngBase64
+                    ? `data:image/png;base64,${result.pngBase64}`
+                    : undefined,
+                  status: "done" as const,
+                  result,
+                }
+              : it,
+          ),
+        );
+        // Focus the preview (and its Copy button) on the freshest shot.
+        setSelectedId(id);
+      } catch (e) {
+        mutate((prev) =>
+          prev.map((it) =>
+            it.id === id
+              ? { ...it, status: "error" as const, error: String(e) }
+              : it,
+          ),
+        );
+        toast.error(t("toast.convertFailed"), { description: String(e) });
+        // Safety net: if the OCR command failed before its own session-end
+        // ran (e.g. IPC-level failure), make sure the main window comes back.
+        try {
+          await cancelScreenshot();
+        } catch {
+          /* best effort */
+        }
+      } finally {
+        setActivity(null);
+      }
+    },
+    [mutate, t],
+  );
+
+  /** Freeze the desktop, let the user select a region, recognize it. */
+  const startSnip = useCallback(async () => {
+    if (snippingRef.current) return;
+    // A screenshot has no text layer — fail fast with guidance when OCR is off.
+    try {
+      const settings = await getAppSettings();
+      if (settings.ocrMode === "disabled") {
+        toast.error(t("snip.disabledTitle"), {
+          description: t("snip.disabledDesc"),
+        });
+        return;
+      }
+    } catch {
+      /* settings unavailable — let the backend decide later */
+    }
+
+    snippingRef.current = true;
+    setSnipping(true);
+
+    let monitors: MonitorSnapshot[];
+    try {
+      monitors = await beginScreenshot();
+    } catch (e) {
+      toast.error(t("snip.beginFailed"), { description: String(e) });
+      snippingRef.current = false;
+      setSnipping(false);
+      return;
+    }
+
+    let unlistenSelected: (() => void) | null = null;
+    let unlistenCancelled: (() => void) | null = null;
+    let settled = false;
+
+    const closeOverlays = async () => {
+      await Promise.allSettled(
+        monitors.map(async (m) => {
+          const win = await WebviewWindow.getByLabel(`snip-${m.id}`);
+          await win?.close();
+        }),
+      );
+    };
+
+    /**
+     * Tear down the snip session UI. When a region *was* selected we must NOT
+     * call `cancelScreenshot` — the follow-up `screenshot_ocr` command
+     * consumes the cached snapshot and restores the main window itself;
+     * cancelling here first would wipe the snapshot ("session expired").
+     */
+    const finish = async (restoreApp: boolean) => {
+      unlistenSelected?.();
+      unlistenCancelled?.();
+      unlistenSelected = null;
+      unlistenCancelled = null;
+      cleanupStorage();
+      await closeOverlays();
+      if (restoreApp) {
+        try {
+          await cancelScreenshot();
+        } catch {
+          /* best effort */
+        }
+      }
+      snippingRef.current = false;
+      setSnipping(false);
+    };
+
+    const onSelected = async (region: ShotRegion) => {
+      if (settled) return;
+      settled = true;
+      await finish(false);
+      await recognizeShot(region);
+    };
+    const onCancelled = async () => {
+      if (settled) return;
+      settled = true;
+      await finish(true);
+    };
+
+    const cleanupStorage = () =>
+      monitors.forEach((m) => localStorage.removeItem(`doccraft-snip-${m.id}`));
+
+    // Stash snapshots for the overlay windows before creating them.
+    for (const m of monitors) {
+      localStorage.setItem(`doccraft-snip-${m.id}`, JSON.stringify(m));
+    }
+
+    [unlistenSelected, unlistenCancelled] = await Promise.all([
+      listen<ShotRegion>("snip:selected", (e) => void onSelected(e.payload)),
+      listen<never>("snip:cancelled", () => void onCancelled()),
+    ]);
+
+    for (const m of monitors) {
+      const win = new WebviewWindow(`snip-${m.id}`, {
+        x: m.x,
+        y: m.y,
+        width: m.width,
+        height: m.height,
+        url: "index.html",
+        decorations: false,
+        transparent: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        resizable: false,
+        maximizable: false,
+        minimizable: false,
+        shadow: false,
+      });
+      // Constructor options are logical units — enforce exact physical
+      // placement so the overlay covers its monitor pixel-for-pixel.
+      void win.once("tauri://created", async () => {
+        await win.setPosition(new PhysicalPosition(m.x, m.y));
+        await win.setSize(new PhysicalSize(m.width, m.height));
+      });
+      void win.once("tauri://error", (e) => {
+        toast.error(t("snip.beginFailed"), { description: String(e.payload) });
+        void onCancelled();
+      });
+    }
+  }, [recognizeShot, t]);
+
+  // Global screenshot hotkey (registered by the backend from settings).
+  const startSnipRef = useRef(startSnip);
+  startSnipRef.current = startSnip;
+  useEffect(() => {
+    const unlisten = listen("snip:hotkey", () => void startSnipRef.current());
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
   }, []);
 
   const retryFailed = useCallback(() => {
@@ -392,6 +608,38 @@ export function ImageToMdView() {
   const total = items.length;
   const doneCount = doneItems.length;
   const hasQueued = items.some((it) => it.status === "queued");
+  /** The item selected for individual preview (falls back to merged view). */
+  const previewItem =
+    items.find(
+      (it) => it.id === selectedId && it.status === "done" && it.result,
+    ) ?? null;
+
+  /**
+   * Picker in the preview header: choose the merged document or any single
+   * image's markdown. Copy / export for whichever is shown live right here.
+   */
+  const previewToolbar = (
+    <Select
+      value={previewItem?.id ?? "__merged__"}
+      onValueChange={(v) => setSelectedId(v === "__merged__" ? null : v)}
+    >
+      <SelectTrigger
+        size="sm"
+        className="shrink-0 max-w-44"
+        aria-label={t("img2md.previewScope")}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="__merged__">{t("img2md.previewMerged")}</SelectItem>
+        {doneItems.map((it) => (
+          <SelectItem key={it.id} value={it.id}>
+            {it.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 
   if (total === 0) {
     return (
@@ -414,6 +662,17 @@ export function ImageToMdView() {
           })}
           className="flex-1"
         />
+        <div className="flex justify-center">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void startSnip()}
+            disabled={snipping}
+          >
+            {snipping ? <Loader2 className="animate-spin" /> : <Camera />}
+            {t("snip.capture")}
+          </Button>
+        </div>
       </div>
     );
   }
@@ -462,6 +721,20 @@ export function ImageToMdView() {
             <ListPlus />
             {t("batch.add")}
           </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void startSnip()}
+                disabled={snipping}
+              >
+                {snipping ? <Loader2 className="animate-spin" /> : <Camera />}
+                {t("snip.capture")}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t("snip.tooltip")}</TooltipContent>
+          </Tooltip>
           {running ? (
             <Button size="sm" onClick={stop}>
               <Square />
@@ -529,19 +802,35 @@ export function ImageToMdView() {
                   else rowRefs.current.delete(item.id);
                 }}
                 className={cn(
-                  "mb-2 flex items-center gap-3 rounded-lg border p-2 transition-all last:mb-0",
+                  "mb-2 flex cursor-pointer items-center gap-3 rounded-lg border p-2 transition-all last:mb-0",
                   highlightId === item.id &&
                     "border-primary bg-primary/5 ring-2 ring-primary/40",
+                  highlightId !== item.id &&
+                    selectedId === item.id &&
+                    "border-primary bg-primary/5",
                 )}
+                onClick={() =>
+                  setSelectedId(
+                    item.status === "done" && selectedId !== item.id
+                      ? item.id
+                      : null,
+                  )
+                }
               >
                 <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
                   {index + 1}
                 </span>
-                <img
-                  src={convertFileSrc(item.path)}
-                  alt={item.name}
-                  className="size-10 shrink-0 rounded-md border bg-muted object-cover"
-                />
+                {item.thumbUrl || item.path ? (
+                  <img
+                    src={item.thumbUrl ?? convertFileSrc(item.path)}
+                    alt={item.name}
+                    className="size-10 shrink-0 rounded-md border bg-muted object-cover"
+                  />
+                ) : (
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-md border bg-muted">
+                    <FileImage className="size-4 text-muted-foreground" />
+                  </span>
+                )}
                 <span className="min-w-0 flex-1 truncate text-sm">
                   {item.name}
                 </span>
@@ -550,13 +839,16 @@ export function ImageToMdView() {
                 </span>
                 <ItemStatusBadge status={item.status} error={item.error} />
                 <div className="flex shrink-0 items-center gap-1">
-                  {item.status === "done" ? (
+                  {item.status === "done" && item.result ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          onClick={() => void exportItem(item)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void exportItem(item);
+                          }}
                         >
                           <Download />
                         </Button>
@@ -572,7 +864,8 @@ export function ImageToMdView() {
                         <Button
                           variant="ghost"
                           size="icon-sm"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             mutate((prev) =>
                               prev.map((it) =>
                                 it.id === item.id
@@ -599,7 +892,10 @@ export function ImageToMdView() {
                         variant="ghost"
                         size="icon-sm"
                         disabled={running}
-                        onClick={() => removeItem(item.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeItem(item.id);
+                        }}
                       >
                         <X />
                       </Button>
@@ -615,13 +911,23 @@ export function ImageToMdView() {
         </div>
 
         <div className="min-h-0 min-w-0">
-          {mergedMarkdown ? (
+          {previewItem ? (
+            <PreviewPane
+              key={previewItem.id}
+              markdown={previewItem.result!.markdown}
+              processingTimeMs={previewItem.result!.durationMs}
+              onExport={() => exportItem(previewItem)}
+              className="h-full"
+              toolbar={previewToolbar}
+            />
+          ) : mergedMarkdown ? (
             <PreviewPane
               markdown={mergedMarkdown}
               processingTimeMs={totalTimeMs}
               onExport={exportMerged}
               className="h-full"
               showPageMarkers
+              toolbar={previewToolbar}
             />
           ) : null}
         </div>

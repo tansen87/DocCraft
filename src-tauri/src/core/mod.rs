@@ -7,6 +7,7 @@ pub mod ocr;
 pub mod page_marker;
 pub mod secret;
 pub mod settings;
+pub mod snip;
 
 use std::path::{Path, PathBuf};
 

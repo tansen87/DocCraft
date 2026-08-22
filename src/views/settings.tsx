@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SetStateAction } from "react";
 import {
+  Camera,
   Cpu,
   Database,
   Eye,
@@ -49,13 +50,14 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type SettingsSection = "ocr" | "threads" | "cache" | "excel";
+type SettingsSection = "ocr" | "threads" | "snip" | "cache" | "excel";
 
 const SECTIONS: {
   id: SettingsSection;
   labelKey:
     | "settings.ocr"
     | "settings.threads"
+    | "settings.snip"
     | "settings.cache"
     | "settings.excel";
   icon: typeof ScanText;
@@ -69,6 +71,11 @@ const SECTIONS: {
     id: "threads",
     labelKey: "settings.threads",
     icon: Cpu,
+  },
+  {
+    id: "snip",
+    labelKey: "settings.snip",
+    icon: Camera,
   },
   {
     id: "cache",
@@ -116,6 +123,7 @@ export function SettingsView() {
   const [maxConcurrent, setMaxConcurrent] = useState(1);
   const [cacheExtracted, setCacheExtracted] = useState(true);
   const [excelTablesOnly, setExcelTablesOnly] = useState(true);
+  const [screenshotHotkey, setScreenshotHotkey] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -132,6 +140,7 @@ export function SettingsView() {
         setMaxConcurrent(clampThread(settings.maxConcurrent));
         setCacheExtracted(settings.cacheExtractedText);
         setExcelTablesOnly(settings.excelTablesOnly);
+        setScreenshotHotkey(settings.screenshotHotkey ?? "");
         setLoaded(true);
       })
       .catch((e) =>
@@ -174,6 +183,7 @@ export function SettingsView() {
       cacheExtractedText: cacheExtracted,
       excelTablesOnly,
       ocrMode,
+      screenshotHotkey: screenshotHotkey.trim() || null,
     };
     try {
       await Promise.all([
@@ -353,6 +363,17 @@ export function SettingsView() {
                   value={maxConcurrent}
                   onChange={(n) => {
                     setMaxConcurrent(n);
+                    markDirty();
+                  }}
+                  disabled={loading}
+                />
+              </section>
+              <section id="settings-snip" className="scroll-mt-3">
+                <SectionHeader icon={Camera} title={t("settings.snip")} />
+                <SnipSettingsPanel
+                  value={screenshotHotkey}
+                  onChange={(v) => {
+                    setScreenshotHotkey(v);
                     markDirty();
                   }}
                   disabled={loading}
@@ -695,6 +716,247 @@ function ThreadSettingsPanel({
         </p>
       </Card>
     </>
+  );
+}
+
+/**
+ * Global hotkey that triggers screenshot recognition. Recorded by pressing a
+ * key combination; stored in the accelerator syntax understood by the backend
+ * (`Ctrl+Shift+KeyA`, `F8`, …); empty disables the hotkey.
+ */
+function SnipSettingsPanel({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <Card className="gap-3 p-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <Label>{t("settings.screenshotHotkey")}</Label>
+          <HotkeyInput value={value} onChange={onChange} disabled={disabled} />
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {t("settings.screenshotHotkeyHint")}
+      </p>
+    </Card>
+  );
+}
+
+const HOTKEY_MODIFIER_CODES = new Set([
+  "ControlLeft",
+  "ControlRight",
+  "ShiftLeft",
+  "ShiftRight",
+  "AltLeft",
+  "AltRight",
+  "MetaLeft",
+  "MetaRight",
+]);
+
+/** Friendly label for one token of an accelerator (`Ctrl`, `KeyA`, `F8`, …). */
+function hotkeyTokenLabel(part: string): string {
+  const lower = part.toLowerCase();
+  if (lower === "ctrl" || lower === "control") return "Ctrl";
+  if (lower === "alt" || lower === "option") return "Alt";
+  if (lower === "shift") return "Shift";
+  if (lower === "super" || lower === "meta" || lower === "win") return "Win";
+  if (/^key[a-z]$/.test(part)) return part.slice(3).toUpperCase();
+  if (/^digit\d$/.test(part)) return part.slice(5);
+  const labels: Record<string, string> = {
+    Space: "Space",
+    Minus: "-",
+    Equal: "=",
+    BracketLeft: "[",
+    BracketRight: "]",
+    Backquote: "`",
+    Comma: ",",
+    Period: ".",
+    Slash: "/",
+    Backslash: "\\",
+    Semicolon: ";",
+    Quote: "'",
+    Enter: "Enter",
+    Tab: "Tab",
+    CapsLock: "CapsLock",
+    Backspace: "Backspace",
+    Delete: "Del",
+    Insert: "Ins",
+    Home: "Home",
+    End: "End",
+    PageUp: "PgUp",
+    PageDown: "PgDn",
+    ArrowUp: "↑",
+    ArrowDown: "↓",
+    ArrowLeft: "←",
+    ArrowRight: "→",
+    Escape: "Esc",
+    PrintScreen: "PrtSc",
+    ScrollLock: "ScrollLock",
+    Pause: "Pause",
+    ContextMenu: "Menu",
+    NumpadAdd: "Num+",
+    NumpadSubtract: "Num-",
+    NumpadMultiply: "Num*",
+    NumpadDivide: "Num/",
+    NumpadDecimal: "Num.",
+    NumpadEnter: "NumEnter",
+  };
+  return labels[part] ?? part;
+}
+
+/** Split a stored accelerator into chips for display. */
+function hotkeyChips(value: string): string[] {
+  return value
+    .split("+")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .map(hotkeyTokenLabel);
+}
+
+/**
+ * Press-to-record hotkey field. Click to start listening, then hold any
+ * modifiers and press the final key. Esc cancels, lone Backspace clears.
+ */
+function HotkeyInput({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useI18n();
+  const [recording, setRecording] = useState(false);
+  const [held, setHeld] = useState<string[]>([]);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!recording) return;
+
+    /** Chips shown while recording for the keys currently held down. */
+    function previewChips(e: KeyboardEvent): string[] {
+      const parts: string[] = [];
+      if (e.ctrlKey) parts.push("Ctrl");
+      if (e.altKey) parts.push("Alt");
+      if (e.shiftKey) parts.push("Shift");
+      if (e.metaKey) parts.push("Win");
+      if (!HOTKEY_MODIFIER_CODES.has(e.code)) {
+        parts.push(hotkeyTokenLabel(e.code));
+      }
+      return parts;
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      e.preventDefault();
+      e.stopPropagation();
+      setHeld(previewChips(e));
+
+      // Esc aborts without changing the stored shortcut.
+      if (e.code === "Escape") {
+        setRecording(false);
+        setHeld([]);
+        return;
+      }
+      // Lone Backspace/Delete clears the current shortcut.
+      if (
+        (e.code === "Backspace" || e.code === "Delete") &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.metaKey
+      ) {
+        onChange("");
+        setRecording(false);
+        setHeld([]);
+        return;
+      }
+      // Any other non-modifier key completes the recording.
+      if (!HOTKEY_MODIFIER_CODES.has(e.code)) {
+        const mods: string[] = [];
+        if (e.ctrlKey) mods.push("Ctrl");
+        if (e.altKey) mods.push("Alt");
+        if (e.shiftKey) mods.push("Shift");
+        if (e.metaKey) mods.push("Super");
+        onChange([...mods, e.code].join("+"));
+        setRecording(false);
+        setHeld([]);
+      }
+    }
+
+    function onPointerDown(e: PointerEvent) {
+      if (!rootRef.current?.contains(e.target as Node)) {
+        // Clicking elsewhere cancels the recording.
+        setRecording(false);
+        setHeld([]);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [recording, onChange]);
+
+  const chips = recording ? held : hotkeyChips(value);
+
+  return (
+    <div ref={rootRef} className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => !disabled && setRecording(true)}
+        disabled={disabled}
+        aria-label={t("settings.screenshotHotkey")}
+        className={cn(
+          "flex h-9 min-w-52 flex-1 items-center gap-1.5 rounded-lg border px-3 text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          recording
+            ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+            : "border-input hover:bg-muted/40",
+          disabled && "pointer-events-none opacity-50",
+        )}
+      >
+        {chips.length > 0 ? (
+          chips.map((chip, i) => (
+            <kbd
+              key={`${chip}-${i}`}
+              className="rounded-md border bg-muted/60 px-1.5 py-0.5 font-mono text-xs font-medium"
+            >
+              {chip}
+            </kbd>
+          ))
+        ) : (
+          <span className="text-muted-foreground">
+            {recording
+              ? t("settings.hotkeyRecording")
+              : t("settings.hotkeyPlaceholder")}
+          </span>
+        )}
+        <span className="flex-1" />
+        {recording ? (
+          <span className="size-2 shrink-0 animate-pulse rounded-full bg-primary" />
+        ) : null}
+      </button>
+      {!recording && value ? (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          disabled={disabled}
+          onClick={() => onChange("")}
+          aria-label={t("tooltip.remove")}
+        >
+          <X />
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

@@ -93,6 +93,8 @@ export interface AppSettings {
    *  - ai: use remote AI vision providers.
    */
   ocrMode: OcrMode;
+  /** Global hotkey starting screenshot recognition (e.g. "F8"); null/empty disables. */
+  screenshotHotkey?: string | null;
 }
 
 export type OcrMode =
@@ -297,4 +299,35 @@ export interface OcrImageResult {
   /** Which engine produced the result: `"local"` or `"ai"`. */
   engine: "local" | "ai";
   durationMs: number;
+  /**
+   * Base64 PNG of the recognized region — only set by the screenshot
+   * pipeline so the frontend can thumbnail without touching disk.
+   */
+  pngBase64?: string;
+  /** Saved screenshot copy path (screenshot pipeline only), enabling retry. */
+  savedPath?: string;
+}
+
+/** One captured monitor snapshot offered to the snip overlay windows. */
+export interface MonitorSnapshot {
+  id: number;
+  /** Physical position of the monitor on the desktop. */
+  x: number;
+  y: number;
+  /** Physical size of the captured frame. */
+  width: number;
+  height: number;
+  /** OS DPI scale factor (`css_px = physical_px / scale`). */
+  scaleFactor: number;
+  /** `data:image/png;base64,...` snapshot shown as the overlay background. */
+  dataUrl: string;
+}
+
+/** A user-dragged rectangle inside one monitor, in **physical pixels**. */
+export interface ShotRegion {
+  monitorId: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }

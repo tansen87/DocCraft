@@ -326,6 +326,10 @@ pub struct AppSettings {
   /// OCR mode: controls when and how OCR is performed.
   #[serde(default)]
   pub ocr_mode: OcrMode,
+  /// Global hotkey that starts screenshot recognition (e.g. `"F8"`).
+  /// `None` / empty string disables the hotkey.
+  #[serde(default = "default_screenshot_hotkey")]
+  pub screenshot_hotkey: Option<String>,
 }
 
 /// Controls when and how OCR is applied during conversion.
@@ -377,10 +381,52 @@ pub struct OcrImageResult {
   pub engine: String,
   /// Wall-clock duration of the recognition in milliseconds.
   pub duration_ms: u64,
+  /// Base64 PNG of the recognized region — only set by the screenshot
+  /// pipeline so the frontend can thumbnail without touching disk.
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub png_base64: Option<String>,
+  /// Path of the saved screenshot copy (screenshot pipeline only), so the
+  /// item behaves like a regular imported file for retry / export.
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub saved_path: Option<String>,
+}
+
+/// One captured monitor snapshot offered to the snip overlay windows.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MonitorSnapshot {
+  /// Stable monitor id used to address the cached snapshot later.
+  pub id: u32,
+  /// Physical position of the monitor on the desktop.
+  pub x: i32,
+  pub y: i32,
+  /// Physical size of the captured frame.
+  pub width: u32,
+  pub height: u32,
+  /// OS DPI scale factor (`css_px = physical_px / scale`).
+  pub scale_factor: f64,
+  /// `data:image/png;base64,...` snapshot shown as the overlay background.
+  pub data_url: String,
+}
+
+/// A user-dragged rectangle inside one monitor, in **physical pixels**
+/// relative to that monitor's top-left corner.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShotRegion {
+  pub monitor_id: u32,
+  pub x: i32,
+  pub y: i32,
+  pub width: u32,
+  pub height: u32,
 }
 
 fn default_true() -> bool {
   true
+}
+
+fn default_screenshot_hotkey() -> Option<String> {
+  Some("F8".to_string())
 }
 
 impl Default for AppSettings {
@@ -390,6 +436,7 @@ impl Default for AppSettings {
       cache_extracted_text: true,
       excel_tables_only: false,
       ocr_mode: OcrMode::default(),
+      screenshot_hotkey: default_screenshot_hotkey(),
     }
   }
 }

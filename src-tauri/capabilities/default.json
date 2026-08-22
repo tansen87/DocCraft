@@ -7,6 +7,11 @@
     "core:default",
     "opener:default",
     "dialog:allow-open",
-    "dialog:allow-save"
+    "dialog:allow-save",
+    "core:window:allow-create",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-close"
   ]
 }

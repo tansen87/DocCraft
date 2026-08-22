@@ -4,9 +4,11 @@ mod models;
 use tauri::Manager;
 
 use crate::core::ocr::HybridStore;
+use crate::core::snip::SnipStore;
 use crate::models::{
   AppSettings, ConvertResult, DetectResult, DrawTableRequest, DrawTableResult, HybridSessionInfo,
-  MdAnalyzeResult, MdExportResult, OcrImageResult, OcrVendorDto, OcrVendorInput,
+  MdAnalyzeResult, MdExportResult, MonitorSnapshot, OcrImageResult, OcrVendorDto, OcrVendorInput,
+  ShotRegion,
 };
 
 /// Classify a PDF without extracting: returns type, confidence and which
@@ -125,7 +127,10 @@ async fn get_app_settings(app: tauri::AppHandle) -> Result<AppSettings, String> 
 /// Persist global app settings.
 #[tauri::command]
 async fn set_app_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
-  core::settings::set_app_settings(&app, settings)
+  core::settings::set_app_settings(&app, settings)?;
+  // Keep the global screenshot hotkey in sync (this also validates it — an
+  // unparsable hotkey fails the save).
+  core::snip::apply_hotkey(&app)
 }
 
 /// Convert one standalone image file (PNG / JPEG) to Markdown via the OCR
@@ -133,6 +138,32 @@ async fn set_app_settings(app: tauri::AppHandle, settings: AppSettings) -> Resul
 #[tauri::command]
 async fn ocr_image_to_md(app: tauri::AppHandle, path: String) -> Result<OcrImageResult, String> {
   core::ocr::convert_image_to_md(&app, &path).await
+}
+
+/// Freeze every monitor into a snapshot for region selection. Hides the main
+/// window; the follow-up `screenshot_ocr` / `screenshot_cancel` restores it.
+#[tauri::command]
+async fn screenshot_begin(app: tauri::AppHandle) -> Result<Vec<MonitorSnapshot>, String> {
+  core::snip::begin_screenshot(&app).await
+}
+
+/// Recognize the selected monitor region and finish the snip session: cached
+/// snapshots are dropped and the main window is restored either way.
+#[tauri::command]
+async fn screenshot_ocr(
+  app: tauri::AppHandle,
+  region: ShotRegion,
+) -> Result<OcrImageResult, String> {
+  let result = core::snip::screenshot_ocr(&app, region).await;
+  core::snip::end_screenshot_session(&app);
+  result
+}
+
+/// Cancel an in-progress snip session (Esc / overlay closed).
+#[tauri::command]
+async fn screenshot_cancel(app: tauri::AppHandle) -> Result<(), String> {
+  core::snip::end_screenshot_session(&app);
+  Ok(())
 }
 
 /// Analyze a Markdown file and return every table it contains (for preview).
@@ -249,8 +280,29 @@ fn resolve_draw_ocr(
 pub fn run() {
   tauri::Builder::default()
     .manage(HybridStore::default())
+    .manage(SnipStore::default())
+    .manage(crate::core::snip::SnipHotkey::default())
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
+    .plugin(
+      tauri_plugin_global_shortcut::Builder::new()
+        .with_handler(|app, _shortcut, event| {
+          use tauri_plugin_global_shortcut::ShortcutState;
+          if event.state() == ShortcutState::Pressed {
+            // The frontend routes this into the snip flow.
+            use tauri::Emitter;
+            let _ = app.emit("snip:hotkey", ());
+          }
+        })
+        .build(),
+    )
+    .setup(|app| {
+      let handle = app.handle().clone();
+      if let Err(e) = crate::core::snip::apply_hotkey(&handle) {
+        eprintln!("Failed to register screenshot hotkey: {e}");
+      }
+      Ok(())
+    })
     .invoke_handler(tauri::generate_handler![
       detect_pdf,
       convert_pdf,
@@ -267,6 +319,9 @@ pub fn run() {
       analyze_markdown,
       export_markdown_tables,
       ocr_image_to_md,
+      screenshot_begin,
+      screenshot_ocr,
+      screenshot_cancel,
       extract_draw_table,
       extract_draw_table_to_markdown
     ])

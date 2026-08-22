@@ -131,7 +131,6 @@ and Simplified Chinese — switchable at runtime.
 ```
 doccraft/
 ├─ docs/
-│  ├─ ui-design.md               # Chinese UI/UX design notes
 │  └─ index.md                   # This file
 ├─ src/                          # React frontend
 │  ├─ components/

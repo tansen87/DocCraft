@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -112,6 +113,8 @@ interface PreviewPaneProps {
   onExport: () => Promise<void>;
   /** Render visible "Page N" dividers at each page marker (default: hidden). */
   showPageMarkers?: boolean;
+  /** Optional extra controls rendered in the header before the mode toggle. */
+  toolbar?: ReactNode;
   className?: string;
 }
 
@@ -120,6 +123,7 @@ export function PreviewPane({
   processingTimeMs,
   onExport,
   showPageMarkers = false,
+  toolbar,
   className,
 }: PreviewPaneProps) {
   const { t } = useI18n();
@@ -226,6 +230,7 @@ export function PreviewPane({
             })}
           </p>
         </div>
+        {toolbar}
         <div className="flex items-center gap-1 rounded-lg bg-muted p-0.5">
           <button
             type="button"

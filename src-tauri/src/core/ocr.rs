@@ -385,6 +385,25 @@ async fn ocr_page(
   }
 }
 
+/// Send one already-base64-encoded PNG through the resolved remote vision
+/// provider with the standard document-OCR prompt (screenshot pipeline).
+pub async fn ai_recognize_image(
+  provider: &RemoteOcrProvider,
+  image_base64: &str,
+) -> Result<String, String> {
+  ocr_page(
+    &provider.client,
+    &provider.base_url,
+    &provider.model_id,
+    &provider.api_key,
+    0,
+    OCR_PROMPT,
+    "image/png",
+    image_base64,
+  )
+  .await
+}
+
 /// An in-flight hybrid conversion. Text pages are extracted once at start and
 /// kept as plain markdown; OCR pages are streamed in one at a time so only a
 /// single page image (not the whole document) is ever in memory.
@@ -782,6 +801,8 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
     markdown,
     engine: (if mode.is_local() { "local" } else { "ai" }).to_string(),
     duration_ms: start.elapsed().as_millis() as u64,
+    png_base64: None,
+    saved_path: None,
   })
 }
 
