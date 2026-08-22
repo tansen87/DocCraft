@@ -1,6 +1,10 @@
 mod core;
 mod models;
 
+use std::sync::Mutex;
+
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{Listener, Manager};
 
 use crate::core::ocr::HybridStore;
@@ -10,6 +14,89 @@ use crate::models::{
   MdAnalyzeResult, MdExportResult, MonitorSnapshot, OcrImageResult, OcrVendorDto, OcrVendorInput,
   ShotRegion,
 };
+
+/// Managed tray icon state so we can rebuild it when settings change.
+pub struct TrayState(pub Mutex<Option<TrayIcon>>);
+
+impl Default for TrayState {
+  fn default() -> Self {
+    Self(Mutex::new(None))
+  }
+}
+
+/// Create the system tray icon with menu items.
+fn setup_tray(app: &tauri::AppHandle) -> Result<TrayIcon, Box<dyn std::error::Error>> {
+  let open = MenuItemBuilder::with_id("open", "Open").build(app)?;
+  let screenshot = MenuItemBuilder::with_id("screenshot", "Screenshot").build(app)?;
+  let quit = MenuItemBuilder::with_id("quit", "Exit").build(app)?;
+  let menu = MenuBuilder::new(app)
+    .item(&open)
+    .item(&screenshot)
+    .separator()
+    .item(&quit)
+    .build()?;
+
+  let icon = app
+    .default_window_icon()
+    .cloned()
+    .ok_or("No default window icon")?;
+
+  let tray = TrayIconBuilder::new()
+    .icon(icon)
+    .menu(&menu)
+    .tooltip("DocCraft")
+    .on_menu_event(|app, event| match event.id().as_ref() {
+      "open" => {
+        if let Some(window) = app.get_webview_window("main") {
+          let _ = window.show();
+          let _ = window.set_focus();
+        }
+      }
+      "screenshot" => {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async {
+          crate::core::snip::capture_and_emit(app).await;
+        });
+      }
+      "quit" => {
+        app.exit(0);
+      }
+      _ => {}
+    })
+    .on_tray_icon_event(|tray, event| {
+      if let TrayIconEvent::Click {
+        button: MouseButton::Left,
+        button_state: MouseButtonState::Up,
+        ..
+      } = event
+      {
+        let app = tray.app_handle();
+        if let Some(window) = app.get_webview_window("main") {
+          let _ = window.show();
+          let _ = window.set_focus();
+        }
+      }
+    })
+    .build(app)?;
+
+  Ok(tray)
+}
+
+/// Synchronise the tray icon with the persisted setting.
+/// Creates the tray if `enabled` and not already present; drops it otherwise.
+pub fn update_tray(app: &tauri::AppHandle, enabled: bool) {
+  let state = app.state::<TrayState>();
+  let mut guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
+  if enabled && guard.is_none() {
+    match setup_tray(app) {
+      Ok(tray) => *guard = Some(tray),
+      Err(e) => eprintln!("Failed to create tray icon: {e}"),
+    }
+  } else if !enabled && guard.is_some() {
+    // Dropping the TrayIcon removes it from the system tray.
+    *guard = None;
+  }
+}
 
 /// Classify a PDF without extracting: returns type, confidence and which
 /// pages need OCR. The extraction behind `pages_needing_ocr` is cached so a
@@ -127,10 +214,17 @@ async fn get_app_settings(app: tauri::AppHandle) -> Result<AppSettings, String> 
 /// Persist global app settings.
 #[tauri::command]
 async fn set_app_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
+  let tray_enabled_before = core::settings::get_app_settings(&app)?.enable_tray;
   core::settings::set_app_settings(&app, settings)?;
   // Keep the global screenshot hotkey in sync (this also validates it — an
   // unparsable hotkey fails the save).
-  core::snip::apply_hotkey(&app)
+  core::snip::apply_hotkey(&app)?;
+  // Sync the tray icon with the new setting.
+  let settings_now = core::settings::get_app_settings(&app)?;
+  if settings_now.enable_tray != tray_enabled_before {
+    update_tray(&app, settings_now.enable_tray);
+  }
+  Ok(())
 }
 
 /// Convert one standalone image file (PNG / JPEG) to Markdown via the OCR
@@ -282,6 +376,7 @@ pub fn run() {
     .manage(HybridStore::default())
     .manage(SnipStore::default())
     .manage(crate::core::snip::SnipHotkey::default())
+    .manage(TrayState::default())
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
     .plugin(
@@ -289,8 +384,6 @@ pub fn run() {
         .with_handler(|app, _shortcut, event| {
           use tauri_plugin_global_shortcut::ShortcutState;
           if event.state() == ShortcutState::Pressed {
-            // Capture directly on the backend and emit the result, so the
-            // frontend skips an IPC round-trip.
             let app = app.clone();
             tauri::async_runtime::spawn(async {
               crate::core::snip::capture_and_emit(app).await;
@@ -312,6 +405,40 @@ pub fn run() {
           crate::core::snip::capture_and_emit(h).await;
         });
       });
+      // Create the system tray icon if enabled by settings.
+      match crate::core::settings::get_app_settings(app.handle()) {
+        Ok(settings) => {
+          if settings.enable_tray {
+            update_tray(app.handle(), true);
+          }
+        }
+        Err(e) => eprintln!("Failed to load settings for tray icon: {e}"),
+      }
+      // When the tray is enabled, closing the window hides it to the tray
+      // instead of quitting the app. The tray "Exit" menu calls app.exit(0)
+      // to fully terminate.
+      if let Some(window) = app.get_webview_window("main") {
+        let app_handle = app.handle().clone();
+        window.on_window_event(move |event| {
+          if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            // Check if tray is still enabled.
+            let tray_active = app_handle
+              .state::<TrayState>()
+              .0
+              .lock()
+              .unwrap_or_else(|e| e.into_inner())
+              .is_some();
+            if tray_active {
+              api.prevent_close();
+              // Hide the window instead of destroying it.
+              if let Some(w) = app_handle.get_webview_window("main") {
+                let _ = w.hide();
+              }
+            }
+            // If tray is not active, let the window close normally.
+          }
+        });
+      }
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![

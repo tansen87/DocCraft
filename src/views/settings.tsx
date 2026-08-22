@@ -9,6 +9,7 @@ import {
   FileSpreadsheet,
   KeyRound,
   Loader2,
+  Minimize2,
   Plus,
   Save,
   ScanText,
@@ -50,14 +51,15 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type SettingsSection = "ocr" | "threads" | "snip" | "cache" | "excel";
+type SettingsSection = "ocr" | "threads" | "snip" | "tray" | "cache" | "excel";
 
 const SECTIONS: {
   id: SettingsSection;
   labelKey:
     | "settings.ocr"
     | "settings.threads"
-    | "settings.snip"
+    | "snip.capture"
+    | "settings.tray"
     | "settings.cache"
     | "settings.excel";
   icon: typeof ScanText;
@@ -74,8 +76,13 @@ const SECTIONS: {
   },
   {
     id: "snip",
-    labelKey: "settings.snip",
+    labelKey: "snip.capture",
     icon: Camera,
+  },
+  {
+    id: "tray",
+    labelKey: "settings.tray",
+    icon: Minimize2,
   },
   {
     id: "cache",
@@ -124,6 +131,7 @@ export function SettingsView() {
   const [cacheExtracted, setCacheExtracted] = useState(true);
   const [excelTablesOnly, setExcelTablesOnly] = useState(true);
   const [screenshotHotkey, setScreenshotHotkey] = useState("");
+  const [enableTray, setEnableTray] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -141,6 +149,7 @@ export function SettingsView() {
         setCacheExtracted(settings.cacheExtractedText);
         setExcelTablesOnly(settings.excelTablesOnly);
         setScreenshotHotkey(settings.screenshotHotkey ?? "");
+        setEnableTray(settings.enableTray);
         setLoaded(true);
       })
       .catch((e) =>
@@ -184,6 +193,7 @@ export function SettingsView() {
       excelTablesOnly,
       ocrMode,
       screenshotHotkey: screenshotHotkey.trim() || null,
+      enableTray,
     };
     try {
       await Promise.all([
@@ -369,11 +379,22 @@ export function SettingsView() {
                 />
               </section>
               <section id="settings-snip" className="scroll-mt-3">
-                <SectionHeader icon={Camera} title={t("settings.snip")} />
+                <SectionHeader icon={Camera} title={t("snip.capture")} />
                 <SnipSettingsPanel
                   value={screenshotHotkey}
                   onChange={(v) => {
                     setScreenshotHotkey(v);
+                    markDirty();
+                  }}
+                  disabled={loading}
+                />
+              </section>
+              <section id="settings-tray" className="scroll-mt-3">
+                <SectionHeader icon={Minimize2} title={t("settings.tray")} />
+                <TraySettingsPanel
+                  value={enableTray}
+                  onChange={(v) => {
+                    setEnableTray(v);
                     markDirty();
                   }}
                   disabled={loading}
@@ -746,6 +767,36 @@ function SnipSettingsPanel({
       <p className="text-xs text-muted-foreground">
         {t("settings.screenshotHotkeyHint")}
       </p>
+    </Card>
+  );
+}
+
+function TraySettingsPanel({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <Card className="gap-3 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <Label>{t("settings.tray")}</Label>
+          <p className="text-xs text-muted-foreground">
+            {t("settings.trayDesc")}
+          </p>
+        </div>
+        <Switch
+          checked={value}
+          onCheckedChange={onChange}
+          disabled={disabled}
+        />
+      </div>
     </Card>
   );
 }

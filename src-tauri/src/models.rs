@@ -330,6 +330,9 @@ pub struct AppSettings {
   /// `None` / empty string disables the hotkey.
   #[serde(default = "default_screenshot_hotkey")]
   pub screenshot_hotkey: Option<String>,
+  /// Whether to show the system tray icon.
+  #[serde(default = "default_true")]
+  pub enable_tray: bool,
 }
 
 /// Controls when and how OCR is applied during conversion.
@@ -449,6 +452,7 @@ impl Default for AppSettings {
       excel_tables_only: false,
       ocr_mode: OcrMode::default(),
       screenshot_hotkey: default_screenshot_hotkey(),
+      enable_tray: true,
     }
   }
 }

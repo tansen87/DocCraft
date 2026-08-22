@@ -119,10 +119,11 @@ const en = {
   "snip.disabledTitle": "OCR is disabled",
   "snip.disabledDesc":
     "Enable OCR in Settings before using screenshot recognition.",
-  "settings.snip": "Screenshot",
   "settings.screenshotHotkey": "Screenshot hotkey",
   "settings.screenshotHotkeyHint":
-    'Global key that opens region capture. Click the field and press a combination to record it (e.g. "F8" or "Ctrl+Shift+A"). Esc cancels; Backspace clears. Leave empty to disable. Applies after saving.',
+    'Global key that opens region capture. Click the field and press a combination to record it (e.g. "F8" or "Ctrl+Shift+A"). Applies after saving',
+  "settings.tray": "System Tray",
+  "settings.trayDesc": "Show the system tray icon for quick access to Open, Screenshot, and Exit.",
   "settings.hotkeyPlaceholder": "Click to record",
   "settings.hotkeyRecording": "Press keys… Esc cancels · Backspace clears",
   "tooltip.exportMerged":
@@ -382,10 +383,11 @@ const zh: Record<TranslationKey, string> = {
   "snip.color": "颜色",
   "snip.disabledTitle": "OCR 未启用",
   "snip.disabledDesc": "请先在设置中启用 OCR,再使用截图识别。",
-  "settings.snip": "截图",
   "settings.screenshotHotkey": "截图识别快捷键",
   "settings.screenshotHotkeyHint":
-    "全局触发截图识别的按键。点击输入框后按下组合键即可录入(如 F8 或 Ctrl+Shift+A);Esc 取消、退格清除;留空禁用。保存设置后生效。",
+    "全局触发截图识别的按键.点击输入框后按下组合键即可录入(如 F8 或 Ctrl+Shift+A);保存设置后生效",
+  "settings.tray": "系统托盘",
+  "settings.trayDesc": "显示系统托盘图标,方便快速打开、截图和退出",
   "settings.hotkeyPlaceholder": "点击录入快捷键",
   "settings.hotkeyRecording": "请按下组合键… Esc 取消 · 退格清除",
   "tooltip.exportMerged": "将所有识别成功的图片导出为一个 Markdown 文件",

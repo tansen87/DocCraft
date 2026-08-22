@@ -95,6 +95,8 @@ export interface AppSettings {
   ocrMode: OcrMode;
   /** Global hotkey starting screenshot recognition (e.g. "F8"); null/empty disables. */
   screenshotHotkey?: string | null;
+  /** Whether to show the system tray icon. */
+  enableTray: boolean;
 }
 
 export type OcrMode =
