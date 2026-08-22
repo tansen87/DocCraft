@@ -421,6 +421,18 @@ pub struct ShotRegion {
   pub height: u32,
 }
 
+/// Information about the top-level window currently under the cursor.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowInfo {
+  pub title: String,
+  pub class_name: String,
+  pub x: i32,
+  pub y: i32,
+  pub width: i32,
+  pub height: i32,
+}
+
 fn default_true() -> bool {
   true
 }

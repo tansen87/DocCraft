@@ -4,12 +4,13 @@ use std::sync::Mutex;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use image::{RgbaImage, imageops::crop_imm};
-use tauri::{AppHandle, Manager};
+use png::{BitDepth, ColorType, Compression, Encoder};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use xcap::Monitor;
 
 use crate::core::settings;
-use crate::models::{MonitorSnapshot, OcrImageResult, ShotRegion};
+use crate::models::{MonitorSnapshot, OcrImageResult, ShotRegion, WindowInfo};
 
 /// Managed cache of full-monitor snapshots between `screenshot_begin` and the
 /// follow-up `screenshot_ocr` / `screenshot_cancel`.
@@ -64,7 +65,43 @@ pub fn apply_hotkey(app: &AppHandle) -> Result<(), String> {
   Ok(())
 }
 
-/// Encode an RGBA frame as PNG bytes.
+/// Get the current cursor position in virtual-screen coordinates.
+/// Uses the Windows API directly (no extra crate needed).
+#[cfg(target_os = "windows")]
+fn cursor_pos() -> (i32, i32) {
+  use windows_sys::Win32::Foundation::POINT;
+  use windows_sys::Win32::UI::WindowsAndMessaging::GetCursorPos;
+  let mut pt = POINT { x: 0, y: 0 };
+  let _ = unsafe { GetCursorPos(&mut pt) };
+  (pt.x, pt.y)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cursor_pos() -> (i32, i32) {
+  (0, 0)
+}
+
+/// Encode raw RGBA data as a PNG with zero (or near-zero) compression.
+/// This is the same technique used by `screenshots::Image::to_png(Fast)`.
+fn encode_fast_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
+  let mut buf = Vec::new();
+  let mut encoder = Encoder::new(&mut buf, width, height);
+  encoder.set_compression(Compression::Fast);
+  encoder.set_color(ColorType::Rgba);
+  encoder.set_depth(BitDepth::Eight);
+  let mut writer = encoder
+    .write_header()
+    .map_err(|e| format!("PNG header write failed: {e}"))?;
+  writer
+    .write_image_data(rgba)
+    .map_err(|e| format!("PNG data write failed: {e}"))?;
+  writer
+    .finish()
+    .map_err(|e| format!("PNG finish failed: {e}"))?;
+  Ok(buf)
+}
+
+/// Encode an RGBA frame as PNG bytes (fallback, used for OCR crop).
 fn encode_png(frame: &RgbaImage) -> Result<Vec<u8>, String> {
   let mut buf = Cursor::new(Vec::new());
   frame
@@ -106,67 +143,93 @@ fn clamp_region(
   Some((left as u32, top as u32, cw as u32, ch as u32))
 }
 
-/// Capture every monitor once and stash the raw frames for cropping later.
-/// Returns per-monitor metadata plus a PNG data URL used as the frozen
-/// background of each overlay window.
-pub async fn begin_screenshot(app: &AppHandle) -> Result<Vec<MonitorSnapshot>, String> {
-  // Hide the main window BEFORE freezing the desktop so the app never
-  // appears in its own snapshot.
-  if let Some(main) = app.get_webview_window("main") {
-    let _ = main.hide();
+/// Find the monitor whose bounding box contains the cursor.
+fn monitor_under_cursor() -> Result<Monitor, String> {
+  let (cx, cy) = cursor_pos();
+  let monitors = Monitor::all().map_err(|e| format!("Failed to enumerate monitors: {e}"))?;
+  for m in &monitors {
+    let mx = m.x().map_err(|e| format!("Failed to query monitor: {e}"))?;
+    let my = m.y().map_err(|e| format!("Failed to query monitor: {e}"))?;
+    let mw = m
+      .width()
+      .map_err(|e| format!("Failed to query monitor: {e}"))?;
+    let mh = m
+      .height()
+      .map_err(|e| format!("Failed to query monitor: {e}"))?;
+    if cx >= mx && cx < mx + mw as i32 && cy >= my && cy < my + mh as i32 {
+      return Ok(m.clone());
+    }
   }
+  Err(format!("No monitor contains cursor ({cx},{cy})"))
+}
 
-  let captures = tauri::async_runtime::spawn_blocking(|| -> Result<Vec<_>, String> {
-    // Give the compositor a moment to actually remove the window from screen.
-    std::thread::sleep(std::time::Duration::from_millis(200));
-    let monitors = Monitor::all().map_err(|e| format!("Failed to enumerate monitors: {e}"))?;
-    if monitors.is_empty() {
-      return Err("No monitor available for screen capture".to_string());
-    }
-    let mut out = Vec::with_capacity(monitors.len());
-    for m in monitors {
-      // xcap 0.4 wraps every getter in a Result — flatten them as we go.
-      let id = m
-        .id()
-        .map_err(|e| format!("Failed to query monitor: {e}"))?;
-      let x = m.x().map_err(|e| format!("Failed to query monitor: {e}"))?;
-      let y = m.y().map_err(|e| format!("Failed to query monitor: {e}"))?;
-      let scale = m
-        .scale_factor()
-        .map_err(|e| format!("Failed to query monitor: {e}"))?;
-      let frame = m
-        .capture_image()
-        .map_err(|e| format!("Screen capture failed: {e}"))?;
-      let png = encode_png(&frame)?;
-      let data_url = format!("data:image/png;base64,{}", base64_encode(&png));
-      out.push((
-        MonitorSnapshot {
-          id,
-          x,
-          y,
-          width: frame.width(),
-          height: frame.height(),
-          scale_factor: scale as f64,
-          data_url,
-        },
-        (id, frame),
-      ));
-    }
-    Ok(out)
-  })
-  .await
-  .map_err(|e| format!("Screenshot task failed: {e}"))??;
+/// Capture the screen under the cursor and return its snapshot + raw frame.
+/// Runs inside `spawn_blocking`.
+fn capture_under_cursor() -> Result<(MonitorSnapshot, (u32, RgbaImage)), String> {
+  let m = monitor_under_cursor()?;
+  let id = m
+    .id()
+    .map_err(|e| format!("Failed to query monitor: {e}"))?;
+  let x = m.x().map_err(|e| format!("Failed to query monitor: {e}"))?;
+  let y = m.y().map_err(|e| format!("Failed to query monitor: {e}"))?;
+  let scale = m
+    .scale_factor()
+    .map_err(|e| format!("Failed to query monitor: {e}"))?;
+  let frame = m
+    .capture_image()
+    .map_err(|e| format!("Screen capture failed: {e}"))?;
+
+  let width = frame.width();
+  let height = frame.height();
+  let png = encode_fast_png(frame.as_raw(), width, height)?;
+  let data_url = format!("data:image/png;base64,{}", base64_encode(&png));
+
+  Ok((
+    MonitorSnapshot {
+      id,
+      x,
+      y,
+      width,
+      height,
+      scale_factor: scale as f64,
+      data_url,
+    },
+    (id, frame),
+  ))
+}
+
+/// Capture the screen under the cursor.  Returns a single-element vec so the
+/// existing frontend (which expects a list) works without changes.
+pub async fn begin_screenshot(app: &AppHandle) -> Result<Vec<MonitorSnapshot>, String> {
+  let (snap, entry) = tauri::async_runtime::spawn_blocking(capture_under_cursor)
+    .await
+    .map_err(|e| format!("Screenshot task failed: {e}"))??;
 
   let store = app.state::<SnipStore>();
   {
     let mut map = store.lock();
     map.clear();
-    for (_, entry) in &captures {
-      map.insert(entry.0, entry.1.clone());
-    }
+    map.insert(entry.0, entry.1);
   }
 
-  Ok(captures.into_iter().map(|(snap, _)| snap).collect())
+  Ok(vec![snap])
+}
+
+/// Like `begin_screenshot` but emits `snip:ready` / `snip:error` events
+/// instead of returning, so the hotkey handler avoids an IPC round-trip.
+pub async fn capture_and_emit(app: AppHandle) {
+  match begin_screenshot(&app).await {
+    Ok(snapshots) => {
+      if let Err(e) = app.emit("snip:ready", &snapshots) {
+        eprintln!("capture_and_emit: failed to emit snip:ready: {e}");
+        end_screenshot_session(&app);
+      }
+    }
+    Err(e) => {
+      eprintln!("capture_and_emit: screenshot capture failed: {e}");
+      let _ = app.emit("snip:error", &e);
+    }
+  }
 }
 
 /// Directory where selected regions are persisted (enables retry / export
@@ -258,13 +321,66 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
   })
 }
 
-/// Drop every cached snapshot and bring the main window back.
+/// Drop every cached snapshot.
 pub fn end_screenshot_session(app: &AppHandle) {
   app.state::<SnipStore>().lock().clear();
-  if let Some(main) = app.get_webview_window("main") {
-    let _ = main.show();
-    let _ = main.set_focus();
+}
+
+/// Detect the top-level window under the cursor.
+#[cfg(target_os = "windows")]
+fn window_under_cursor() -> Result<WindowInfo, String> {
+  use windows_sys::Win32::Foundation::{POINT, RECT};
+  use windows_sys::Win32::UI::WindowsAndMessaging::{
+    GetClassNameW, GetCursorPos, GetWindowRect, GetWindowTextW, WindowFromPoint,
+  };
+
+  unsafe {
+    let mut pt = POINT { x: 0, y: 0 };
+    if GetCursorPos(&mut pt) == 0 {
+      return Err("Failed to query cursor position".into());
+    }
+
+    let hwnd = WindowFromPoint(pt);
+    if hwnd.is_null() {
+      return Err("No window under cursor".into());
+    }
+
+    let mut title_buf = [0u16; 512];
+    let title_len = GetWindowTextW(hwnd, title_buf.as_mut_ptr(), title_buf.len() as i32);
+    let title = String::from_utf16_lossy(&title_buf[..title_len as usize]);
+
+    let mut class_buf = [0u16; 256];
+    let class_len = GetClassNameW(hwnd, class_buf.as_mut_ptr(), class_buf.len() as i32);
+    let class_name = String::from_utf16_lossy(&class_buf[..class_len as usize]);
+
+    let mut rect = RECT {
+      left: 0,
+      top: 0,
+      right: 0,
+      bottom: 0,
+    };
+    GetWindowRect(hwnd, &mut rect);
+
+    Ok(WindowInfo {
+      title,
+      class_name,
+      x: rect.left,
+      y: rect.top,
+      width: rect.right - rect.left,
+      height: rect.bottom - rect.top,
+    })
   }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn window_under_cursor() -> Result<WindowInfo, String> {
+  Err("Window detection is only available on Windows".into())
+}
+
+/// Tauri command exposing the window currently under the cursor.
+#[tauri::command]
+pub async fn get_window_under_cursor() -> Result<WindowInfo, String> {
+  window_under_cursor()
 }
 
 #[cfg(test)]

@@ -331,3 +331,13 @@ export interface ShotRegion {
   width: number;
   height: number;
 }
+
+/** Information about the top-level window currently under the cursor. */
+export interface WindowInfo {
+  title: string;
+  className: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}

@@ -6,7 +6,6 @@ import { join } from "@tauri-apps/api/path";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
-  Camera,
   Check,
   Clock,
   Download,
@@ -42,7 +41,6 @@ import {
 import { useI18n } from "@/i18n";
 import { ensureMaxConcurrent } from "@/lib/concurrency";
 import {
-  beginScreenshot,
   cancelScreenshot,
   exportMarkdown,
   getAppSettings,
@@ -127,17 +125,15 @@ export function ImageToMdView() {
   const [exporting, setExporting] = useState(false);
   const [exportingAll, setExportingAll] = useState(false);
   /** A region-selection session is in progress (overlays open). */
-  const [snipping, setSnipping] = useState(false);
+  const snippingRef = useRef(false);
   /** In-flight recognition shown in the status bar. */
   const [activity, setActivity] = useState<ActivityProgress | null>(null);
-  /** Item briefly highlighted after jumping from a notice chip. */
   const [highlightId, setHighlightId] = useState<string | null>(null);
   /** Item whose markdown is shown in the preview pane (null = merged view). */
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const itemsRef = useRef<ImageItem[]>([]);
   const runningRef = useRef(false);
-  const snippingRef = useRef(false);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -305,135 +301,164 @@ export function ImageToMdView() {
     [mutate, t],
   );
 
-  /** Freeze the desktop, let the user select a region, recognize it. */
-  const startSnip = useCallback(async () => {
-    if (snippingRef.current) return;
-    // A screenshot has no text layer — fail fast with guidance when OCR is off.
-    try {
-      const settings = await getAppSettings();
-      if (settings.ocrMode === "disabled") {
-        toast.error(t("snip.disabledTitle"), {
-          description: t("snip.disabledDesc"),
-        });
-        return;
-      }
-    } catch {
-      /* settings unavailable — let the backend decide later */
-    }
+  /** Show the per-monitor overlay windows and wire up region selection events. */
+  const showOverlay = useCallback(
+    async (monitors: MonitorSnapshot[]) => {
+      try {
+        let unlistenSelected: (() => void) | null = null;
+        let unlistenCancelled: (() => void) | null = null;
+        let settled = false;
 
-    snippingRef.current = true;
-    setSnipping(true);
+        const closeOverlays = async () => {
+          await Promise.allSettled(
+            monitors.map(async (m) => {
+              const win = await WebviewWindow.getByLabel(`snip-${m.id}`);
+              await win?.close();
+            }),
+          );
+        };
 
-    let monitors: MonitorSnapshot[];
-    try {
-      monitors = await beginScreenshot();
-    } catch (e) {
-      toast.error(t("snip.beginFailed"), { description: String(e) });
-      snippingRef.current = false;
-      setSnipping(false);
-      return;
-    }
+        /**
+         * Tear down the snip session UI. When a region *was* selected we must NOT
+         * call `cancelScreenshot` — the follow-up `screenshot_ocr` command
+         * consumes the cached snapshot and restores the main window itself;
+         * cancelling here first would wipe the snapshot ("session expired").
+         */
+        const finish = async (restoreApp: boolean) => {
+          unlistenSelected?.();
+          unlistenCancelled?.();
+          unlistenSelected = null;
+          unlistenCancelled = null;
+          cleanupStorage();
+          await closeOverlays();
+          if (restoreApp) {
+            try {
+              await cancelScreenshot();
+            } catch {
+              /* best effort */
+            }
+          }
+          snippingRef.current = false;
+        };
 
-    let unlistenSelected: (() => void) | null = null;
-    let unlistenCancelled: (() => void) | null = null;
-    let settled = false;
+        const onSelected = async (region: ShotRegion) => {
+          if (settled) return;
+          settled = true;
+          await finish(false);
+          await recognizeShot(region);
+        };
+        const onCancelled = async () => {
+          if (settled) return;
+          settled = true;
+          await finish(true);
+        };
 
-    const closeOverlays = async () => {
-      await Promise.allSettled(
-        monitors.map(async (m) => {
-          const win = await WebviewWindow.getByLabel(`snip-${m.id}`);
-          await win?.close();
-        }),
-      );
-    };
+        const cleanupStorage = () =>
+          monitors.forEach((m) =>
+            localStorage.removeItem(`doccraft-snip-${m.id}`),
+          );
 
-    /**
-     * Tear down the snip session UI. When a region *was* selected we must NOT
-     * call `cancelScreenshot` — the follow-up `screenshot_ocr` command
-     * consumes the cached snapshot and restores the main window itself;
-     * cancelling here first would wipe the snapshot ("session expired").
-     */
-    const finish = async (restoreApp: boolean) => {
-      unlistenSelected?.();
-      unlistenCancelled?.();
-      unlistenSelected = null;
-      unlistenCancelled = null;
-      cleanupStorage();
-      await closeOverlays();
-      if (restoreApp) {
+        // Stash snapshots for the overlay windows before creating them.
+        for (const m of monitors) {
+          localStorage.setItem(`doccraft-snip-${m.id}`, JSON.stringify(m));
+        }
+
+        [unlistenSelected, unlistenCancelled] = await Promise.all([
+          listen<ShotRegion>(
+            "snip:selected",
+            (e) => void onSelected(e.payload),
+          ),
+          listen<never>("snip:cancelled", () => void onCancelled()),
+        ]);
+
+        for (const m of monitors) {
+          const win = new WebviewWindow(`snip-${m.id}`, {
+            x: m.x,
+            y: m.y,
+            width: m.width,
+            height: m.height,
+            url: "index.html",
+            decorations: false,
+            transparent: true,
+            alwaysOnTop: true,
+            skipTaskbar: true,
+            resizable: false,
+            maximizable: false,
+            minimizable: false,
+            shadow: false,
+          });
+          // Constructor options are logical units — enforce exact physical
+          // placement so the overlay covers its monitor pixel-for-pixel.
+          void win.once("tauri://created", async () => {
+            await win.setPosition(new PhysicalPosition(m.x, m.y));
+            await win.setSize(new PhysicalSize(m.width, m.height));
+          });
+          void win.once("tauri://error", (e) => {
+            toast.error(t("snip.beginFailed"), {
+              description: String(e.payload),
+            });
+            void onCancelled();
+          });
+        }
+      } catch (e) {
+        // Any synchronous error during set-up — restore the main window.
         try {
           await cancelScreenshot();
         } catch {
           /* best effort */
         }
+        snippingRef.current = false;
+        throw e; // re-throw so the caller (startSnipWithMonitors) can also react.
       }
-      snippingRef.current = false;
-      setSnipping(false);
-    };
+    },
+    [recognizeShot, t],
+  );
 
-    const onSelected = async (region: ShotRegion) => {
-      if (settled) return;
-      settled = true;
-      await finish(false);
-      await recognizeShot(region);
-    };
-    const onCancelled = async () => {
-      if (settled) return;
-      settled = true;
-      await finish(true);
-    };
+  /** Same as `startSnip` but receives pre-captured monitors (for `snip:ready`). */
+  const startSnipWithMonitors = useCallback(
+    async (monitors: MonitorSnapshot[]) => {
+      try {
+        const settings = await getAppSettings();
+        if (settings.ocrMode === "disabled") {
+          toast.error(t("snip.disabledTitle"), {
+            description: t("snip.disabledDesc"),
+          });
+          return;
+        }
+      } catch {}
+      snippingRef.current = true;
+      try {
+        await showOverlay(monitors);
+      } catch (e) {
+        try {
+          await cancelScreenshot();
+        } catch {
+          /* best effort */
+        }
+        snippingRef.current = false;
+        toast.error(t("snip.beginFailed"), { description: String(e) });
+      }
+    },
+    [showOverlay, t],
+  );
 
-    const cleanupStorage = () =>
-      monitors.forEach((m) => localStorage.removeItem(`doccraft-snip-${m.id}`));
-
-    // Stash snapshots for the overlay windows before creating them.
-    for (const m of monitors) {
-      localStorage.setItem(`doccraft-snip-${m.id}`, JSON.stringify(m));
-    }
-
-    [unlistenSelected, unlistenCancelled] = await Promise.all([
-      listen<ShotRegion>("snip:selected", (e) => void onSelected(e.payload)),
-      listen<never>("snip:cancelled", () => void onCancelled()),
-    ]);
-
-    for (const m of monitors) {
-      const win = new WebviewWindow(`snip-${m.id}`, {
-        x: m.x,
-        y: m.y,
-        width: m.width,
-        height: m.height,
-        url: "index.html",
-        decorations: false,
-        transparent: true,
-        alwaysOnTop: true,
-        skipTaskbar: true,
-        resizable: false,
-        maximizable: false,
-        minimizable: false,
-        shadow: false,
-      });
-      // Constructor options are logical units — enforce exact physical
-      // placement so the overlay covers its monitor pixel-for-pixel.
-      void win.once("tauri://created", async () => {
-        await win.setPosition(new PhysicalPosition(m.x, m.y));
-        await win.setSize(new PhysicalSize(m.width, m.height));
-      });
-      void win.once("tauri://error", (e) => {
-        toast.error(t("snip.beginFailed"), { description: String(e.payload) });
-        void onCancelled();
-      });
-    }
-  }, [recognizeShot, t]);
-
-  // Global screenshot hotkey (registered by the backend from settings).
-  const startSnipRef = useRef(startSnip);
-  startSnipRef.current = startSnip;
+  // Listen for `snip:ready` from the backend hotkey handler (no IPC round-trip).
+  const startSnipWithMonitorsRef = useRef(startSnipWithMonitors);
+  startSnipWithMonitorsRef.current = startSnipWithMonitors;
   useEffect(() => {
-    const unlisten = listen("snip:hotkey", () => void startSnipRef.current());
+    const unlisten = listen<MonitorSnapshot[]>(
+      "snip:ready",
+      (e) => void startSnipWithMonitorsRef.current(e.payload),
+    );
+    const unlistenErr = listen<string>("snip:error", (e) => {
+      void cancelScreenshot().catch(() => {});
+      toast.error(t("snip.beginFailed"), { description: e.payload });
+    });
     return () => {
       void unlisten.then((fn) => fn());
+      void unlistenErr.then((fn) => fn());
     };
-  }, []);
+  }, [t]);
 
   const retryFailed = useCallback(() => {
     mutate((prev) =>
@@ -662,17 +687,6 @@ export function ImageToMdView() {
           })}
           className="flex-1"
         />
-        <div className="flex justify-center">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => void startSnip()}
-            disabled={snipping}
-          >
-            {snipping ? <Loader2 className="animate-spin" /> : <Camera />}
-            {t("snip.capture")}
-          </Button>
-        </div>
       </div>
     );
   }
@@ -721,20 +735,6 @@ export function ImageToMdView() {
             <ListPlus />
             {t("batch.add")}
           </Button>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => void startSnip()}
-                disabled={snipping}
-              >
-                {snipping ? <Loader2 className="animate-spin" /> : <Camera />}
-                {t("snip.capture")}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t("snip.tooltip")}</TooltipContent>
-          </Tooltip>
           {running ? (
             <Button size="sm" onClick={stop}>
               <Square />
@@ -835,7 +835,7 @@ export function ImageToMdView() {
                   {item.name}
                 </span>
                 <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                  {item.result ? formatDuration(item.result.durationMs) : "—"}
+                  {item.result ? formatDuration(item.result.durationMs) : ""}
                 </span>
                 <ItemStatusBadge status={item.status} error={item.error} />
                 <div className="flex shrink-0 items-center gap-1">

@@ -114,6 +114,8 @@ const en = {
   "snip.hint":
     "Drag to select a region · Esc or right-click to cancel · Double-click for fullscreen",
   "snip.beginFailed": "Failed to start screen capture",
+  "snip.coordinates": "Coordinates",
+  "snip.color": "Color",
   "snip.disabledTitle": "OCR is disabled",
   "snip.disabledDesc":
     "Enable OCR in Settings before using screenshot recognition.",
@@ -376,6 +378,8 @@ const zh: Record<TranslationKey, string> = {
   "snip.tooltip": "框选屏幕区域并用 OCR 识别",
   "snip.hint": "拖拽框选识别区域 · Esc 或右键取消 · 双击全屏",
   "snip.beginFailed": "无法开始屏幕捕获",
+  "snip.coordinates": "坐标",
+  "snip.color": "颜色",
   "snip.disabledTitle": "OCR 未启用",
   "snip.disabledDesc": "请先在设置中启用 OCR,再使用截图识别。",
   "settings.snip": "截图",

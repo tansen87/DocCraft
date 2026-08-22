@@ -1,10 +1,10 @@
 mod core;
 mod models;
 
-use tauri::Manager;
+use tauri::{Listener, Manager};
 
 use crate::core::ocr::HybridStore;
-use crate::core::snip::SnipStore;
+use crate::core::snip::{SnipStore, get_window_under_cursor};
 use crate::models::{
   AppSettings, ConvertResult, DetectResult, DrawTableRequest, DrawTableResult, HybridSessionInfo,
   MdAnalyzeResult, MdExportResult, MonitorSnapshot, OcrImageResult, OcrVendorDto, OcrVendorInput,
@@ -289,9 +289,12 @@ pub fn run() {
         .with_handler(|app, _shortcut, event| {
           use tauri_plugin_global_shortcut::ShortcutState;
           if event.state() == ShortcutState::Pressed {
-            // The frontend routes this into the snip flow.
-            use tauri::Emitter;
-            let _ = app.emit("snip:hotkey", ());
+            // Capture directly on the backend and emit the result, so the
+            // frontend skips an IPC round-trip.
+            let app = app.clone();
+            tauri::async_runtime::spawn(async {
+              crate::core::snip::capture_and_emit(app).await;
+            });
           }
         })
         .build(),
@@ -301,6 +304,14 @@ pub fn run() {
       if let Err(e) = crate::core::snip::apply_hotkey(&handle) {
         eprintln!("Failed to register screenshot hotkey: {e}");
       }
+      // Listen for the button-click capture trigger (same as the hotkey path).
+      let handle = app.handle().clone();
+      app.listen("snip:capture", move |_| {
+        let h = handle.clone();
+        tauri::async_runtime::spawn(async move {
+          crate::core::snip::capture_and_emit(h).await;
+        });
+      });
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -322,6 +333,7 @@ pub fn run() {
       screenshot_begin,
       screenshot_ocr,
       screenshot_cancel,
+      get_window_under_cursor,
       extract_draw_table,
       extract_draw_table_to_markdown
     ])
