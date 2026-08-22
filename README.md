@@ -82,58 +82,6 @@ and Simplified Chinese — switchable at runtime.
   left-click to show the main window. Close button hides to tray instead of
   quitting. Configurable in Settings.
 
-## Tech Stack
-
-| Layer | Choice |
-|-------|--------|
-| Desktop framework | Tauri 2.x (WebView + Rust core) |
-| Frontend | React 19 + TypeScript + Vite 8 |
-| UI kit | shadcn/ui (Radix primitives, Tailwind CSS v4) |
-| Package manager | pnpm 10 |
-| PDF engine | `pdf-inspector` 1.17 (pure Rust, `lopdf`) |
-| Local OCR engine | `ocr-rs` 2.4 (PaddleOCR, pure Rust) |
-| PDF rendering | `pdfjs-dist` 6.x (preview + OCR page PNGs) |
-| Markdown / Excel | `react-markdown` + GFM on frontend; `rust_xlsxwriter` on backend |
-| i18n | custom lightweight React Context (typed en/zh dictionaries) |
-| HTTP client | `reqwest` 0.13 (async, native-tls) |
-| Secret storage | DPAPI via `windows-sys` on Windows |
-| Config storage | JSON files in Tauri `app_config_dir` |
-
-## Project Structure
-
-```
-doccraft/
-├─ docs/
-│  └─ index.md                   # Full architecture & data-flow documentation
-├─ src/                          # React frontend
-│  ├─ components/
-│  │  ├─ pdf2md/                 # PDF → Markdown workflow
-│  │  ├─ draw-table/             # Manual "draw-a-table" extraction
-│  │  ├─ image-table/            # Image draw-table overlay
-│  │  ├─ snip/                   # Screenshot overlay
-│  │  ├─ md2xlsx/                # Markdown → Excel preview
-│  │  ├─ layout/                 # App header (tabs, language, theme)
-│  │  └─ ui/                     # shadcn/ui components
-│  ├─ i18n/                      # Language provider + typed en/zh dictionaries
-│  ├─ lib/                       # IPC wrappers, types, utilities
-│  ├─ views/                     # Page-level components (pdf-to-md, image-to-md, md-to-xlsx, settings)
-│  ├─ App.tsx                    # App shell, tab switching
-│  ├─ index.css                  # Tailwind v4 + design tokens
-│  └─ main.tsx                   # Entry point
-├─ src-tauri/                    # Rust backend
-│  ├─ src/
-│  │  ├─ lib.rs                  # Tauri commands + run()
-│  │  ├─ main.rs
-│  │  ├─ models.rs               # Serialized DTOs (camelCase)
-│  │  └─ core/                   # convert, ocr, settings, secret, line_draw, md_to_xlsx, snip, ...
-│  ├─ capabilities/              # Permissions
-│  ├─ tauri.conf.json
-│  └─ Cargo.toml
-├─ index.html
-├─ package.json
-└─ vite.config.ts
-```
-
 ## Getting Started
 
 Prerequisites: Node ≥ 20, pnpm ≥ 10, Rust ≥ 1.85.
@@ -156,10 +104,6 @@ cargo check --manifest-path src-tauri/Cargo.toml
 - `ocr-config.json` — per-vendor name, base URL, protected API key, models.
 - `app-settings.json` — `maxConcurrent`, `cacheExtractedText`, `excelTablesOnly`,
   `ocrMode`, `screenshotHotkey`, `enableTray`, `textSeparator`.
-
-Both live in the Tauri `app_config_dir`. For privacy, only pages flagged as
-needing OCR are ever sent to an external provider; local PaddleOCR mode keeps
-all data on-device. OCR sessions are auto-pruned if never finished.
 
 ## License
 
