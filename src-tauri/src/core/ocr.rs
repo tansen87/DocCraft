@@ -35,13 +35,13 @@ impl LocalOcrEngine {
   /// Recognize text in an image from PNG bytes and return the text.
   /// Sorts text blocks by reading order: top-to-bottom, then left-to-right
   /// within each line, and joins same-line blocks with spaces.
-  pub fn recognize_from_png(&self, png_data: &[u8]) -> Result<String, String> {
-    self.recognize_bytes(png_data)
+  pub fn recognize_from_png(&self, png_data: &[u8], separator: &str) -> Result<String, String> {
+    self.recognize_bytes(png_data, separator)
   }
 
   /// Recognize text in an image from encoded bytes (PNG or JPEG) and return
   /// the text. Block ordering matches [`Self::recognize_from_png`].
-  pub fn recognize_bytes(&self, image_data: &[u8]) -> Result<String, String> {
+  pub fn recognize_bytes(&self, image_data: &[u8], separator: &str) -> Result<String, String> {
     let image =
       image::load_from_memory(image_data).map_err(|e| format!("Failed to load image: {e}"))?;
 
@@ -90,7 +90,7 @@ impl LocalOcrEngine {
       lines.push(current_line);
     }
 
-    // Join each line's blocks with spaces, separate lines with newlines.
+    // Join each line's blocks with the configured separator, separate lines with newlines.
     let output = lines
       .iter()
       .map(|line| {
@@ -98,7 +98,7 @@ impl LocalOcrEngine {
           .iter()
           .map(|(_, text)| *text)
           .collect::<Vec<_>>()
-          .join("|")
+          .join(separator)
       })
       .collect::<Vec<_>>()
       .join("\n");
@@ -667,8 +667,11 @@ fn local_ocr_page(app: &AppHandle, page: u32, image_png: &str) -> Result<String,
   // Create the local OCR engine
   let engine = create_local_ocr_engine(app)?;
 
+  // Use the configured text separator.
+  let sep = settings::get_app_settings(app)?.text_separator;
+
   // Run OCR
-  let text = engine.recognize_from_png(&image_data)?;
+  let text = engine.recognize_from_png(&image_data, &sep)?;
 
   if text.trim().is_empty() {
     return Err(format!("Local OCR returned no content (page {page})"));
@@ -753,13 +756,14 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
   let markdown = if mode.is_local() {
     // Local PaddleOCR is CPU-bound model inference — run it off the async
     // runtime so concurrent conversions never block each other's futures.
+    let sep = settings::get_app_settings(app)?.text_separator;
     let app = app.clone();
     let path = path.to_string();
     tauri::async_runtime::spawn_blocking(move || {
       let image_data =
         std::fs::read(&path).map_err(|e| format!("Failed to read image file: {e}"))?;
       let engine = create_local_ocr_engine(&app)?;
-      let text = engine.recognize_bytes(&image_data)?;
+      let text = engine.recognize_bytes(&image_data, &sep)?;
       if text.trim().is_empty() {
         return Err("Local OCR returned no content".to_string());
       }

@@ -22,7 +22,8 @@ import { toast } from "sonner";
 
 import { DragOverlay } from "@/components/pdf2md/drag-overlay";
 import { DropZone } from "@/components/pdf2md/drop-zone";
-import { formatDuration, PreviewPane } from "@/components/pdf2md/preview-pane";
+import { formatDuration } from "@/lib/format-duration";
+import { PreviewPane } from "@/components/pdf2md/preview-pane";
 import { StatusBar } from "@/components/pdf2md/status-bar";
 import { useFileDrop } from "@/components/pdf2md/use-pdf-drop";
 import { ImageTableOverlay } from "@/components/image-table/image-table-overlay";
@@ -613,9 +614,8 @@ export function ImageToMdView() {
     else if (Array.isArray(picked) && picked.length > 0) addFiles(picked);
   }
 
-  const { dragging } = useFileDrop(addFiles, {
+  const { dragging, containerRef } = useFileDrop(addFiles, {
     extensions: IMAGE_EXTENSIONS,
-    errorMessage: t("drop.imgInvalid"),
   });
 
   const notices = useMemo<StatusNotice[]>(() => {
@@ -696,7 +696,10 @@ export function ImageToMdView() {
   }
 
   return (
-    <>
+    <div
+      ref={containerRef}
+      className="relative flex min-h-0 flex-1 flex-col gap-3"
+    >
       {dragging ? (
         <DragOverlay
           title={t("overlay.releaseToAdd")}
@@ -970,6 +973,6 @@ export function ImageToMdView() {
           }}
         />
       ) : null}
-    </>
+    </div>
   );
 }

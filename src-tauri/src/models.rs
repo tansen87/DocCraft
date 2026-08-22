@@ -333,6 +333,11 @@ pub struct AppSettings {
   /// Whether to show the system tray icon.
   #[serde(default = "default_true")]
   pub enable_tray: bool,
+  /// Separator between text blocks within a single OCR line.
+  /// Supported values: `" "` (space), `","` (comma), `"|"` (pipe),
+  /// `"\t"` (tab), `"^"` (caret).
+  #[serde(default = "default_text_separator")]
+  pub text_separator: String,
 }
 
 /// Controls when and how OCR is applied during conversion.
@@ -466,6 +471,10 @@ fn default_screenshot_hotkey() -> Option<String> {
   Some("F8".to_string())
 }
 
+fn default_text_separator() -> String {
+  "|".to_string()
+}
+
 impl Default for AppSettings {
   fn default() -> Self {
     Self {
@@ -475,6 +484,7 @@ impl Default for AppSettings {
       ocr_mode: OcrMode::default(),
       screenshot_hotkey: default_screenshot_hotkey(),
       enable_tray: true,
+      text_separator: default_text_separator(),
     }
   }
 }

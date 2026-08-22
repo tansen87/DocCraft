@@ -13,6 +13,7 @@ import {
   Plus,
   Save,
   ScanText,
+  SeparatorHorizontal,
   ShieldCheck,
   Star,
   Trash2,
@@ -27,6 +28,13 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { OcrMode } from "@/lib/types";
 import {
@@ -51,7 +59,14 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-type SettingsSection = "ocr" | "threads" | "snip" | "tray" | "cache" | "excel";
+type SettingsSection =
+  | "ocr"
+  | "threads"
+  | "snip"
+  | "textSep"
+  | "tray"
+  | "cache"
+  | "excel";
 
 const SECTIONS: {
   id: SettingsSection;
@@ -59,6 +74,7 @@ const SECTIONS: {
     | "settings.ocr"
     | "settings.threads"
     | "snip.capture"
+    | "settings.textSeparator"
     | "settings.tray"
     | "settings.cache"
     | "settings.excel";
@@ -70,19 +86,14 @@ const SECTIONS: {
     icon: ScanText,
   },
   {
-    id: "threads",
-    labelKey: "settings.threads",
-    icon: Cpu,
-  },
-  {
     id: "snip",
     labelKey: "snip.capture",
     icon: Camera,
   },
   {
-    id: "tray",
-    labelKey: "settings.tray",
-    icon: Minimize2,
+    id: "textSep",
+    labelKey: "settings.textSeparator",
+    icon: SeparatorHorizontal,
   },
   {
     id: "cache",
@@ -93,6 +104,16 @@ const SECTIONS: {
     id: "excel",
     labelKey: "settings.excel",
     icon: FileSpreadsheet,
+  },
+  {
+    id: "threads",
+    labelKey: "settings.threads",
+    icon: Cpu,
+  },
+  {
+    id: "tray",
+    labelKey: "settings.tray",
+    icon: Minimize2,
   },
 ];
 
@@ -131,6 +152,7 @@ export function SettingsView() {
   const [cacheExtracted, setCacheExtracted] = useState(true);
   const [excelTablesOnly, setExcelTablesOnly] = useState(true);
   const [screenshotHotkey, setScreenshotHotkey] = useState("");
+  const [textSeparator, setTextSeparator] = useState("|");
   const [enableTray, setEnableTray] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -149,6 +171,7 @@ export function SettingsView() {
         setCacheExtracted(settings.cacheExtractedText);
         setExcelTablesOnly(settings.excelTablesOnly);
         setScreenshotHotkey(settings.screenshotHotkey ?? "");
+        setTextSeparator(settings.textSeparator);
         setEnableTray(settings.enableTray);
         setLoaded(true);
       })
@@ -194,6 +217,7 @@ export function SettingsView() {
       ocrMode,
       screenshotHotkey: screenshotHotkey.trim() || null,
       enableTray,
+      textSeparator,
     };
     try {
       await Promise.all([
@@ -253,8 +277,6 @@ export function SettingsView() {
         if (!el) continue;
         if (el.getBoundingClientRect().top <= line) active = s.id;
       }
-      // When the viewport is scrolled to the very bottom, a short last section
-      // may never cross the line �?fall back to the last section.
       if (
         viewport.scrollTop + viewport.clientHeight >=
         viewport.scrollHeight - 1
@@ -384,6 +406,20 @@ export function SettingsView() {
                   value={screenshotHotkey}
                   onChange={(v) => {
                     setScreenshotHotkey(v);
+                    markDirty();
+                  }}
+                  disabled={loading}
+                />
+              </section>
+              <section id="settings-textSep" className="scroll-mt-3">
+                <SectionHeader
+                  icon={SeparatorHorizontal}
+                  title={t("settings.textSeparator")}
+                />
+                <TextSepSettingsPanel
+                  value={textSeparator}
+                  onChange={(v) => {
+                    setTextSeparator(v);
                     markDirty();
                   }}
                   disabled={loading}
@@ -766,6 +802,51 @@ function SnipSettingsPanel({
       </div>
       <p className="text-xs text-muted-foreground">
         {t("settings.screenshotHotkeyHint")}
+      </p>
+    </Card>
+  );
+}
+
+function TextSepSettingsPanel({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useI18n();
+
+  const SEPARATOR_OPTIONS = [
+    { label: "| (pipe)", value: "|" },
+    { label: "' ' (space)", value: " " },
+    { label: ", (comma)", value: "," },
+    { label: "\\t (tab)", value: "\t" },
+    { label: "^ (caret)", value: "^" },
+  ];
+
+  return (
+    <Card className="gap-3 p-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <Label>{t("settings.textSeparator")}</Label>
+          <Select value={value} onValueChange={onChange} disabled={disabled}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SEPARATOR_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {t("settings.textSeparatorDesc")}
       </p>
     </Card>
   );

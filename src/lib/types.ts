@@ -97,6 +97,8 @@ export interface AppSettings {
   screenshotHotkey?: string | null;
   /** Whether to show the system tray icon. */
   enableTray: boolean;
+  /** Separator between text blocks within a single OCR line. */
+  textSeparator: string;
 }
 
 export type OcrMode =

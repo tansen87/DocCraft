@@ -60,7 +60,6 @@ const en = {
   "toast.noAvailableDocs": "No available documents",
   "toast.noAvailableDocsDesc":
     "Please add and analyze at least one .md file containing tables",
-  "toast.unsupportedFile": "Unsupported file",
   "toast.loadConfigFailed": "Failed to load configuration",
   "toast.readKeyFailed": "Failed to read API key",
   "toast.configSaved": "Configuration saved",
@@ -99,9 +98,6 @@ const en = {
   "drop.single": "Single file",
   "drop.multiple": "Multiple files",
   "drop.supported": "Supports {exts} · {mode}",
-  "drop.mdInvalid": "Please drop .md files",
-  "drop.pdfInvalid": "Please drop .pdf files",
-  "drop.imgInvalid": "Please drop .png / .jpg files",
 
   "img2md.title": "Image to Markdown",
   "img2md.completed": "{done}/{total} recognized",
@@ -122,8 +118,12 @@ const en = {
   "settings.screenshotHotkey": "Screenshot hotkey",
   "settings.screenshotHotkeyHint":
     'Global key that opens region capture. Click the field and press a combination to record it (e.g. "F8" or "Ctrl+Shift+A"). Applies after saving',
+  "settings.textSeparator": "Text separator",
+  "settings.textSeparatorDesc":
+    "Character used to join OCR blocks within a single line",
   "settings.tray": "System Tray",
-  "settings.trayDesc": "Show the system tray icon for quick access to Open, Screenshot, and Exit.",
+  "settings.trayDesc":
+    "Show the system tray icon for quick access to Open, Screenshot, and Exit.",
   "settings.hotkeyPlaceholder": "Click to record",
   "settings.hotkeyRecording": "Press keys… Esc cancels · Backspace clears",
   "tooltip.exportMerged":
@@ -328,7 +328,6 @@ const zh: Record<TranslationKey, string> = {
   "toast.noCompletedDocsDesc": "请先完成至少一个文件的转换",
   "toast.noAvailableDocs": "暂无可用文档",
   "toast.noAvailableDocsDesc": "请先添加并解析至少一个含表格的 .md 文件",
-  "toast.unsupportedFile": "不支持的文件",
   "toast.loadConfigFailed": "加载配置失败",
   "toast.readKeyFailed": "读取密钥失败",
   "toast.configSaved": "配置已保存",
@@ -366,9 +365,6 @@ const zh: Record<TranslationKey, string> = {
   "drop.single": "单文件",
   "drop.multiple": "可多选",
   "drop.supported": "支持 {exts} · {mode}",
-  "drop.mdInvalid": "请拖入 .md 文件",
-  "drop.pdfInvalid": "请拖入 .pdf 文件",
-  "drop.imgInvalid": "请拖入 .png / .jpg 图片",
 
   "img2md.title": "图片转 Markdown",
   "img2md.completed": "已识别 {done}/{total} 张",
@@ -387,6 +383,8 @@ const zh: Record<TranslationKey, string> = {
   "settings.screenshotHotkey": "截图识别快捷键",
   "settings.screenshotHotkeyHint":
     "全局触发截图识别的按键.点击输入框后按下组合键即可录入(如 F8 或 Ctrl+Shift+A);保存设置后生效",
+  "settings.textSeparator": "文本连接符",
+  "settings.textSeparatorDesc": "用于连接同一行内 OCR 文本块的字符",
   "settings.tray": "系统托盘",
   "settings.trayDesc": "显示系统托盘图标,方便快速打开、截图和退出",
   "settings.hotkeyPlaceholder": "点击录入快捷键",

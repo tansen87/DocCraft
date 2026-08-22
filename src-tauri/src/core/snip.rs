@@ -295,12 +295,13 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
   let markdown = if mode.is_local() {
     let app = app.clone();
     let saved_for_read = saved_path.clone();
+    let sep = settings::get_app_settings(&app)?.text_separator;
     tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
       let engine = crate::core::ocr::create_local_ocr_engine(&app)?;
       // Re-read the persisted copy instead of keeping both copies alive.
       let png =
         std::fs::read(&saved_for_read).map_err(|e| format!("Failed to read screenshot: {e}"))?;
-      let text = engine.recognize_bytes(&png)?;
+      let text = engine.recognize_bytes(&png, &sep)?;
       if text.trim().is_empty() {
         return Err("Local OCR returned no content".to_string());
       }
@@ -400,8 +401,7 @@ pub async fn ocr_image_table(
     return Err("OCR is disabled in settings".to_string());
   }
 
-  let img = image::open(&request.image_path)
-    .map_err(|e| format!("Failed to load image: {e}"))?;
+  let img = image::open(&request.image_path).map_err(|e| format!("Failed to load image: {e}"))?;
   let img_width = img.width() as f64;
   let img_height = img.height() as f64;
 
@@ -414,9 +414,10 @@ pub async fn ocr_image_table(
         .iter()
         .map(|p| *p * img_width / 100.0)
         .collect();
+      let sep = settings::get_app_settings(&app)?.text_separator;
       move || -> Result<String, String> {
-        let image_data = std::fs::read(&path)
-          .map_err(|e| format!("Failed to read image file: {e}"))?;
+        let image_data =
+          std::fs::read(&path).map_err(|e| format!("Failed to read image file: {e}"))?;
         let engine = crate::core::ocr::create_local_ocr_engine(&app)?;
         let recognition = engine.recognize_png_blocks(&image_data)?;
         Ok(extract_table_from_ocr_blocks(
@@ -424,6 +425,7 @@ pub async fn ocr_image_table(
           &vertical_px,
           img_width,
           img_height,
+          &sep,
         ))
       }
     })
@@ -439,18 +441,11 @@ pub async fn ocr_image_table(
     let provider = resolve_remote_provider(app)?
       .ok_or_else(|| "No available OCR supplier configured".to_string())?;
 
-    let png_bytes = std::fs::read(&request.image_path)
-      .map_err(|e| format!("Failed to read image: {e}"))?;
+    let png_bytes =
+      std::fs::read(&request.image_path).map_err(|e| format!("Failed to read image: {e}"))?;
     let png_b64 = base64_encode(&png_bytes);
 
-    let markdown = ai_recognize_table(
-      &provider,
-      0,
-      &png_b64,
-      &request.vertical_lines,
-      &[],
-    )
-    .await?;
+    let markdown = ai_recognize_table(&provider, 0, &png_b64, &request.vertical_lines, &[]).await?;
 
     Ok(ImageTableResult {
       markdown,
@@ -468,6 +463,7 @@ fn extract_table_from_ocr_blocks(
   vertical_px: &[f64],
   img_width: f64,
   _img_height: f64,
+  separator: &str,
 ) -> String {
   // Column boundaries: 0 + user lines + image width.
   let mut col_bounds: Vec<f64> = vec![0.0];
@@ -541,7 +537,7 @@ fn extract_table_from_ocr_blocks(
         })
         .map(|b| b.text.as_str())
         .collect::<Vec<_>>()
-        .join(" ");
+        .join(separator);
       row.push(cell.trim().to_string());
     }
     data_rows.push(row);

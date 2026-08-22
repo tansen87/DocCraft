@@ -1,22 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { toast } from "sonner";
-
-import { useI18n } from "@/i18n";
 
 interface UseFileDropOptions {
   /** File extensions to accept, without a leading dot. */
   extensions: string[];
-  /** Message shown when dropped files don't match `extensions`. */
-  errorMessage: string;
+  /**
+   * Optional external ref on the view's root container.  When provided, the
+   * hook uses it instead of creating an internal one.
+   */
+  containerRef?: RefObject<HTMLDivElement | null>;
 }
 
 export function useFileDrop(
   onFiles: (paths: string[]) => void,
-  { extensions, errorMessage }: UseFileDropOptions,
+  { extensions, containerRef: externalRef }: UseFileDropOptions,
 ) {
-  const { t } = useI18n();
   const [dragging, setDragging] = useState(false);
+  const internalRef = useRef<HTMLDivElement>(null);
+  const containerRef = externalRef ?? internalRef;
 
   useEffect(() => {
     let stopped = false;
@@ -33,16 +35,9 @@ export function useFileDrop(
             extensions.some((ext) => p.toLowerCase().endsWith(`.${ext}`)),
           );
           if (matched.length > 0) onFiles(matched);
-          else
-            toast.error(t("toast.unsupportedFile"), {
-              description: errorMessage,
-            });
         }
       })
       .then((fn) => {
-        // If the effect has already been cleaned up (e.g. StrictMode
-        // double-mount in dev), immediately unregister the listener,
-        // otherwise the drop event fires more than once.
         if (stopped) fn();
         else unlisten = fn;
       });
@@ -51,15 +46,13 @@ export function useFileDrop(
       stopped = true;
       if (unlisten) unlisten();
     };
-  }, [onFiles, extensions, errorMessage, t]);
+  }, [onFiles, extensions]);
 
-  return { dragging };
+  return { dragging, containerRef };
 }
 
 export function usePdfDrop(onFiles: (paths: string[]) => void) {
-  const { t } = useI18n();
   return useFileDrop(onFiles, {
     extensions: ["pdf"],
-    errorMessage: t("drop.pdfInvalid"),
   });
 }

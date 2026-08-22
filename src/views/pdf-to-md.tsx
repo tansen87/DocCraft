@@ -19,10 +19,11 @@ import { toast } from "sonner";
 import { ConvertWorkspace } from "@/components/pdf2md/convert-workspace";
 import { DragOverlay } from "@/components/pdf2md/drag-overlay";
 import { DropZone } from "@/components/pdf2md/drop-zone";
+import { formatDuration } from "@/lib/format-duration";
 import { usePdfDrop } from "@/components/pdf2md/use-pdf-drop";
+import { convertWithOcr } from "@/components/pdf2md/render-pdf-pages";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import {
   Tooltip,
   TooltipContent,
@@ -38,8 +39,6 @@ import { ensureMaxConcurrent } from "@/lib/concurrency";
 import { useI18n } from "@/i18n";
 import type { ConvertResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-import { convertWithOcr } from "@/components/pdf2md/render-pdf-pages";
 
 type BatchStatus = "queued" | "converting" | "done" | "error";
 
@@ -237,7 +236,7 @@ export function BatchView() {
     [mutate, wake],
   );
 
-  const { dragging } = usePdfDrop(addFiles);
+  const { dragging, containerRef } = usePdfDrop(addFiles);
 
   const removeItem = useCallback(
     (id: string) => {
@@ -362,7 +361,6 @@ export function BatchView() {
     (it) => it.status === "converting",
   ).length;
   const hasQueued = items.some((it) => it.status === "queued");
-  const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
 
   const view = activeItem ?? (items.length === 1 ? items[0] : null);
   const previewing = Boolean(activeItem);
@@ -414,7 +412,7 @@ export function BatchView() {
 
         <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card px-3 py-2 shadow-sm">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <ListPlus className="size-4" />
+            <FileText className="size-4" />
           </span>
           <div className="min-w-0 flex-1 space-y-1">
             <p className="text-sm font-medium">{t("batch.title")}</p>
@@ -438,7 +436,6 @@ export function BatchView() {
                 : ""}
             </p>
           </div>
-          <Progress value={pct} className="hidden w-40 sm:block" />
 
           <div className="flex flex-wrap items-center gap-2">
             <Tooltip>
@@ -554,7 +551,7 @@ export function BatchView() {
                       </td>
                       <td className="px-3 py-2 text-xs tabular-nums text-muted-foreground">
                         {item.result
-                          ? `${item.result.processingTimeMs} ms`
+                          ? formatDuration(item.result.processingTimeMs)
                           : ""}
                       </td>
                       <td className="px-3 py-2">
@@ -624,7 +621,10 @@ export function BatchView() {
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col gap-3">
+    <div
+      ref={containerRef}
+      className="relative flex min-h-0 flex-1 flex-col gap-3"
+    >
       {dragging ? (
         <DragOverlay
           title={t("overlay.releaseToAdd")}

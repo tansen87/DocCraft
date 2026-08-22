@@ -168,7 +168,7 @@ export function MdToXlsxView() {
 
   const { dragging } = useFileDrop(addFiles, {
     extensions: ["md"],
-    errorMessage: t("drop.mdInvalid"),
+    containerRef: rootRef,
   });
 
   const removeItem = useCallback(
