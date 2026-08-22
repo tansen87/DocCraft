@@ -17,8 +17,9 @@ import {
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
-/** Marker that delimits PDF pages in converted Markdown (`<!-- Page N -->`). */
-const PAGE_MARKER_RE = /<!--\s*(?:Page\s*\d+|第\s*\d+\s*页)\s*-->/g;
+/** Marker that delimits PDF pages (`<!-- Page N -->`) or images (`<!-- Image N -->`). */
+const PAGE_MARKER_RE =
+  /<!--\s*(?:Page\s*\d+|Image\s*\d+|第\s*\d+\s*页|第\s*\d+\s*张)\s*-->/g;
 /** How far below the viewport a page is pre-rendered before it scrolls in. */
 const IO_BUFFER_PX = 600;
 /** Placeholder height for not-yet-rendered pages so scrolling stays smooth. */
@@ -28,7 +29,7 @@ const PLACEHOLDER_HEIGHT_PX = 240;
  * Format an elapsed duration for display: `ms` below one second, then
  * seconds, minutes and hours as the magnitude grows.
  */
-function formatDuration(ms: number): string {
+export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return "0ms";
   const rounded = Math.round(ms);
   if (rounded < 1000) return `${rounded}ms`;
@@ -88,15 +89,16 @@ const MarkdownPageView = memo(function MarkdownPageView({
   );
 });
 
-/** Visible "Page N" divider shown at each page marker when enabled. */
+/** Visible "Page N" / "Image N" divider shown at each marker when enabled. */
 function PageBreakMarker({ marker }: { marker: string }) {
   const { t } = useI18n();
   const page = marker.match(/\d+/)?.[0];
   if (!page) return null;
+  const isImage = /[Ii]mage|张/.test(marker);
   return (
     <div className="mb-2 flex items-center gap-2">
       <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-        {t("preview.page", { page })}
+        {isImage ? t("preview.image", { page }) : t("preview.page", { page })}
       </span>
       <div className="h-px flex-1 bg-border" />
     </div>

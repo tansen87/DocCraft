@@ -91,6 +91,15 @@ function progressLabel(
     }
     return t("status.progressOcrPlain");
   }
+  if (progress.phase === "imageOcr") {
+    if (progress.total && progress.current) {
+      return t("status.progressImageOcr", {
+        current: Math.min(progress.current, progress.total),
+        total: progress.total,
+      });
+    }
+    return t("status.progressOcrPlain");
+  }
   return t("status.progressExtract");
 }
 
@@ -242,6 +251,11 @@ interface StatusBarProps {
   notices?: StatusNotice[];
   /** In-flight task shown as a spinner + stage label next to the bell. */
   progress?: ActivityProgress | null;
+  /**
+   * Hide the PDF-specific stats (type / confidence / OCR pages) for views
+   * that have no PDF context (e.g. image conversion).
+   */
+  hidePdfStats?: boolean;
 }
 
 export function StatusBar({
@@ -250,6 +264,7 @@ export function StatusBar({
   extra,
   notices,
   progress,
+  hidePdfStats = false,
 }: StatusBarProps) {
   const { t } = useI18n();
   const meta = result ? pdfTypeMeta[result.pdfType] : null;
@@ -310,57 +325,63 @@ export function StatusBar({
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-card px-4 py-2 shadow-sm">
-      <Stat label={t("status.pdfType")}>
-        {loading ? (
-          <Skeleton className="h-5 w-20" />
-        ) : result ? (
-          <Badge variant="outline" className={meta?.badgeClass}>
-            {meta && <meta.icon className="mr-1 size-3" />}
-            {pdfTypeLabel ?? t("status.unknown")}
-          </Badge>
-        ) : (
-          <span className="text-muted-foreground">
-            {t("status.notDetected")}
-          </span>
-        )}
-      </Stat>
+      {hidePdfStats ? null : (
+        <>
+          <Stat label={t("status.pdfType")}>
+            {loading ? (
+              <Skeleton className="h-5 w-20" />
+            ) : result ? (
+              <Badge variant="outline" className={meta?.badgeClass}>
+                {meta && <meta.icon className="mr-1 size-3" />}
+                {pdfTypeLabel ?? t("status.unknown")}
+              </Badge>
+            ) : (
+              <span className="text-muted-foreground">
+                {t("status.notDetected")}
+              </span>
+            )}
+          </Stat>
 
-      <span className="hidden h-4 w-px bg-border sm:block" />
+          <span className="hidden h-4 w-px bg-border sm:block" />
 
-      <Stat label={t("status.confidence")}>
-        {loading ? (
-          <Skeleton className="h-5 w-12" />
-        ) : result ? (
-          `${Math.round(result.confidence * 100)}%`
-        ) : (
-          "—"
-        )}
-      </Stat>
+          <Stat label={t("status.confidence")}>
+            {loading ? (
+              <Skeleton className="h-5 w-12" />
+            ) : result ? (
+              `${Math.round(result.confidence * 100)}%`
+            ) : (
+              "—"
+            )}
+          </Stat>
 
-      <span className="hidden h-4 w-px bg-border sm:block" />
+          <span className="hidden h-4 w-px bg-border sm:block" />
+        </>
+      )}
 
-      <Stat
-        label={t("status.ocrNeed")}
-        className={cn(
-          needsOcr > 0
-            ? "text-amber-600 dark:text-amber-400"
-            : result
-              ? "text-emerald-600 dark:text-emerald-400"
-              : undefined,
-        )}
-      >
-        {loading ? (
-          <Skeleton className="h-5 w-16" />
-        ) : result ? (
-          needsOcr > 0 ? (
-            t("table.pages", { count: needsOcr })
+      {hidePdfStats ? null : (
+        <Stat
+          label={t("status.ocrNeed")}
+          className={cn(
+            needsOcr > 0
+              ? "text-amber-600 dark:text-amber-400"
+              : result
+                ? "text-emerald-600 dark:text-emerald-400"
+                : undefined,
+          )}
+        >
+          {loading ? (
+            <Skeleton className="h-5 w-16" />
+          ) : result ? (
+            needsOcr > 0 ? (
+              t("table.pages", { count: needsOcr })
+            ) : (
+              t("status.none")
+            )
           ) : (
-            t("status.none")
-          )
-        ) : (
-          "—"
-        )}
-      </Stat>
+            "—"
+          )}
+        </Stat>
+      )}
 
       {extra ? (
         <>

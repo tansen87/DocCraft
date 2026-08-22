@@ -3,6 +3,7 @@ import { Toaster } from "sonner";
 
 import { AppHeader, type WorkspaceTab } from "@/components/layout/app-header";
 import { BatchView } from "@/views/pdf-to-md";
+import { ImageToMdView } from "@/views/image-to-md";
 import { MdToXlsxView } from "@/views/md-to-xlsx";
 import { SettingsView } from "@/views/settings";
 
@@ -23,6 +24,13 @@ function App() {
           }
         >
           <BatchView />
+        </div>
+        <div
+          className={
+            tab === "imgtomd" ? "flex min-h-0 flex-1 flex-col" : "hidden"
+          }
+        >
+          <ImageToMdView />
         </div>
         <div
           className={

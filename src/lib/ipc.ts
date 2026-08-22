@@ -8,6 +8,7 @@ import type {
   HybridSessionInfo,
   MdAnalyzeResult,
   MdExportResult,
+  OcrImageResult,
   OcrVendor,
   OcrVendorInput,
 } from "./types";
@@ -39,6 +40,10 @@ export const abortHybridSession = (sessionId: string) =>
 
 export const exportMarkdown = (path: string, content: string) =>
   invoke<void>("export_markdown", { path, content });
+
+/** Convert one standalone image (PNG / JPEG) to Markdown via OCR. */
+export const ocrImageToMd = (path: string) =>
+  invoke<OcrImageResult>("ocr_image_to_md", { path });
 
 export const getOcrConfig = () => invoke<OcrVendor[]>("get_ocr_config");
 

@@ -3,7 +3,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { useI18n } from "@/i18n";
 
-export type WorkspaceTab = "pdftomd" | "mdtoexcel" | "settings";
+export type WorkspaceTab = "pdftomd" | "imgtomd" | "mdtoexcel" | "settings";
 
 interface AppHeaderProps {
   activeTab: WorkspaceTab;
@@ -21,6 +21,7 @@ export function AppHeader({ activeTab, onTabChange }: AppHeaderProps) {
       >
         <TabsList>
           <TabsTrigger value="pdftomd">{t("tabs.pdftomd")}</TabsTrigger>
+          <TabsTrigger value="imgtomd">{t("tabs.imgtomd")}</TabsTrigger>
           <TabsTrigger value="mdtoexcel">{t("tabs.mdtoexcel")}</TabsTrigger>
           <TabsTrigger value="settings">{t("tabs.settings")}</TabsTrigger>
         </TabsList>

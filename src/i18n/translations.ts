@@ -2,6 +2,7 @@ export type Lang = "en" | "zh";
 
 const en = {
   "tabs.pdftomd": "PDF to MD",
+  "tabs.imgtomd": "Image to MD",
   "tabs.mdtoexcel": "MD to Excel",
   "tabs.settings": "Settings",
 
@@ -84,6 +85,7 @@ const en = {
   "filter.pdfDocs": "PDF Documents",
   "filter.mdDocs": "Markdown Documents",
   "filter.excelWorkbook": "Excel Workbook",
+  "filter.imageDocs": "Images",
 
   "mdtoexcel.title": "Markdown to Excel",
   "mdtoexcel.readyCount": "Ready {ready} / {total} file(s)",
@@ -92,12 +94,22 @@ const en = {
 
   "drop.pdfTitle": "Drag PDF files anywhere in the window",
   "drop.mdTitle": "Drag Markdown files anywhere in the window",
+  "drop.imgTitle": "Drag images anywhere in the window",
   "drop.clickToSelect": "or click to select",
   "drop.single": "Single file",
   "drop.multiple": "Multiple files",
   "drop.supported": "Supports {exts} · {mode}",
   "drop.mdInvalid": "Please drop .md files",
   "drop.pdfInvalid": "Please drop .pdf files",
+  "drop.imgInvalid": "Please drop .png / .jpg files",
+
+  "img2md.title": "Image to Markdown",
+  "img2md.completed": "{done}/{total} recognized",
+  "img2md.exportMerged": "Export merged",
+  "img2md.exportSingle": "Export single",
+  "tooltip.exportMerged":
+    "Export the Markdown of every recognized image into one file",
+  "tooltip.exportSingle": "Export every recognized image as its own .md file",
 
   "settings.ocr": "OCR Service",
   "settings.threads": "Concurrency",
@@ -173,6 +185,7 @@ const en = {
   "status.progressExtract": "Extracting tables…",
   "status.progressOcrPlain": "Recognizing pages…",
   "status.progressOcr": "Recognizing page {current}/{total}",
+  "status.progressImageOcr": "Recognizing image {current}/{total}",
   "status.actionRetry": "Retry",
   "status.pagePrev": "Previous page",
   "status.pageNext": "Next page",
@@ -186,6 +199,8 @@ const en = {
     "{count} page(s) were skipped because no OCR provider is configured.",
   "notice.ocrFallbackPages":
     "{count} page(s) have no text layer and will be recognized via OCR.",
+  "notice.failedImages":
+    "{count} image(s) failed to recognize. Click a thumbnail number to locate it.",
 
   "pdfmeta.text": "Text",
   "pdfmeta.textHint": "No OCR needed, converted locally",
@@ -208,6 +223,7 @@ const en = {
   "preview.render": "Render",
   "preview.raw": "Raw",
   "preview.page": "Page {page}",
+  "preview.image": "Image {page}",
 
   "tablepreview.title": "Table Preview",
   "tablepreview.summary": "{count} tables · {rows} rows of data",
@@ -236,6 +252,7 @@ export type TranslationKey = keyof typeof en;
 
 const zh: Record<TranslationKey, string> = {
   "tabs.pdftomd": "PDF转MD",
+  "tabs.imgtomd": "图片转MD",
   "tabs.mdtoexcel": "MD转Excel",
   "tabs.settings": "设置",
 
@@ -315,6 +332,7 @@ const zh: Record<TranslationKey, string> = {
   "filter.pdfDocs": "PDF 文档",
   "filter.mdDocs": "Markdown 文档",
   "filter.excelWorkbook": "Excel 工作簿",
+  "filter.imageDocs": "图片文件",
 
   "mdtoexcel.title": "Markdown 转 Excel",
   "mdtoexcel.readyCount": "已就绪 {ready} / {total} 个文件",
@@ -323,12 +341,21 @@ const zh: Record<TranslationKey, string> = {
 
   "drop.pdfTitle": "将 PDF 文件拖到窗口任意位置",
   "drop.mdTitle": "将 Markdown 文件拖到窗口任意位置",
+  "drop.imgTitle": "将图片拖到窗口任意位置",
   "drop.clickToSelect": "或点击选择文件",
   "drop.single": "单文件",
   "drop.multiple": "可多选",
   "drop.supported": "支持 {exts} · {mode}",
   "drop.mdInvalid": "请拖入 .md 文件",
   "drop.pdfInvalid": "请拖入 .pdf 文件",
+  "drop.imgInvalid": "请拖入 .png / .jpg 图片",
+
+  "img2md.title": "图片转 Markdown",
+  "img2md.completed": "已识别 {done}/{total} 张",
+  "img2md.exportMerged": "合并导出",
+  "img2md.exportSingle": "逐张导出",
+  "tooltip.exportMerged": "将所有识别成功的图片导出为一个 Markdown 文件",
+  "tooltip.exportSingle": "将每张识别成功的图片按原文件名分别导出为 .md 文件",
 
   "settings.ocr": "OCR 服务",
   "settings.threads": "并发线程",
@@ -403,6 +430,7 @@ const zh: Record<TranslationKey, string> = {
   "status.progressExtract": "正在提取表格…",
   "status.progressOcrPlain": "正在识别页面…",
   "status.progressOcr": "正在识别第 {current}/{total} 页",
+  "status.progressImageOcr": "正在识别第 {current}/{total} 张图片",
   "status.actionRetry": "重试",
   "status.pagePrev": "上一页",
   "status.pageNext": "下一页",
@@ -413,6 +441,7 @@ const zh: Record<TranslationKey, string> = {
   "notice.failedPages": "{count} 页 OCR 失败, 已用占位注释替代",
   "notice.skippedPages": "{count} 页因未配置 OCR 服务而被跳过",
   "notice.ocrFallbackPages": "{count} 页无文本层, 将通过 OCR 识别",
+  "notice.failedImages": "{count} 张图片识别失败, 点击缩略图编号可定位",
 
   "pdfmeta.text": "文本型",
   "pdfmeta.textHint": "无需 OCR, 本地直接转换",
@@ -435,6 +464,7 @@ const zh: Record<TranslationKey, string> = {
   "preview.render": "渲染",
   "preview.raw": "原始",
   "preview.page": "第 {page} 页",
+  "preview.image": "第 {page} 张",
 
   "tablepreview.title": "表格预览",
   "tablepreview.summary": "共 {count} 张表格 · {rows} 行数据",

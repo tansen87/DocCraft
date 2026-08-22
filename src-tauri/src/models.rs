@@ -367,6 +367,18 @@ impl Default for OcrMode {
   }
 }
 
+/// Result of converting one standalone image to Markdown via OCR.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrImageResult {
+  /// The recognized content as GFM Markdown.
+  pub markdown: String,
+  /// Which engine produced the result: `"local"` or `"ai"`.
+  pub engine: String,
+  /// Wall-clock duration of the recognition in milliseconds.
+  pub duration_ms: u64,
+}
+
 fn default_true() -> bool {
   true
 }

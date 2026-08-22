@@ -12,7 +12,8 @@ use crate::core::page_marker::page_marker;
 use crate::core::settings;
 use crate::core::{extract_cache, get_resources_dir};
 use crate::models::{
-  ConvertResult, DetectResult, HybridSessionInfo, LayoutDto, OcrMode, OcrVendor, PdfTypeDto,
+  ConvertResult, DetectResult, HybridSessionInfo, LayoutDto, OcrImageResult, OcrMode, OcrVendor,
+  PdfTypeDto,
 };
 
 /// Prompt sent to the vision model for every OCR page.
@@ -35,8 +36,14 @@ impl LocalOcrEngine {
   /// Sorts text blocks by reading order: top-to-bottom, then left-to-right
   /// within each line, and joins same-line blocks with spaces.
   pub fn recognize_from_png(&self, png_data: &[u8]) -> Result<String, String> {
+    self.recognize_bytes(png_data)
+  }
+
+  /// Recognize text in an image from encoded bytes (PNG or JPEG) and return
+  /// the text. Block ordering matches [`Self::recognize_from_png`].
+  pub fn recognize_bytes(&self, image_data: &[u8]) -> Result<String, String> {
     let image =
-      image::load_from_memory(png_data).map_err(|e| format!("Failed to load image: {e}"))?;
+      image::load_from_memory(image_data).map_err(|e| format!("Failed to load image: {e}"))?;
 
     let results = self
       .engine
@@ -304,13 +311,15 @@ pub async fn ai_recognize_table(
     &provider.api_key,
     page,
     &prompt,
+    "image/png",
     image_png,
   )
   .await
 }
 
 /// Send one page image to an OpenAI-compatible `/chat/completions` endpoint
-/// and return the extracted markdown.
+/// and return the extracted markdown. `mime` is the image format used in the
+/// data URL (e.g. `"image/png"`, `"image/jpeg"`).
 async fn ocr_page(
   client: &Client,
   base_url: &str,
@@ -318,7 +327,8 @@ async fn ocr_page(
   api_key: &str,
   page: u32,
   prompt: &str,
-  image_png: &str,
+  mime: &str,
+  image_base64: &str,
 ) -> Result<String, String> {
   let url = completions_url(base_url);
   let body = serde_json::json!({
@@ -331,7 +341,7 @@ async fn ocr_page(
         { "type": "text", "text": prompt },
         {
           "type": "image_url",
-          "image_url": { "url": format!("data:image/png;base64,{image_png}") }
+          "image_url": { "url": format!("data:{mime};base64,{image_base64}") }
         }
       ]
     }]
@@ -600,7 +610,14 @@ pub async fn ocr_page_in_session(
     let (base_url, model_id, api_key) =
       resolved.ok_or_else(|| "No available OCR supplier configured".to_string())?;
     match ocr_page(
-      &client, &base_url, &model_id, &api_key, page, OCR_PROMPT, image_png,
+      &client,
+      &base_url,
+      &model_id,
+      &api_key,
+      page,
+      OCR_PROMPT,
+      "image/png",
+      image_png,
     )
     .await
     {
@@ -684,4 +701,109 @@ pub fn finish_session(store: &HybridStore, session_id: &str) -> Result<ConvertRe
 pub fn abort_session(store: &HybridStore, session_id: &str) -> Result<(), String> {
   store.lock().remove(session_id);
   Ok(())
+}
+
+/// Map a standalone image file extension to the MIME type used in AI vision
+/// requests. Only formats the app accepts for image conversion are allowed.
+fn image_mime_for_ext(ext: &str) -> Result<&'static str, String> {
+  match ext.trim().to_ascii_lowercase().trim_start_matches('.') {
+    "png" => Ok("image/png"),
+    "jpg" | "jpeg" => Ok("image/jpeg"),
+    other => Err(format!("Unsupported image type: .{other}")),
+  }
+}
+
+/// Convert one standalone image file (PNG / JPEG) to Markdown using the OCR
+/// engine selected by the current mode.
+///
+/// Images never have a PDF text layer, so the non-text modes behave like their
+/// force counterparts; `disabled` is an error because there is nothing else to
+/// extract from a bare image.
+pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImageResult, String> {
+  let start = Instant::now();
+  let ext = std::path::Path::new(path)
+    .extension()
+    .and_then(|e| e.to_str())
+    .unwrap_or("");
+  let mime = image_mime_for_ext(ext)?;
+  let mode = settings::get_app_settings(app)?.ocr_mode;
+  if !mode.is_enabled() {
+    return Err("OCR is disabled in settings".to_string());
+  }
+
+  let markdown = if mode.is_local() {
+    // Local PaddleOCR is CPU-bound model inference — run it off the async
+    // runtime so concurrent conversions never block each other's futures.
+    let app = app.clone();
+    let path = path.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+      let image_data =
+        std::fs::read(&path).map_err(|e| format!("Failed to read image file: {e}"))?;
+      let engine = create_local_ocr_engine(&app)?;
+      let text = engine.recognize_bytes(&image_data)?;
+      if text.trim().is_empty() {
+        return Err("Local OCR returned no content".to_string());
+      }
+      Ok(text.trim().to_string())
+    })
+    .await
+    .map_err(|e| format!("Local OCR task failed: {e}"))??
+  } else {
+    // AI-based modes: route through the configured remote vision provider.
+    let provider = resolve_remote_provider(app)?
+      .ok_or_else(|| "No available OCR supplier configured".to_string())?;
+    // Reading and encoding the image is blocking work — keep it off the
+    // async runtime just like local inference.
+    let path = path.to_string();
+    let encoded = tauri::async_runtime::spawn_blocking(move || {
+      let image_data =
+        std::fs::read(&path).map_err(|e| format!("Failed to read image file: {e}"))?;
+      Ok::<_, String>(base64::Engine::encode(
+        &base64::engine::general_purpose::STANDARD,
+        image_data,
+      ))
+    })
+    .await
+    .map_err(|e| format!("Failed to prepare image: {e}"))??;
+    ocr_page(
+      &provider.client,
+      &provider.base_url,
+      &provider.model_id,
+      &provider.api_key,
+      0,
+      OCR_PROMPT,
+      mime,
+      &encoded,
+    )
+    .await?
+  };
+
+  Ok(OcrImageResult {
+    markdown,
+    engine: (if mode.is_local() { "local" } else { "ai" }).to_string(),
+    duration_ms: start.elapsed().as_millis() as u64,
+  })
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn image_mime_for_ext_accepts_supported_types() {
+    assert_eq!(image_mime_for_ext("png"), Ok("image/png"));
+    assert_eq!(image_mime_for_ext("jpg"), Ok("image/jpeg"));
+    assert_eq!(image_mime_for_ext("jpeg"), Ok("image/jpeg"));
+    // Case / leading-dot tolerance.
+    assert_eq!(image_mime_for_ext(".JPG"), Ok("image/jpeg"));
+    assert_eq!(image_mime_for_ext("PNG"), Ok("image/png"));
+  }
+
+  #[test]
+  fn image_mime_for_ext_rejects_unsupported_types() {
+    assert!(image_mime_for_ext("webp").is_err());
+    assert!(image_mime_for_ext("heic").is_err());
+    assert!(image_mime_for_ext("pdf").is_err());
+    assert!(image_mime_for_ext("").is_err());
+  }
 }

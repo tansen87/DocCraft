@@ -89,6 +89,17 @@ and Simplified Chinese — switchable at runtime.
   asked to cut the table by the user-drawn lines. `disabled` keeps draw-table
   extraction text-layer-only, and missing local models or an unconfigured
   provider degrade silently to empty results instead of failing.
+- **Image → Markdown** — a dedicated workspace tab accepts PNG / JPEG images
+  (drag & drop anywhere or file picker, deduplicated list with thumbnails).
+  Each image is recognized by the OCR engine selected by the current
+  **OCR mode** (local PaddleOCR or remote AI vision; `disabled` reports an
+  error since a bare image has nothing else to extract). Recognition runs
+  through a worker pool bounded by the global concurrency setting with live
+  progress ("Recognizing image 3/10") in the status bar; failed images raise
+  an error notice whose chips locate and highlight the row, plus a retry
+  action. Results are previewed as one merged GFM document (`---`-separated)
+  and can be exported per-image or merged into a single `.md` file. See
+  [image-to-markdown.md](./image-to-markdown.md) for the design notes.
 - **Bilingual UI (i18n)** — English (default) and 中文 (Simplified Chinese)
   switched via a dropdown next to the theme toggle; the choice persists in
   `localStorage` and every string goes through a typed translation layer.
@@ -155,9 +166,10 @@ doccraft/
 │  │  └─ utils.ts                # cn() helper
 │  ├─ views/
 │  │  ├─ pdf-to-md.tsx           # Batch queue + single-file PDF workspace
+│  │  ├─ image-to-md.tsx         # Image → Markdown (OCR) list + merged preview
 │  │  ├─ md-to-xlsx.tsx          # Markdown → Excel batch list + preview
 │  │  └─ settings.tsx            # Sidebar settings (OCR service / Concurrent threads / Cache / Excel)
-│  ├─ App.tsx                    # App shell, tab switching (PDF/MD → XLSX / settings)
+│  ├─ App.tsx                    # App shell, tab switching (PDF/IMG → MD / MD → XLSX / settings)
 │  ├─ index.css                  # Tailwind v4 + design tokens
 │  └─ main.tsx                   # Entry, providers, imports index.css
 ├─ src-tauri/                    # Rust backend
@@ -205,6 +217,7 @@ Commands (invoked from `src/lib/ipc.ts`):
 | `export_markdown_tables` | `{ mdPath, xlsxPath }`              | `MdExportResult` (`tableCount`, `totalRows`, `processingTimeMs`) |
 | `extract_draw_table` | `{ path, drawData }` — `drawData` may carry `totalPages`, `onlyPages` (batching) and `pageImages[]` (`{page, imagePng, renderScale}`) for the mode-selected OCR fallback (local PaddleOCR or remote AI vision) | `DrawTableResult` (`tableCount`, `tables[]`, `regions[]`, `totalRows`, `ocrPages`, `emptyTextPages`, `processingTimeMs`) |
 | `extract_draw_table_to_markdown` | `{ path, drawData, existingMarkdown? }` | `string` — merged markdown with extracted tables appended |
+| `ocr_image_to_md`    | `{ path }` — a PNG / JPEG file          | `OcrImageResult` (`markdown`, `engine`: `"local" \| "ai"`, `durationMs`) |
 
 Result fields are serialized in camelCase; `PdfTypeDto` mirrors `pdf-inspector`'s
 `PdfType` enum (`TextBased` / `Scanned` / `ImageBased` / `Mixed`).
@@ -306,6 +319,9 @@ cargo check --manifest-path src-tauri/Cargo.toml
   rows via IntersectionObserver, real-height placeholders), so big files no
   longer freeze the UI. **Settings page** restructured into a scrollable
   waterfall layout with four sections (OCR, Threads, Cache, Excel).
+  **Image → Markdown** workspace tab: PNG / JPEG images recognized via the
+  selected OCR mode with a concurrency-bounded worker pool, merged or
+  per-image export, and status-bar notices for failures.
   (Config import/export and release packaging MSI/NSIS still planned.)
 
 ## Configuration
@@ -319,7 +335,7 @@ cargo check --manifest-path src-tauri/Cargo.toml
   line-draw table extraction decodes the current PDF's text once and reuses it
   across draw/merge calls; toggle it off for very large documents to free
   memory (the cache is evicted when another file is opened) —
-  `excelTablesOnly` (default `true`) — when on, only GFM tables are exported
+  `excelTablesOnly` (default `false`) — when on, only GFM tables are exported
   to Excel; when off, the whole document content is written into the workbook
   — and `ocrMode` (default `disabled`), a unified OCR mode with five options:
   `forceLocal` (always local PaddleOCR), `forceAi` (always remote AI vision),

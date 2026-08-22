@@ -37,7 +37,7 @@ uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "native-tls"] }
 rust_xlsxwriter = "0.97.1"
 base64 = "0.22"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61.2", features = [

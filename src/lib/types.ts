@@ -256,7 +256,7 @@ export type DrawMode = "horizontal" | "vertical" | "rectangle" | "select";
 // ─── Status bar activity & notices ───────────────────────────────────────
 
 /** Long-running task phase reported by the status bar progress indicator. */
-export type ActivityPhase = "extract" | "ocr";
+export type ActivityPhase = "extract" | "ocr" | "imageOcr";
 
 export interface ActivityProgress {
   phase: ActivityPhase;
@@ -287,4 +287,14 @@ export interface StatusNotice {
   pages?: number[];
   onPageClick?: (page: number) => void;
   actions?: StatusNoticeAction[];
+}
+
+// ─── Image → Markdown ────────────────────────────────────────────────────
+
+/** Backend result of converting one standalone image to Markdown. */
+export interface OcrImageResult {
+  markdown: string;
+  /** Which engine produced the result: `"local"` or `"ai"`. */
+  engine: "local" | "ai";
+  durationMs: number;
 }

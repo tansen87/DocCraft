@@ -6,7 +6,7 @@ use tauri::Manager;
 use crate::core::ocr::HybridStore;
 use crate::models::{
   AppSettings, ConvertResult, DetectResult, DrawTableRequest, DrawTableResult, HybridSessionInfo,
-  MdAnalyzeResult, MdExportResult, OcrVendorDto, OcrVendorInput,
+  MdAnalyzeResult, MdExportResult, OcrImageResult, OcrVendorDto, OcrVendorInput,
 };
 
 /// Classify a PDF without extracting: returns type, confidence and which
@@ -126,6 +126,13 @@ async fn get_app_settings(app: tauri::AppHandle) -> Result<AppSettings, String> 
 #[tauri::command]
 async fn set_app_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
   core::settings::set_app_settings(&app, settings)
+}
+
+/// Convert one standalone image file (PNG / JPEG) to Markdown via the OCR
+/// engine selected by the current mode.
+#[tauri::command]
+async fn ocr_image_to_md(app: tauri::AppHandle, path: String) -> Result<OcrImageResult, String> {
+  core::ocr::convert_image_to_md(&app, &path).await
 }
 
 /// Analyze a Markdown file and return every table it contains (for preview).
@@ -259,6 +266,7 @@ pub fn run() {
       set_app_settings,
       analyze_markdown,
       export_markdown_tables,
+      ocr_image_to_md,
       extract_draw_table,
       extract_draw_table_to_markdown
     ])
