@@ -14,6 +14,7 @@ import {
   Loader2,
   Play,
   Square,
+  Columns3Cog,
   Trash2,
   X,
 } from "lucide-react";
@@ -24,6 +25,7 @@ import { DropZone } from "@/components/pdf2md/drop-zone";
 import { formatDuration, PreviewPane } from "@/components/pdf2md/preview-pane";
 import { StatusBar } from "@/components/pdf2md/status-bar";
 import { useFileDrop } from "@/components/pdf2md/use-pdf-drop";
+import { ImageTableOverlay } from "@/components/image-table/image-table-overlay";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -131,6 +133,8 @@ export function ImageToMdView() {
   const [highlightId, setHighlightId] = useState<string | null>(null);
   /** Item whose markdown is shown in the preview pane (null = merged view). */
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** Image path currently being edited in the draw-table overlay. */
+  const [drawTablePath, setDrawTablePath] = useState<string | null>(null);
 
   const itemsRef = useRef<ImageItem[]>([]);
   const runningRef = useRef(false);
@@ -692,7 +696,7 @@ export function ImageToMdView() {
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col gap-3">
+    <>
       {dragging ? (
         <DragOverlay
           title={t("overlay.releaseToAdd")}
@@ -839,23 +843,22 @@ export function ImageToMdView() {
                 </span>
                 <ItemStatusBadge status={item.status} error={item.error} />
                 <div className="flex shrink-0 items-center gap-1">
-                  {item.status === "done" && item.result ? (
+                  {item.path ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
                           variant="ghost"
                           size="icon-sm"
+                          disabled={running}
                           onClick={(e) => {
                             e.stopPropagation();
-                            void exportItem(item);
+                            setDrawTablePath(item.path);
                           }}
                         >
-                          <Download />
+                          <Columns3Cog />
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>
-                        {t("tooltip.exportMarkdown")}
-                      </TooltipContent>
+                      <TooltipContent>{t("tooltip.drawTable")}</TooltipContent>
                     </Tooltip>
                   ) : null}
                   {item.status === "error" && !running ? (
@@ -942,6 +945,31 @@ export function ImageToMdView() {
           progress={activity}
         />
       </div>
-    </div>
+
+      {drawTablePath ? (
+        <ImageTableOverlay
+          imagePath={drawTablePath}
+          onClose={() => setDrawTablePath(null)}
+          onResult={(markdown) => {
+            // Add the extracted table markdown as a new item result
+            const id = crypto.randomUUID();
+            mutate((prev) => [
+              ...prev,
+              {
+                id,
+                path: drawTablePath,
+                name: `Table_from_${drawTablePath.split(/[/\\]/).pop() ?? "image"}`,
+                status: "done",
+                result: {
+                  markdown,
+                  engine: "local",
+                  durationMs: 0,
+                },
+              },
+            ]);
+          }}
+        />
+      ) : null}
+    </>
   );
 }

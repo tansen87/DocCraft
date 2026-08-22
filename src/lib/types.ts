@@ -334,6 +334,20 @@ export interface ShotRegion {
   height: number;
 }
 
+/** Request to extract a table from an image using drawn vertical lines. */
+export interface ImageTableRequest {
+  imagePath: string;
+  /** Vertical line positions as percentages of the image width (0-100). */
+  verticalLines: number[];
+}
+
+/** Result of extracting a table from an image with drawn lines. */
+export interface ImageTableResult {
+  markdown: string;
+  engine: "local" | "ai";
+  durationMs: number;
+}
+
 /** Information about the top-level window currently under the cursor. */
 export interface WindowInfo {
   title: string;

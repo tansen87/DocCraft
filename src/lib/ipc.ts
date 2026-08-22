@@ -6,6 +6,8 @@ import type {
   DrawTableRequest,
   DrawTableResult,
   HybridSessionInfo,
+  ImageTableRequest,
+  ImageTableResult,
   MdAnalyzeResult,
   MdExportResult,
   OcrImageResult,
@@ -94,3 +96,7 @@ export const extractDrawTableToMarkdown = (
     drawData,
     existingMarkdown: existingMarkdown ?? null,
   });
+
+/** Extract a table from an image using OCR + drawn vertical lines. */
+export const ocrImageTable = (request: ImageTableRequest) =>
+  invoke<ImageTableResult>("ocr_image_table", { request });

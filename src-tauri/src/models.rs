@@ -394,6 +394,28 @@ pub struct OcrImageResult {
   pub saved_path: Option<String>,
 }
 
+/// Request to extract a table from an image using drawn vertical lines.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageTableRequest {
+  /// Path to the image file on disk.
+  pub image_path: String,
+  /// Vertical line positions as percentages of the image width (0-100).
+  pub vertical_lines: Vec<f64>,
+}
+
+/// Result of extracting a table from an image with drawn lines.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageTableResult {
+  /// The recognized content as GFM Markdown table(s).
+  pub markdown: String,
+  /// Which engine produced the result: `"local"` or `"ai"`.
+  pub engine: String,
+  /// Wall-clock duration of the recognition in milliseconds.
+  pub duration_ms: u64,
+}
+
 /// One captured monitor snapshot offered to the snip overlay windows.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

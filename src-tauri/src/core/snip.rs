@@ -10,7 +10,9 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use xcap::Monitor;
 
 use crate::core::settings;
-use crate::models::{MonitorSnapshot, OcrImageResult, ShotRegion, WindowInfo};
+use crate::models::{
+  ImageTableRequest, ImageTableResult, MonitorSnapshot, OcrImageResult, ShotRegion, WindowInfo,
+};
 
 /// Managed cache of full-monitor snapshots between `screenshot_begin` and the
 /// follow-up `screenshot_ocr` / `screenshot_cancel`.
@@ -381,6 +383,202 @@ fn window_under_cursor() -> Result<WindowInfo, String> {
 #[tauri::command]
 pub async fn get_window_under_cursor() -> Result<WindowInfo, String> {
   window_under_cursor()
+}
+
+/// Extract a GFM table from an image using OCR + user-drawn vertical lines.
+/// Respects the OCR mode setting:
+///   - Local mode: use PaddleOCR text blocks + column cutting.
+///   - AI mode: send image + line percentages to the AI vision model.
+pub async fn ocr_image_table(
+  app: &AppHandle,
+  request: ImageTableRequest,
+) -> Result<ImageTableResult, String> {
+  use crate::core::ocr::{ai_recognize_table, resolve_remote_provider};
+  let start = Instant::now();
+  let mode = settings::get_app_settings(app)?.ocr_mode;
+  if !mode.is_enabled() {
+    return Err("OCR is disabled in settings".to_string());
+  }
+
+  let img = image::open(&request.image_path)
+    .map_err(|e| format!("Failed to load image: {e}"))?;
+  let img_width = img.width() as f64;
+  let img_height = img.height() as f64;
+
+  if mode.is_local() {
+    let markdown = tauri::async_runtime::spawn_blocking({
+      let app = app.clone();
+      let path = request.image_path.clone();
+      let vertical_px: Vec<f64> = request
+        .vertical_lines
+        .iter()
+        .map(|p| *p * img_width / 100.0)
+        .collect();
+      move || -> Result<String, String> {
+        let image_data = std::fs::read(&path)
+          .map_err(|e| format!("Failed to read image file: {e}"))?;
+        let engine = crate::core::ocr::create_local_ocr_engine(&app)?;
+        let recognition = engine.recognize_png_blocks(&image_data)?;
+        Ok(extract_table_from_ocr_blocks(
+          &recognition,
+          &vertical_px,
+          img_width,
+          img_height,
+        ))
+      }
+    })
+    .await
+    .map_err(|e| format!("OCR task failed: {e}"))??;
+
+    Ok(ImageTableResult {
+      markdown,
+      engine: "local".to_string(),
+      duration_ms: start.elapsed().as_millis() as u64,
+    })
+  } else {
+    let provider = resolve_remote_provider(app)?
+      .ok_or_else(|| "No available OCR supplier configured".to_string())?;
+
+    let png_bytes = std::fs::read(&request.image_path)
+      .map_err(|e| format!("Failed to read image: {e}"))?;
+    let png_b64 = base64_encode(&png_bytes);
+
+    let markdown = ai_recognize_table(
+      &provider,
+      0,
+      &png_b64,
+      &request.vertical_lines,
+      &[],
+    )
+    .await?;
+
+    Ok(ImageTableResult {
+      markdown,
+      engine: "ai".to_string(),
+      duration_ms: start.elapsed().as_millis() as u64,
+    })
+  }
+}
+
+/// Build a GFM table from OCR text blocks by grouping them into lines and
+/// cutting columns at the given vertical pixel positions.  The first line
+/// becomes the header.
+fn extract_table_from_ocr_blocks(
+  recognition: &crate::core::ocr::OcrRecognition,
+  vertical_px: &[f64],
+  img_width: f64,
+  _img_height: f64,
+) -> String {
+  // Column boundaries: 0 + user lines + image width.
+  let mut col_bounds: Vec<f64> = vec![0.0];
+  col_bounds.extend(vertical_px.iter().copied());
+  col_bounds.push(img_width);
+  col_bounds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+  let ncols = col_bounds.len().saturating_sub(1);
+  if ncols == 0 {
+    return String::new();
+  }
+
+  // Sort blocks by y (top → bottom), then x (left → right).
+  let mut blocks: Vec<&crate::core::ocr::OcrBlock> = recognition.blocks.iter().collect();
+  blocks.sort_by(|a, b| {
+    a.top
+      .partial_cmp(&b.top)
+      .unwrap_or(std::cmp::Ordering::Equal)
+      .then_with(|| {
+        a.left
+          .partial_cmp(&b.left)
+          .unwrap_or(std::cmp::Ordering::Equal)
+      })
+  });
+  if blocks.is_empty() {
+    return String::new();
+  }
+
+  // Group into text lines.
+  let mut lines: Vec<Vec<&crate::core::ocr::OcrBlock>> = Vec::new();
+  let mut cur_line = vec![blocks[0]];
+  let mut cur_y = blocks[0].top;
+  for block in &blocks[1..] {
+    let threshold = (block.height * 0.4).max(3.0);
+    if (block.top - cur_y).abs() < threshold {
+      cur_line.push(block);
+    } else {
+      cur_line.sort_by(|a, b| {
+        a.left
+          .partial_cmp(&b.left)
+          .unwrap_or(std::cmp::Ordering::Equal)
+      });
+      lines.push(cur_line);
+      cur_line = vec![*block];
+      cur_y = block.top;
+    }
+  }
+  if !cur_line.is_empty() {
+    cur_line.sort_by(|a, b| {
+      a.left
+        .partial_cmp(&b.left)
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    lines.push(cur_line);
+  }
+  if lines.is_empty() {
+    return String::new();
+  }
+
+  // Extract cells per line per column.
+  let mut data_rows: Vec<Vec<String>> = Vec::new();
+  for line in &lines {
+    let mut row = Vec::with_capacity(ncols);
+    for col in 0..ncols {
+      let left = col_bounds[col];
+      let right = col_bounds[col + 1];
+      let cell: String = line
+        .iter()
+        .filter(|b| {
+          let center = b.left + b.width / 2.0;
+          center >= left - 1e-3 && center < right + 1e-3
+        })
+        .map(|b| b.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+      row.push(cell.trim().to_string());
+    }
+    data_rows.push(row);
+  }
+
+  if data_rows.is_empty() {
+    return String::new();
+  }
+
+  // First row = header, rest = data rows.
+  let header = &data_rows[0];
+  let rows = if data_rows.len() > 1 {
+    &data_rows[1..]
+  } else {
+    &[][..]
+  };
+
+  let mut out = format!(
+    "| {} |\n|{}|\n",
+    header
+      .iter()
+      .map(|c| c.as_str())
+      .collect::<Vec<_>>()
+      .join(" | "),
+    header.iter().map(|_| " --- ").collect::<Vec<_>>().join("|"),
+  );
+  for row in rows {
+    out.push_str(&format!(
+      "| {} |\n",
+      row
+        .iter()
+        .map(|c| c.as_str())
+        .collect::<Vec<_>>()
+        .join(" | ")
+    ));
+  }
+  out
 }
 
 #[cfg(test)]

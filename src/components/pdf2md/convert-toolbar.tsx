@@ -1,4 +1,10 @@
-import { FileText, Grid3X3, Loader2, WandSparkles, Trash2 } from "lucide-react";
+import {
+  FileText,
+  Columns3Cog,
+  Loader2,
+  WandSparkles,
+  Trash2,
+} from "lucide-react";
 
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
@@ -70,7 +76,7 @@ export function ConvertToolbar({
                 : "bg-secondary text-secondary-foreground hover:bg-secondary/80",
             )}
           >
-            <Grid3X3 className="size-4" />
+            <Columns3Cog className="size-4" />
             {t("toolbar.drawTable")}
           </button>
         </TooltipTrigger>

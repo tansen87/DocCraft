@@ -1,7 +1,7 @@
 import {
   ChevronLeft,
   ChevronRight,
-  FileSearch,
+  Grid2X2,
   Grid3X3,
   Loader2,
   RotateCcw,
@@ -157,7 +157,7 @@ export function DrawTableToolbar({
         {extracting === "first5" ? (
           <Loader2 className="size-3.5 animate-spin" />
         ) : (
-          <FileSearch className="size-3.5" />
+          <Grid2X2 className="size-3.5" />
         )}
         {extracting === "first5"
           ? t("drawtable.extractingFirst5")

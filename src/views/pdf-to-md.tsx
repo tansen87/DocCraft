@@ -555,7 +555,7 @@ export function BatchView() {
                       <td className="px-3 py-2 text-xs tabular-nums text-muted-foreground">
                         {item.result
                           ? `${item.result.processingTimeMs} ms`
-                          : "—"}
+                          : ""}
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-end gap-1">

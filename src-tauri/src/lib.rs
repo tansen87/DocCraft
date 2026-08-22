@@ -11,8 +11,8 @@ use crate::core::ocr::HybridStore;
 use crate::core::snip::{SnipStore, get_window_under_cursor};
 use crate::models::{
   AppSettings, ConvertResult, DetectResult, DrawTableRequest, DrawTableResult, HybridSessionInfo,
-  MdAnalyzeResult, MdExportResult, MonitorSnapshot, OcrImageResult, OcrVendorDto, OcrVendorInput,
-  ShotRegion,
+  ImageTableRequest, ImageTableResult, MdAnalyzeResult, MdExportResult, MonitorSnapshot,
+  OcrImageResult, OcrVendorDto, OcrVendorInput, ShotRegion,
 };
 
 /// Managed tray icon state so we can rebuild it when settings change.
@@ -260,6 +260,15 @@ async fn screenshot_cancel(app: tauri::AppHandle) -> Result<(), String> {
   Ok(())
 }
 
+/// Extract a GFM table from an image using OCR + user-drawn vertical lines.
+#[tauri::command]
+async fn ocr_image_table(
+  app: tauri::AppHandle,
+  request: ImageTableRequest,
+) -> Result<ImageTableResult, String> {
+  core::snip::ocr_image_table(&app, request).await
+}
+
 /// Analyze a Markdown file and return every table it contains (for preview).
 #[tauri::command]
 async fn analyze_markdown(path: String) -> Result<MdAnalyzeResult, String> {
@@ -460,6 +469,7 @@ pub fn run() {
       screenshot_begin,
       screenshot_ocr,
       screenshot_cancel,
+      ocr_image_table,
       get_window_under_cursor,
       extract_draw_table,
       extract_draw_table_to_markdown
