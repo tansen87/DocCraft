@@ -154,10 +154,11 @@ async fn export_markdown_tables(
 
 /// Extract tables from a PDF based on user-drawn lines.
 ///
-/// When the request carries rendered page images, the local PaddleOCR engine
-/// is loaded (once per call) so pages without a text layer can still be
-/// extracted; if the models are unavailable the extraction degrades to
-/// text-only instead of failing.
+/// When the request carries rendered page images, the OCR fallback selected
+/// by the current mode is prepared: local PaddleOCR for `forceLocal` /
+/// `nonTextLocal`, remote AI vision for `forceAi` / `nonTextAi`, nothing for
+/// `disabled`. Missing local models or an unconfigured provider degrade the
+/// extraction to text-only instead of failing.
 #[tauri::command]
 async fn extract_draw_table(
   app: tauri::AppHandle,
@@ -166,8 +167,12 @@ async fn extract_draw_table(
 ) -> Result<DrawTableResult, String> {
   tauri::async_runtime::spawn_blocking(move || {
     let use_cache = core::settings::get_app_settings(&app)?.cache_extracted_text;
-    let engine = local_engine_for_draw(&app, &draw_data);
-    core::line_draw::extract_tables_from_draw_lines(&path, &draw_data, use_cache, engine.as_ref())
+    let (local, remote) = resolve_draw_ocr(&app, &draw_data)?;
+    let engines = core::line_draw::DrawOcrEngines {
+      local: local.as_ref(),
+      remote: remote.as_ref(),
+    };
+    core::line_draw::extract_tables_from_draw_lines(&path, &draw_data, use_cache, Some(&engines))
   })
   .await
   .map_err(|e| e.to_string())?
@@ -183,33 +188,53 @@ async fn extract_draw_table_to_markdown(
 ) -> Result<String, String> {
   tauri::async_runtime::spawn_blocking(move || {
     let use_cache = core::settings::get_app_settings(&app)?.cache_extracted_text;
-    let engine = local_engine_for_draw(&app, &draw_data);
+    let (local, remote) = resolve_draw_ocr(&app, &draw_data)?;
+    let engines = core::line_draw::DrawOcrEngines {
+      local: local.as_ref(),
+      remote: remote.as_ref(),
+    };
     core::line_draw::extract_tables_and_merge(
       &path,
       &draw_data,
       existing_markdown.as_deref(),
       use_cache,
-      engine.as_ref(),
+      Some(&engines),
     )
   })
   .await
   .map_err(|e| e.to_string())?
 }
 
-/// Create the local OCR engine when the draw-table request carries page
-/// images; returns `None` otherwise or when the bundled models are missing.
-fn local_engine_for_draw(
+/// Resolve the OCR engines for a draw-table request based on the user's
+/// selected mode. Returns `(local_engine, remote_provider)`; both are `None`
+/// unless page images are attached to the request.
+fn resolve_draw_ocr(
   app: &tauri::AppHandle,
   draw_data: &DrawTableRequest,
-) -> Option<core::ocr::LocalOcrEngine> {
-  if draw_data
+) -> Result<
+  (
+    Option<core::ocr::LocalOcrEngine>,
+    Option<core::ocr::RemoteOcrProvider>,
+  ),
+  String,
+> {
+  use crate::models::OcrMode;
+
+  if !draw_data
     .page_images
     .as_ref()
     .is_some_and(|imgs| !imgs.is_empty())
   {
-    core::ocr::create_local_ocr_engine(app).ok()
-  } else {
-    None
+    return Ok((None, None));
+  }
+
+  let mode = core::settings::get_app_settings(app)?.ocr_mode;
+  match mode {
+    OcrMode::ForceLocal | OcrMode::NonTextLocal => {
+      Ok((core::ocr::create_local_ocr_engine(app).ok(), None))
+    }
+    OcrMode::ForceAi | OcrMode::NonTextAi => Ok((None, core::ocr::resolve_remote_provider(app)?)),
+    OcrMode::Disabled => Ok((None, None)),
   }
 }
 

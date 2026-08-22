@@ -77,10 +77,14 @@ and Simplified Chinese — switchable at runtime.
   layer** (scans / image-only pages) fall back to the **local PaddleOCR**
   engine: the frontend renders those pages to PNG (in batches of 6), the
   backend recognizes positioned text blocks and cuts them by the drawn column
-  boundaries exactly like text-layer content. This fallback is local-only — it
-  runs when the OCR mode is `forceLocal` / `nonTextLocal`, never sends data to
-  the network, and degrades silently to empty results when the models are not
-  installed.
+  boundaries exactly like text-layer content. The fallback follows the
+  selected **OCR mode**: `forceLocal` / `nonTextLocal` use the on-device
+  PaddleOCR engine, while `forceAi` / `nonTextAi` send the rendered page to
+  the configured remote AI vision provider together with the drawn separator
+  positions (as percentages) and parse the GFM answer directly — the model is
+  asked to cut the table by the user-drawn lines. `disabled` keeps draw-table
+  extraction text-layer-only, and missing local models or an unconfigured
+  provider degrade silently to empty results instead of failing.
 - **Bilingual UI (i18n)** — English (default) and 中文 (Simplified Chinese)
   switched via a dropdown next to the theme toggle; the choice persists in
   `localStorage` and every string goes through a typed translation layer.
@@ -195,7 +199,7 @@ Commands (invoked from `src/lib/ipc.ts`):
 | `set_app_settings`   | `{ settings }`                          | `void` (clamped 1–16) |
 | `analyze_markdown`   | `{ path }`                              | `MdAnalyzeResult` (`tableCount`, `tables[]` with columns/rows/page, `totalRows`, `processingTimeMs`) |
 | `export_markdown_tables` | `{ mdPath, xlsxPath }`              | `MdExportResult` (`tableCount`, `totalRows`, `processingTimeMs`) |
-| `extract_draw_table` | `{ path, drawData }` — `drawData` may carry `totalPages`, `onlyPages` (batching) and `pageImages[]` (`{page, imagePng, renderScale}`) for the local OCR fallback | `DrawTableResult` (`tableCount`, `tables[]`, `regions[]`, `totalRows`, `ocrPages`, `emptyTextPages`, `processingTimeMs`) |
+| `extract_draw_table` | `{ path, drawData }` — `drawData` may carry `totalPages`, `onlyPages` (batching) and `pageImages[]` (`{page, imagePng, renderScale}`) for the mode-selected OCR fallback (local PaddleOCR or remote AI vision) | `DrawTableResult` (`tableCount`, `tables[]`, `regions[]`, `totalRows`, `ocrPages`, `emptyTextPages`, `processingTimeMs`) |
 | `extract_draw_table_to_markdown` | `{ path, drawData, existingMarkdown? }` | `string` — merged markdown with extracted tables appended |
 
 Result fields are serialized in camelCase; `PdfTypeDto` mirrors `pdf-inspector`'s
@@ -320,10 +324,11 @@ cargo check --manifest-path src-tauri/Cargo.toml
   `disabled` (no OCR — pages needing OCR are skipped and never leave the
   machine). When OCR is enabled, conversion routes through the hybrid session
   and — in addition to the pages detection flagged — any page whose local text
-  extraction produced no content is also sent to the OCR engine. The same two
-  local modes (`forceLocal` / `nonTextLocal`) also enable the draw-table
-  extraction's on-device PaddleOCR fallback for scanned pages; `forceAi` /
-  `nonTextAi` / `disabled` keep draw-table extraction text-layer-only.
+  extraction produced no content is also sent to the OCR engine. The draw-table
+  extraction shares the same mode selector: local modes (`forceLocal` /
+  `nonTextLocal`) enable its on-device PaddleOCR fallback for scanned pages,
+  AI modes (`forceAi` / `nonTextAi`) enable the remote vision fallback with
+  drawn-line hints, and `disabled` keeps it text-layer-only.
 
 Both live in the Tauri `app_config_dir` directory. No third-party store plugin
 is required. For privacy, only pages that need OCR (detected or empty

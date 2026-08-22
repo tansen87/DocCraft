@@ -5,12 +5,22 @@ use pdf_inspector::TextItem;
 use pdf_inspector::extractor::ItemType;
 
 use crate::core::extract_cache;
-use crate::core::ocr::{LocalOcrEngine, OcrRecognition};
+use crate::core::md_to_xlsx::parse_md_tables;
+use crate::core::ocr::{LocalOcrEngine, OcrRecognition, RemoteOcrProvider};
 use crate::core::page_marker::page_marker;
 use crate::models::{
   DrawTableRegion, DrawTableRequest, DrawTableResult, MdTable, PageDrawTable, PageImagePayload,
   TableRegionInfo,
 };
+
+/// OCR engines available for the draw-table fallback. The caller resolves at
+/// most one provider, matching the user's selected OCR mode: local PaddleOCR
+/// for `forceLocal` / `nonTextLocal`, remote AI vision for `forceAi` /
+/// `nonTextAi`, none for `disabled`.
+pub struct DrawOcrEngines<'a> {
+  pub local: Option<&'a LocalOcrEngine>,
+  pub remote: Option<&'a RemoteOcrProvider>,
+}
 
 /// A text element extracted from a PDF page with its position.
 #[derive(Debug, Clone)]
@@ -105,6 +115,68 @@ fn ocr_text_elements(
   }
   let recognition = engine.recognize_png_blocks(&png)?;
   Ok(ocr_blocks_to_elements(&recognition, payload.render_scale))
+}
+
+/// Convert point-space line positions into percentages of the rendered
+/// image dimension, so drawn separators can be described to a remote vision
+/// model that has no notion of PDF coordinates.
+fn line_percentages(lines_pts: &[f64], render_scale: f64, dimension_px: u32) -> Vec<f64> {
+  if dimension_px == 0 || render_scale <= 0.0 {
+    return Vec::new();
+  }
+  lines_pts
+    .iter()
+    .map(|pt| ((pt * render_scale / dimension_px as f64) * 100.0).clamp(0.0, 100.0))
+    .collect()
+}
+
+/// Send one rendered page to the remote AI vision provider with the drawn
+/// separator positions as hints, and parse the GFM answer back into tables.
+///
+/// The vision model returns structured markdown directly (no coordinates), so
+/// this path bypasses the geometric column-cutting pipeline entirely.
+fn ai_tables_for_page(
+  provider: &RemoteOcrProvider,
+  payload: &PageImagePayload,
+  page_draw: &PageDrawTable,
+) -> Result<Vec<MdTable>, String> {
+  let png = base64::Engine::decode(
+    &base64::engine::general_purpose::STANDARD,
+    &payload.image_png,
+  )
+  .map_err(|e| format!("Failed to decode base64 image: {e}"))?;
+  let image = image::load_from_memory(&png).map_err(|e| format!("Failed to load image: {e}"))?;
+  if payload.render_scale <= 0.0 {
+    return Err("Invalid render scale for OCR page image".to_string());
+  }
+
+  let vertical_pcts = line_percentages(
+    &page_draw.vertical_lines,
+    payload.render_scale,
+    image.width(),
+  );
+  let horizontal_pcts = line_percentages(
+    &page_draw.horizontal_lines,
+    payload.render_scale,
+    image.height(),
+  );
+
+  // The command runs on a blocking worker thread; bridge into the async
+  // runtime for the HTTP call.
+  let markdown = tauri::async_runtime::block_on(crate::core::ocr::ai_recognize_table(
+    provider,
+    page_draw.page,
+    &payload.image_png,
+    &vertical_pcts,
+    &horizontal_pcts,
+  ))?;
+
+  Ok(
+    parse_md_tables(&markdown)
+      .into_iter()
+      .filter(|t| !t.columns.is_empty())
+      .collect(),
+  )
 }
 
 /// Filter text elements that fall within a given rectangular region.
@@ -517,7 +589,7 @@ pub fn extract_tables_from_draw_lines(
   path: &str,
   request: &DrawTableRequest,
   use_cache: bool,
-  ocr_engine: Option<&LocalOcrEngine>,
+  ocr_engines: Option<&DrawOcrEngines>,
 ) -> Result<DrawTableResult, String> {
   let start = Instant::now();
 
@@ -660,20 +732,51 @@ pub fn extract_tables_from_draw_lines(
       .collect();
 
     // Scanned / image-only pages have no text layer at all. When the frontend
-    // supplied a rendered PNG for this page and the local PaddleOCR engine is
-    // available, recognize the image and use its positioned text blocks as
-    // the element source for the same column-cutting pipeline.
+    // supplied a rendered PNG for this page, run the mode-selected OCR
+    // fallback: local PaddleOCR yields positioned text blocks that feed the
+    // same column-cutting pipeline, remote AI vision answers with a GFM table
+    // cut by the drawn separator positions.
+    let mut ai_yielded = false;
     if elements.is_empty() {
-      if let (Some(engine), Some(img)) = (ocr_engine, page_images.get(&page_num)) {
-        if let Ok(ocr_elements) = ocr_text_elements(engine, img) {
-          if !ocr_elements.is_empty() {
-            elements = ocr_elements;
-            ocr_pages.push(page_num);
+      if let Some(img) = page_images.get(&page_num) {
+        if let Some(engines) = ocr_engines {
+          if let Some(engine) = engines.local {
+            if let Ok(ocr_elements) = ocr_text_elements(engine, img) {
+              if !ocr_elements.is_empty() {
+                elements = ocr_elements;
+                ocr_pages.push(page_num);
+              }
+            }
+          }
+          // Remote AI vision: parse the model's markdown answer directly.
+          if elements.is_empty() {
+            if let Some(provider) = engines.remote {
+              match ai_tables_for_page(provider, img, page_draw) {
+                Ok(ai_tables) => {
+                  for table in ai_tables {
+                    tables.push(table);
+                    regions.push(TableRegionInfo {
+                      page: page_num,
+                      row_start: 0.0,
+                      row_end: page_height,
+                      col_start: 0.0,
+                      col_end: page_width,
+                    });
+                  }
+                  ocr_pages.push(page_num);
+                  ai_yielded = true;
+                }
+                Err(_) => {
+                  // Provider failure degrades to an empty result for this
+                  // page, consistent with the local fallback behavior.
+                }
+              }
+            }
           }
         }
       }
     }
-    if elements.is_empty() {
+    if elements.is_empty() && !ai_yielded {
       empty_text_pages.push(page_num);
     }
 
@@ -764,9 +867,9 @@ pub fn extract_tables_and_merge(
   request: &DrawTableRequest,
   existing_markdown: Option<&str>,
   use_cache: bool,
-  ocr_engine: Option<&LocalOcrEngine>,
+  ocr_engines: Option<&DrawOcrEngines>,
 ) -> Result<String, String> {
-  let result = extract_tables_from_draw_lines(path, request, use_cache, ocr_engine)?;
+  let result = extract_tables_from_draw_lines(path, request, use_cache, ocr_engines)?;
 
   if result.tables.is_empty() {
     return if let Some(md) = existing_markdown {
@@ -1205,5 +1308,15 @@ mod tests {
     assert_eq!(table.rows.len(), 1);
     assert_eq!(table.rows[0][0], "张三");
     assert_eq!(table.rows[0][1], "28");
+  }
+
+  #[test]
+  fn test_line_percentages() {
+    // 750px image at scale 2.5 → 300pt wide; points map linearly to percent.
+    let pcts = line_percentages(&[75.0, 150.0, 400.0], 2.5, 750);
+    assert_eq!(pcts, vec![25.0, 50.0, 100.0]);
+    // Degenerate inputs yield no positions.
+    assert!(line_percentages(&[10.0], 2.5, 0).is_empty());
+    assert!(line_percentages(&[10.0], 0.0, 750).is_empty());
   }
 }

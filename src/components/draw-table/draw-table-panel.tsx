@@ -440,14 +440,12 @@ export function DrawTablePanel({
       };
 
       try {
-        // The draw-table OCR fallback is local-only: it runs when a local
-        // PaddleOCR mode is selected in settings and the document is not
-        // purely text-based.
+        // The draw-table OCR fallback follows the selected OCR mode: local
+        // PaddleOCR (forceLocal/nonTextLocal) or remote AI vision
+        // (forceAi/nonTextAi) are resolved on the backend; disabled keeps
+        // extraction text-layer-only.
         const settings = await getAppSettings();
-        const useOcr =
-          (settings.ocrMode === "forceLocal" ||
-            settings.ocrMode === "nonTextLocal") &&
-          (mayNeedOcr ?? true);
+        const useOcr = settings.ocrMode !== "disabled" && (mayNeedOcr ?? true);
         const result = useOcr
           ? await extractWithOcr(request)
           : await extractDrawTable(pdfPath, request);

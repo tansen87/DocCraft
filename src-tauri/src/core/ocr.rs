@@ -230,6 +230,85 @@ fn resolve_provider(vendors: &[OcrVendor]) -> Option<(&OcrVendor, &crate::models
   Some((vendor, model))
 }
 
+/// A resolved remote vision provider for the draw-table OCR fallback.
+pub struct RemoteOcrProvider {
+  pub client: Client,
+  pub base_url: String,
+  pub model_id: String,
+  pub api_key: String,
+}
+
+/// Prompt for draw-table AI recognition: the model must cut the table by the
+/// user-drawn separator positions and answer with a bare GFM table.
+const DRAW_TABLE_PROMPT: &str = "你是一个专业的表格识别引擎.这张PDF页面图片中的表格带有用户标注的列分隔线.请严格按照下方给出的分隔线位置把页面内容切分成列,识别表格的所有行(第一行为表头),输出为规范的GFM(GitHub Flavored Markdown)表格.只输出Markdown表格本身,不要输出任何解释、前言或代码块围栏.";
+
+/// Resolve the remote vision provider used by the draw-table OCR fallback,
+/// with the same vendor / default-model preference as hybrid conversion
+/// sessions. Returns `None` when no usable vendor is configured.
+pub fn resolve_remote_provider(app: &AppHandle) -> Result<Option<RemoteOcrProvider>, String> {
+  let vendors = settings::get_ocr_config(app)?;
+  let Some((vendor, model)) = resolve_provider(&vendors) else {
+    return Ok(None);
+  };
+  let api_key = settings::api_key_for(app, &vendor.id)?
+    .ok_or_else(|| format!("The API Key of supplier '{}' is empty", vendor.name))?;
+  let client = Client::builder()
+    .timeout(Duration::from_secs(300))
+    .connect_timeout(Duration::from_secs(30))
+    .build()
+    .map_err(|e| format!("HTTP client initialization failed: {e}"))?;
+  Ok(Some(RemoteOcrProvider {
+    client,
+    base_url: vendor.base_url.clone(),
+    model_id: model.name.clone(),
+    api_key,
+  }))
+}
+
+/// Render one group of drawn line positions as a prompt fragment listing
+/// percentages of the corresponding image dimension.
+fn describe_positions(label: &str, pcts: &[f64]) -> String {
+  if pcts.is_empty() {
+    return String::new();
+  }
+  let list = pcts
+    .iter()
+    .map(|p| format!("{p:.1}%"))
+    .collect::<Vec<_>>()
+    .join(", ");
+  format!("\n{label}: {list}")
+}
+
+/// Send one rendered page to the remote vision provider and ask it to extract
+/// the table cut by the drawn separator lines. Returns bare GFM markdown.
+pub async fn ai_recognize_table(
+  provider: &RemoteOcrProvider,
+  page: u32,
+  image_png: &str,
+  vertical_pcts: &[f64],
+  horizontal_pcts: &[f64],
+) -> Result<String, String> {
+  let mut prompt = DRAW_TABLE_PROMPT.to_string();
+  prompt.push_str(&describe_positions(
+    "竖线位置(相对图片宽度的百分比)",
+    vertical_pcts,
+  ));
+  prompt.push_str(&describe_positions(
+    "横线位置(相对图片高度的百分比)",
+    horizontal_pcts,
+  ));
+  ocr_page(
+    &provider.client,
+    &provider.base_url,
+    &provider.model_id,
+    &provider.api_key,
+    page,
+    &prompt,
+    image_png,
+  )
+  .await
+}
+
 /// Send one page image to an OpenAI-compatible `/chat/completions` endpoint
 /// and return the extracted markdown.
 async fn ocr_page(
@@ -238,6 +317,7 @@ async fn ocr_page(
   model_id: &str,
   api_key: &str,
   page: u32,
+  prompt: &str,
   image_png: &str,
 ) -> Result<String, String> {
   let url = completions_url(base_url);
@@ -248,7 +328,7 @@ async fn ocr_page(
     "messages": [{
       "role": "user",
       "content": [
-        { "type": "text", "text": OCR_PROMPT },
+        { "type": "text", "text": prompt },
         {
           "type": "image_url",
           "image_url": { "url": format!("data:image/png;base64,{image_png}") }
@@ -519,7 +599,11 @@ pub async fn ocr_page_in_session(
     // Use remote OCR provider (Ai, NonTextOnly, ForceOcr)
     let (base_url, model_id, api_key) =
       resolved.ok_or_else(|| "No available OCR supplier configured".to_string())?;
-    match ocr_page(&client, &base_url, &model_id, &api_key, page, image_png).await {
+    match ocr_page(
+      &client, &base_url, &model_id, &api_key, page, OCR_PROMPT, image_png,
+    )
+    .await
+    {
       Ok(m) => m,
       Err(e) => {
         let mut map = store.lock();

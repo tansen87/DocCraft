@@ -335,7 +335,10 @@ export function SettingsView() {
                 <SectionHeader icon={ScanText} title={t("settings.ocr")} />
                 <OcrSettingsPanel
                   vendors={vendors}
-                  onChange={setVendors}
+                  onChange={(updater) => {
+                    setVendors(updater);
+                    markDirty();
+                  }}
                   ocrMode={ocrMode}
                   onOcrModeChange={(v) => {
                     setOcrMode(v);
