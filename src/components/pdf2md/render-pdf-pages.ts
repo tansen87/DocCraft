@@ -2,7 +2,11 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import * as pdfjs from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-import type { ConvertResult, OcrPageImage } from "@/lib/types";
+import type {
+  ActivityProgress,
+  ConvertResult,
+  OcrPageImage,
+} from "@/lib/types";
 import {
   abortHybridSession,
   finishHybridSession,
@@ -67,17 +71,25 @@ export async function* renderPdfPagesForOcr(
 export async function convertWithOcr(
   path: string,
   pages: number[],
+  /** Optional per-page progress for the status bar activity indicator. */
+  onProgress?: (p: ActivityProgress | null) => void,
 ): Promise<ConvertResult> {
   const session = await startHybridSession(path, pages);
   try {
     if (session.ocrConfigured) {
+      let done = 0;
+      onProgress?.({ phase: "ocr", current: 0, total: pages.length });
       for await (const img of renderPdfPagesForOcr(path, pages)) {
         await hybridPageOcr(session.sessionId, img.page, img.imagePng);
+        done += 1;
+        onProgress?.({ phase: "ocr", current: done, total: pages.length });
       }
     }
     return await finishHybridSession(session.sessionId);
   } catch (e) {
     await abortHybridSession(session.sessionId).catch(() => undefined);
     throw e;
+  } finally {
+    onProgress?.(null);
   }
 }

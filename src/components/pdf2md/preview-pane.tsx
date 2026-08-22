@@ -9,6 +9,11 @@ import "highlight.js/styles/github-dark.css";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -245,18 +250,27 @@ export function PreviewPane({
             {t("preview.raw")}
           </button>
         </div>
-        <Button variant="ghost" size="icon-xs" onClick={copy}>
-          {copied ? <Check className="text-emerald-500" /> : <Copy />}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={handleExport}
-          disabled={exporting}
-          aria-label={t("tooltip.exportMarkdown")}
-        >
-          {exporting ? <Loader2 className="animate-spin" /> : <Download />}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon-xs" onClick={copy}>
+              {copied ? <Check /> : <Copy />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t("tooltip.copy")}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={handleExport}
+              disabled={exporting}
+            >
+              {exporting ? <Loader2 className="animate-spin" /> : <Download />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t("tooltip.exportMarkdown")}</TooltipContent>
+        </Tooltip>
       </div>
 
       {mode === "raw" ? (

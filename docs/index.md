@@ -47,14 +47,18 @@ and Simplified Chinese — switchable at runtime.
   pages flagged for OCR are skipped (marked with a `<!-- OCR 跳过 … -->`
   comment) and recorded instead of failing the document. Per-page OCR failures
   degrade to a `<!-- OCR 失败 … -->` comment as well. A **bell icon** at the
-  far right of the status bar shows the total skipped / failed count and, on
-  hover, the exact page numbers.
+  far right of the status bar collects these as structured notices — severity
+  colored, unread badge, clear-all — with clickable page chips (long lists
+  collapse to first/last pages with prev/next stepping and a jump input) that
+  scroll the PDF preview to that page, plus a retry action.
 - **Batch queue with configurable concurrency** — multi-file drag & drop,
   worker-pool conversion, retry / remove / export-all, and a user-adjustable
   concurrency limit (1–16, default 1) persisted in app settings.
 - **Editor-style workspace** — top toolbar (file name + convert action),
   split-view middle (PDF preview | Markdown preview) and a bottom status bar
-  (PDF type, pages, confidence, OCR needs, plus a skipped/failed notices bell).
+  (PDF type, pages, confidence, OCR needs, a notices bell and a live activity
+  indicator showing the current extraction/OCR stage, e.g. "Recognizing page
+  3/12").
 - **Whole-window drag & drop** — drop any PDF anywhere in the window; a drag
   overlay confirms the drop target; auto-detect runs immediately on select.
 - **Markdown → Excel** — batch-analyze `.md` files, auto-detect tables

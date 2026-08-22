@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { toast } from "sonner";
@@ -16,7 +16,12 @@ import {
   exportMarkdown,
   getAppSettings,
 } from "@/lib/ipc";
-import type { ConvertResult, DetectResult } from "@/lib/types";
+import type {
+  ActivityProgress,
+  ConvertResult,
+  DetectResult,
+  StatusNotice,
+} from "@/lib/types";
 import * as pdfjs from "pdfjs-dist";
 
 interface ConvertWorkspaceProps {
@@ -63,6 +68,14 @@ export function ConvertWorkspace({
     pageY: number;
   } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  /** In-flight phase shown in the status bar (extraction / OCR progress). */
+  const [activity, setActivity] = useState<ActivityProgress | null>(null);
+  /** Page jump request for the PDF preview (status bar notice chips). */
+  const [jumpPage, setJumpPage] = useState<{
+    page: number;
+    seq: number;
+  } | null>(null);
+  const jumpSeqRef = useRef(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -164,7 +177,7 @@ export function ConvertWorkspace({
     };
   }, [filePath, initialResult]);
 
-  async function handleConvert() {
+  const handleConvert = useCallback(async () => {
     if (!filePath) return;
     setConverting(true);
     try {
@@ -180,7 +193,7 @@ export function ConvertWorkspace({
           : needOcr;
       const r =
         settings.ocrMode !== "disabled"
-          ? await convertWithOcr(filePath, ocrPages)
+          ? await convertWithOcr(filePath, ocrPages, setActivity)
           : await convertPdf(filePath);
       setResult(r);
       setDetect(r);
@@ -190,8 +203,12 @@ export function ConvertWorkspace({
       toast.error(t("toast.convertFailed"), { description: String(e) });
     } finally {
       setConverting(false);
+      setActivity(null);
     }
-  }
+  }, [filePath, detect, onConverted, t]);
+
+  const handleConvertRef = useRef(handleConvert);
+  handleConvertRef.current = handleConvert;
 
   async function handleExport(): Promise<void> {
     const content = result?.markdown ?? mergedMarkdown;
@@ -242,6 +259,62 @@ export function ConvertWorkspace({
     [result, t],
   );
 
+  const jumpToPage = useCallback((page: number) => {
+    jumpSeqRef.current += 1;
+    setJumpPage({ page, seq: jumpSeqRef.current });
+  }, []);
+
+  // Structured notices for the status bar bell. Ids are stable so read /
+  // dismissed tracking survives re-renders.
+  const notices = useMemo<StatusNotice[]>(() => {
+    const list: StatusNotice[] = [];
+    const failed = drawMode ? [] : (result?.failedPages ?? []);
+    if (failed.length > 0) {
+      list.push({
+        id: "pages-failed",
+        level: "error",
+        text: t("notice.failedPages", { count: failed.length }),
+        pages: failed,
+        onPageClick: jumpToPage,
+        actions: [
+          {
+            label: t("status.actionRetry"),
+            onClick: () => void handleConvertRef.current(),
+          },
+        ],
+      });
+    }
+    const skipped = drawMode ? [] : (result?.skippedPages ?? []);
+    if (skipped.length > 0) {
+      list.push({
+        id: "pages-skipped",
+        level: "warning",
+        text: t("notice.skippedPages", { count: skipped.length }),
+        pages: skipped,
+        onPageClick: jumpToPage,
+      });
+    }
+    // Draw mode: pages without a text layer will go through the OCR fallback
+    // (local PaddleOCR or AI vision, depending on the selected mode).
+    if (
+      detect &&
+      detect.pdfType !== "TextBased" &&
+      detect.pagesNeedingOcr.length > 0 &&
+      (drawMode || !result)
+    ) {
+      list.push({
+        id: "pages-ocr-fallback",
+        level: "info",
+        text: t("notice.ocrFallbackPages", {
+          count: detect.pagesNeedingOcr.length,
+        }),
+        pages: detect.pagesNeedingOcr,
+        onPageClick: drawMode ? undefined : jumpToPage,
+      });
+    }
+    return list;
+  }, [result, detect, drawMode, t, jumpToPage]);
+
   return (
     <>
       <ConvertToolbar
@@ -288,6 +361,7 @@ export function ConvertWorkspace({
                       : undefined
                   }
                   onMergeToMarkdown={handleMergeToMarkdown}
+                  onProgress={setActivity}
                   className="h-full"
                 />
               </div>
@@ -309,7 +383,11 @@ export function ConvertWorkspace({
       ) : (
         /* Normal Mode: PDF preview + Markdown preview */
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-2">
-          <PdfPreview path={filePath} className="min-h-[280px]" />
+          <PdfPreview
+            path={filePath}
+            className="min-h-[280px]"
+            scrollToPage={jumpPage}
+          />
 
           <div className="min-h-0 min-w-0">
             {result ? (
@@ -330,12 +408,8 @@ export function ConvertWorkspace({
           result={detect}
           loading={detecting}
           extra={drawMode ? t("mode.drawTable") : undefined}
-          skippedPages={
-            drawMode
-              ? detect?.pagesNeedingOcr
-              : (result?.skippedPages ?? detect?.pagesNeedingOcr)
-          }
-          failedPages={result?.failedPages}
+          notices={notices}
+          progress={activity}
         />
       </div>
     </>

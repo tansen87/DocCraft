@@ -252,3 +252,39 @@ export type CanvasElement = DrawLine | DrawRect;
 
 /** Mode for the canvas overlay interaction. */
 export type DrawMode = "horizontal" | "vertical" | "rectangle" | "select";
+
+// ─── Status bar activity & notices ───────────────────────────────────────
+
+/** Long-running task phase reported by the status bar progress indicator. */
+export type ActivityPhase = "extract" | "ocr";
+
+export interface ActivityProgress {
+  phase: ActivityPhase;
+  /** Pages completed so far (omit for an indeterminate task). */
+  current?: number;
+  /** Total pages of this phase (when determinate). */
+  total?: number;
+}
+
+export type NoticeLevel = "info" | "warning" | "error";
+
+/** An action button rendered inside a status bar notice. */
+export interface StatusNoticeAction {
+  label: string;
+  onClick: () => void;
+}
+
+/** A structured notification shown in the status bar bell popover. */
+export interface StatusNotice {
+  /** Stable id — used for read/dismissed tracking across renders. */
+  id: string;
+  level: NoticeLevel;
+  text: string;
+  /**
+   * Page numbers rendered as clickable chips. Clicking one invokes
+   * `onPageClick` (e.g. to jump the preview to that page).
+   */
+  pages?: number[];
+  onPageClick?: (page: number) => void;
+  actions?: StatusNoticeAction[];
+}

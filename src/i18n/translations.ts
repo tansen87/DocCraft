@@ -41,6 +41,7 @@ const en = {
   "table.tablesAndRows": "{count} tables · {rows} rows of data",
   "table.pages": "{count} pages",
 
+  "tooltip.copy": "Copy",
   "tooltip.exportMarkdown": "Export Markdown",
   "tooltip.retry": "Retry",
   "tooltip.removeFromList": "Remove from list",
@@ -135,7 +136,7 @@ const en = {
   "settings.defaultModel": "Use this model for OCR",
   "settings.addModel": "Add model",
   "settings.maxConcurrent": "Max batch conversion concurrency",
-  "settings.threadPlaceholder": "Enter thread count (1~16)",
+  "settings.threadPlaceholder": "Enter thread count (e.g. 1)",
   "settings.save": "Save",
   "settings.unsavedChanges": "Unsaved changes",
   "settings.threadsHint2":
@@ -167,6 +168,24 @@ const en = {
   "status.failedPages": "Failed pages: {pages}",
   "status.notices": "Notifications",
   "status.noticesEmpty": "No skipped or failed pages",
+  "status.noticesClear": "Clear",
+  "status.unreadNotices": "{count} unread notification(s)",
+  "status.progressExtract": "Extracting tables…",
+  "status.progressOcrPlain": "Recognizing pages…",
+  "status.progressOcr": "Recognizing page {current}/{total}",
+  "status.actionRetry": "Retry",
+  "status.pagePrev": "Previous page",
+  "status.pageNext": "Next page",
+  "status.pagesHidden": "+{count} pages hidden",
+  "status.jumpPagePlaceholder": "Page #",
+  "status.jumpPageAria": "Jump to page",
+
+  "notice.failedPages":
+    "{count} page(s) failed during OCR and were replaced with a placeholder comment.",
+  "notice.skippedPages":
+    "{count} page(s) were skipped because no OCR provider is configured.",
+  "notice.ocrFallbackPages":
+    "{count} page(s) have no text layer and will be recognized via OCR.",
 
   "pdfmeta.text": "Text",
   "pdfmeta.textHint": "No OCR needed, converted locally",
@@ -256,6 +275,7 @@ const zh: Record<TranslationKey, string> = {
   "table.tablesAndRows": "{count} 张表格 · {rows} 行数据",
   "table.pages": "{count} 页",
 
+  "tooltip.copy": "复制",
   "tooltip.exportMarkdown": "导出 Markdown",
   "tooltip.retry": "重试",
   "tooltip.removeFromList": "从列表移除",
@@ -346,7 +366,7 @@ const zh: Record<TranslationKey, string> = {
   "settings.defaultModel": "使用此模型进行 OCR",
   "settings.addModel": "添加模型",
   "settings.maxConcurrent": "批量转换最大并发数",
-  "settings.threadPlaceholder": "请输入线程数(1~16)",
+  "settings.threadPlaceholder": "请输入线程数(e.g. 1)",
   "settings.save": "保存",
   "settings.unsavedChanges": "有未保存的更改",
   "settings.threadsHint2":
@@ -378,6 +398,21 @@ const zh: Record<TranslationKey, string> = {
   "status.failedPages": "转换失败的页: {pages}",
   "status.notices": "通知",
   "status.noticesEmpty": "无跳过或失败的页面",
+  "status.noticesClear": "清除",
+  "status.unreadNotices": "{count} 条未读通知",
+  "status.progressExtract": "正在提取表格…",
+  "status.progressOcrPlain": "正在识别页面…",
+  "status.progressOcr": "正在识别第 {current}/{total} 页",
+  "status.actionRetry": "重试",
+  "status.pagePrev": "上一页",
+  "status.pageNext": "下一页",
+  "status.pagesHidden": "中间还有 {count} 页",
+  "status.jumpPagePlaceholder": "页码",
+  "status.jumpPageAria": "跳转到页",
+
+  "notice.failedPages": "{count} 页 OCR 失败, 已用占位注释替代",
+  "notice.skippedPages": "{count} 页因未配置 OCR 服务而被跳过",
+  "notice.ocrFallbackPages": "{count} 页无文本层, 将通过 OCR 识别",
 
   "pdfmeta.text": "文本型",
   "pdfmeta.textHint": "无需 OCR, 本地直接转换",

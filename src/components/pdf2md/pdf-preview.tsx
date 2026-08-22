@@ -18,9 +18,14 @@ const DEFAULT_ASPECT = "0.7071";
 interface PdfPreviewProps {
   path: string;
   className?: string;
+  /**
+   * Request to scroll the preview to a page. The `seq` counter re-triggers
+   * the scroll even when the same page is requested twice in a row.
+   */
+  scrollToPage?: { page: number; seq: number } | null;
 }
 
-export function PdfPreview({ path, className }: PdfPreviewProps) {
+export function PdfPreview({ path, className, scrollToPage }: PdfPreviewProps) {
   const { t } = useI18n();
   const surfaceRef = useRef<HTMLDivElement>(null);
   const wrapperRefs = useRef(new Map<number, HTMLDivElement>());
@@ -185,6 +190,15 @@ export function PdfPreview({ path, className }: PdfPreviewProps) {
       }
     }
   }, [visible]);
+
+  // Jump to a requested page (status bar notice chips). The page renders on
+  // demand once the IntersectionObserver sees it after the scroll.
+  useEffect(() => {
+    if (!scrollToPage || status !== "ready") return;
+    const el = wrapperRefs.current.get(scrollToPage.page);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [scrollToPage, status]);
 
   return (
     <div

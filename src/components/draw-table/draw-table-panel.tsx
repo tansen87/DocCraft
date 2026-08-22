@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/i18n";
 import { extractDrawTable, getAppSettings } from "@/lib/ipc";
 import type {
+  ActivityProgress,
   DrawLine,
   DrawTableRequest,
   DrawTableResult,
@@ -59,6 +60,11 @@ interface DrawTablePanelProps {
   /** Called when tables are extracted and ready to merge into Markdown. The
    * second argument is the total backend extraction time in milliseconds. */
   onMergeToMarkdown?: (markdown: string, processingTimeMs?: number) => void;
+  /**
+   * Reports long-running phases (text extraction / OCR recognition) so the
+   * status bar can show a progress indicator. `null` means "finished".
+   */
+  onProgress?: (progress: ActivityProgress | null) => void;
   className?: string;
 }
 
@@ -137,6 +143,7 @@ export function DrawTablePanel({
   pageHeight,
   mayNeedOcr,
   onMergeToMarkdown,
+  onProgress,
   className,
 }: DrawTablePanelProps) {
   const { t } = useI18n();
@@ -385,6 +392,7 @@ export function DrawTablePanel({
       }
 
       if (targetPages.length <= OCR_BATCH_SIZE) {
+        onProgress?.({ phase: "ocr", total: targetPages.length });
         const images = await renderPageImages(targetPages);
         return extractDrawTable(pdfPath, { ...request, pageImages: images });
       }
@@ -392,12 +400,18 @@ export function DrawTablePanel({
       // Phase 1 over the whole range without images: text-layer pages are
       // extracted instantly from the backend cache; only pages that came up
       // empty go through rendering + OCR.
+      onProgress?.({ phase: "extract" });
       let result = await extractDrawTable(pdfPath, request);
       const ocrNeeded = result.emptyTextPages.filter((p) =>
         targetPages.includes(p),
       );
       for (let i = 0; i < ocrNeeded.length; i += OCR_BATCH_SIZE) {
         const batch = ocrNeeded.slice(i, i + OCR_BATCH_SIZE);
+        onProgress?.({
+          phase: "ocr",
+          current: Math.min(i + OCR_BATCH_SIZE, ocrNeeded.length),
+          total: ocrNeeded.length,
+        });
         const images = await renderPageImages(batch);
         const batchResult = await extractDrawTable(pdfPath, {
           ...request,
@@ -408,7 +422,7 @@ export function DrawTablePanel({
       }
       return result;
     },
-    [getDoc, renderPageImages, pdfPath],
+    [getDoc, renderPageImages, pdfPath, onProgress],
   );
 
   const handleExtract = useCallback(
@@ -473,6 +487,7 @@ export function DrawTablePanel({
         toast.error(t("toast.extractFailed"), { description: String(e) });
       } finally {
         setExtracting(null);
+        onProgress?.(null);
       }
     },
     [
@@ -482,6 +497,7 @@ export function DrawTablePanel({
       mayNeedOcr,
       onMergeToMarkdown,
       extractWithOcr,
+      onProgress,
       t,
     ],
   );

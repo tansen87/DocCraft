@@ -376,7 +376,7 @@ impl Default for AppSettings {
     Self {
       max_concurrent: 1,
       cache_extracted_text: true,
-      excel_tables_only: true,
+      excel_tables_only: false,
       ocr_mode: OcrMode::default(),
     }
   }
