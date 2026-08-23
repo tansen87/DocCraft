@@ -98,26 +98,49 @@ and Simplified Chinese — switchable at runtime.
   progress ("Recognizing image 3/10") in the status bar; failed images raise
   an error notice whose chips locate and highlight the row, plus a retry
   action. Results are previewed as one merged GFM document (`---`-separated)
-  and can be exported per-image or merged into a single `.md` file. See
-  [image-to-markdown.md](./image-to-markdown.md) for the design notes.
+  or individually — click a row or use the preview-header picker to focus any
+  single image's markdown (copy / export act on whatever is shown), and every
+  recognized image can be exported per-file or merged into a single `.md`.
+  Tables inside imported images can also be extracted by drawing vertical
+  column separators over them (local PaddleOCR block cutting or AI vision
+  with drawn-line hints). See [image-to-markdown.md](./image-to-markdown.md)
+  for the design notes.
+- **Screenshot recognition** — press the global hotkey (default `F8`,
+  re-recordable by pressing a key combination in Settings) and the monitor
+  under the cursor freezes into a full-screen region-selection overlay with a
+  cursor-following tool palette (magnifier, physical coordinates, color
+  picker). Drag a rectangle (or double-click for full screen) to OCR exactly
+  that region — Esc / right-click cancels. Overlay windows are created once
+  per monitor and reused (hidden between captures) so the hotkey-to-overlay
+  latency stays low; snapshots are JPEG-previews while cropping / OCR always
+  use the raw frame, and results land in the Image → Markdown list like any
+  imported file (retry / export included). Performance notes live in
+  [design/00001_snip-performance.md](./design/00001_snip-performance.md).
+- **System tray** — optional tray icon (on by default) with Open DocCraft /
+  Start Screenshot / Exit menu items; closing the window hides to tray
+  instead of quitting when enabled.
 - **Bilingual UI (i18n)** — English (default) and 中文 (Simplified Chinese)
   switched via a dropdown next to the theme toggle; the choice persists in
   `localStorage` and every string goes through a typed translation layer.
-- **Sidebar settings page** — left navigation switches between **OCR 服务 /
-  OCR Service** (vendors / models / keys + OCR mode selector), **并发线程 /
-  Concurrency** (batch conversion concurrency), **缓存 / Cache** (text
-  extraction caching toggle), and **Excel** (tables-only export toggle).
+- **Settings page** — sidebar navigation over seven scroll-synced sections
+  (OCR 服务 / 截图 / 文本分隔符 / 缓存 / Excel / 并发线程 / 系统托盘) styled as
+  grouped panels with hairline-separated setting rows ("Soft Rows" layout,
+  see [design/00002_settings-ui-redesign.md](./design/00002_settings-ui-redesign.md)):
+  vendor/model/key management, OCR mode selector, local-engine caching
+  toggle, press-to-record hotkey field, unsaved-changes floating save pill,
+  and responsive collapse for narrow windows.
 
 ## Tech Stack
 
 | Layer   | Choice |
 |---------|--------|
-| Desktop framework | Tauri 2.x (WebView + Rust core), asset protocol enabled for local file preview |
+| Desktop framework | Tauri 2.x (WebView + Rust core), asset protocol enabled for local file preview, `tray-icon` feature |
 | Frontend          | React 19 + TypeScript + Vite 8 |
 | UI kit            | shadcn/ui (Radix primitives, Tailwind CSS v4) |
 | Package manager   | pnpm 10 |
 | PDF engine        | `pdf-inspector` 1.14 (pure Rust, `lopdf`) |
-| Local OCR engine  | `ocr-rs` 2.4 (PaddleOCR, pure Rust) |
+| Local OCR engine  | `ocr-rs` 2.4 (PaddleOCR, pure Rust) — engine cached in-process (toggleable) |
+| Screen capture    | `xcap` 0.9 (monitor snapshots) + `tauri-plugin-global-shortcut` (hotkey) |
 | PDF preview / OCR images | `pdfjs-dist` 6.x (renders preview pages; also renders OCR pages to PNG for the backend) |
 | Markdown / Excel  | `react-markdown` + GFM on the frontend; `rust_xlsxwriter` on the backend for `.xlsx` export |
 | i18n              | custom lightweight React Context layer (no external dep), typed en/zh dictionaries |
@@ -150,6 +173,9 @@ doccraft/
 │  │  │  ├─ canvas-overlay.tsx   # Draw/edit vertical separator lines
 │  │  │  └─ pdf-preview-with-draw.tsx
 │  │  ├─ md2xlsx/table-preview.tsx # Lazy table preview of parsed .md (IO-windowed rows)
+│  │  ├─ snip/snip-overlay.tsx    # Per-monitor region-selection overlay (magnifier + color picker)
+│  │  ├─ image-table/             # Draw-a-table extraction on imported images
+│  │  │  └─ image-table-overlay.tsx
 │  │  ├─ layout/app-header.tsx   # Top bar (brand, tabs, language + theme toggles)
 │  │  ├─ language-toggle.tsx     # English / 中文 dropdown
 │  │  ├─ theme-toggle.tsx
@@ -161,16 +187,17 @@ doccraft/
 │  │  ├─ ipc.ts                  # Tauri invoke() wrappers
 │  │  ├─ types.ts                # Shared IPC DTO types
 │  │  ├─ concurrency.ts          # Shared max-concurrent cache (default 1)
+│  │  ├─ format-duration.ts      # Shared ms → human duration formatter
 │  │  ├─ pdf-meta.ts             # PDF-type → badge/icon mapping
 │  │  └─ utils.ts                # cn() helper
 │  ├─ views/
 │  │  ├─ pdf-to-md.tsx           # Batch queue + single-file PDF workspace
 │  │  ├─ image-to-md.tsx         # Image → Markdown (OCR) list + merged preview
 │  │  ├─ md-to-xlsx.tsx          # Markdown → Excel batch list + preview
-│  │  └─ settings.tsx            # Sidebar settings (OCR service / Concurrent threads / Cache / Excel)
+│  │  └─ settings.tsx            # Settings (7 sections, grouped-panel layout)
 │  ├─ App.tsx                    # App shell, tab switching (PDF/IMG → MD / MD → XLSX / settings)
 │  ├─ index.css                  # Tailwind v4 + design tokens
-│  └─ main.tsx                   # Entry, providers, imports index.css
+│  └─ main.tsx                   # Entry; routes `snip-*` windows to the overlay
 ├─ src-tauri/                    # Rust backend
 │  ├─ src/
 │  │  ├─ lib.rs                  # Tauri commands + run()
@@ -178,7 +205,8 @@ doccraft/
 │  │  ├─ models.rs               # Serialized DTOs (camelCase for the frontend)
 │  │  └─ core/
 │  │     ├─ convert.rs           # detect / convert / export wrappers
-│  │     ├─ ocr.rs               # Hybrid (text+OCR) conversion, OCR HTTP client, local PaddleOCR engine
+│  │     ├─ ocr.rs               # Hybrid conversion, OCR HTTP client, local PaddleOCR engine (+cache)
+│  │     ├─ snip.rs              # Screenshot capture / region OCR / hotkey registration
 │  │     ├─ settings.rs          # OCR config + app settings persistence
 │  │     ├─ secret.rs            # API key protection (DPAPI / obfuscation)
 │  │     ├─ line_draw.rs         # Manual "draw-a-table" vertical-line extraction
@@ -186,7 +214,7 @@ doccraft/
 │  │     ├─ grid_rebuild.rs      # Grid/region reconstruction from drawn lines
 │  │     ├─ page_marker.rs       # `<!-- Page N -->` marker parsing + page attribution
 │  │     └─ extract_cache.rs     # Per-document text extraction cache for draw-table
-│  ├─ capabilities/default.json  # Permissions (dialog:open / save)
+│  ├─ capabilities/              # Permissions (main window + snip-* overlays)
 │  ├─ tauri.conf.json            # assetProtocol enabled for PDF preview
 │  └─ Cargo.toml
 ├─ index.html
@@ -217,6 +245,15 @@ Commands (invoked from `src/lib/ipc.ts`):
 | `extract_draw_table` | `{ path, drawData }` — `drawData` may carry `totalPages`, `onlyPages` (batching) and `pageImages[]` (`{page, imagePng, renderScale}`) for the mode-selected OCR fallback (local PaddleOCR or remote AI vision) | `DrawTableResult` (`tableCount`, `tables[]`, `regions[]`, `totalRows`, `ocrPages`, `emptyTextPages`, `processingTimeMs`) |
 | `extract_draw_table_to_markdown` | `{ path, drawData, existingMarkdown? }` | `string` — merged markdown with extracted tables appended |
 | `ocr_image_to_md`    | `{ path }` — a PNG / JPEG file          | `OcrImageResult` (`markdown`, `engine`: `"local" \| "ai"`, `durationMs`) |
+| `screenshot_begin`   | — (hides nothing; freezes the monitor under the cursor) | `MonitorSnapshot[]` (`dataUrl` JPEG preview + geometry; raw frame cached server-side) |
+| `screenshot_ocr`     | `{ region }` — `ShotRegion` in physical px | `OcrImageResult` (+`pngBase64` thumbnail, `savedPath`); consumes the cached snapshot |
+| `screenshot_cancel`  | —                                       | `void` (drops cached snapshots) |
+| `get_window_under_cursor` | —                                  | `WindowInfo` (`title`, `className`, rect) |
+| `ocr_image_table`    | `{ imagePath, verticalLines[] }` — percentages | `ImageTableResult` (GFM table cut at the drawn lines) |
+
+Hotkey path: the global shortcut emits `snip:ready` (snapshots) directly to
+the frontend, avoiding an IPC round-trip; overlays report back via
+`snip:selected` / `snip:cancelled` events.
 
 Result fields are serialized in camelCase; `PdfTypeDto` mirrors `pdf-inspector`'s
 `PdfType` enum (`TextBased` / `Scanned` / `ImageBased` / `Mixed`).
@@ -317,11 +354,23 @@ cargo check --manifest-path src-tauri/Cargo.toml
   Excel table preview both render lazily (page / table sections + windowed
   rows via IntersectionObserver, real-height placeholders), so big files no
   longer freeze the UI. **Settings page** restructured into a scrollable
-  waterfall layout with four sections (OCR, Threads, Cache, Excel).
+  waterfall layout with seven sections (OCR, Screenshot, Text Separator,
+  Cache, Excel, Threads, Tray) in a grouped-panel design
+  (design/00002_settings-ui-redesign.md).
   **Image → Markdown** workspace tab: PNG / JPEG images recognized via the
   selected OCR mode with a concurrency-bounded worker pool, merged or
   per-image export, and status-bar notices for failures.
   (Config import/export and release packaging MSI/NSIS still planned.)
+- **M5 (done)** — **Screenshot recognition**: global hotkey → frozen
+  full-screen overlay with magnifier / coordinates / color picker → drag a
+  region → OCR result lands in the Image → Markdown workspace. Overlay
+  windows are reused across captures, snapshots use JPEG previews with raw
+  frames for exact crops, the local OCR engine stays resident (toggleable),
+  and remote AI calls share one HTTP connection pool — see
+  [design/00001_snip-performance.md](./design/00001_snip-performance.md).
+- **Design docs** — numbered proposals live under
+  [docs/design/](./design/) (`00001_snip-performance.md`,
+  `00002_settings-ui-redesign.md`).
 
 ## Configuration
 
@@ -336,7 +385,7 @@ cargo check --manifest-path src-tauri/Cargo.toml
   memory (the cache is evicted when another file is opened) —
   `excelTablesOnly` (default `false`) — when on, only GFM tables are exported
   to Excel; when off, the whole document content is written into the workbook
-  — and `ocrMode` (default `disabled`), a unified OCR mode with five options:
+  — `ocrMode` (default `disabled`), a unified OCR mode with five options:
   `forceLocal` (always local PaddleOCR), `forceAi` (always remote AI vision),
   `nonTextLocal` (local OCR only for pages without extracted text),
   `nonTextAi` (remote OCR only for pages without extracted text), and
@@ -348,6 +397,12 @@ cargo check --manifest-path src-tauri/Cargo.toml
   `nonTextLocal`) enable its on-device PaddleOCR fallback for scanned pages,
   AI modes (`forceAi` / `nonTextAi`) enable the remote vision fallback with
   drawn-line hints, and `disabled` keeps it text-layer-only.
+  Further keys: `screenshotHotkey` (global hotkey accelerator, default `F8`,
+  empty disables), `cacheOcrEngine` (default `true` — keep the ~66 MB local
+  PaddleOCR engine resident instead of reloading per recognition, saving
+  ~0.5–2s each run at the cost of RAM), `textSeparator` (joins same-line OCR
+  blocks: `" "` / `","` / `"|"` / tab / `"^"`), and `enableTray` (default
+  `true`, system tray icon with close-to-tray behaviour).
 
 Both live in the Tauri `app_config_dir` directory. No third-party store plugin
 is required. For privacy, only pages that need OCR (detected or empty
