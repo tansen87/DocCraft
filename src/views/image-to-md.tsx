@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
-import { listen } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { join } from "@tauri-apps/api/path";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -314,11 +314,13 @@ export function ImageToMdView() {
         let unlistenCancelled: (() => void) | null = null;
         let settled = false;
 
-        const closeOverlays = async () => {
+        // Overlay windows are reused across snips (hidden, not destroyed) so
+        // the WebView cold start is paid only once per monitor.
+        const hideOverlays = async () => {
           await Promise.allSettled(
             monitors.map(async (m) => {
               const win = await WebviewWindow.getByLabel(`snip-${m.id}`);
-              await win?.close();
+              await win?.hide();
             }),
           );
         };
@@ -335,7 +337,7 @@ export function ImageToMdView() {
           unlistenSelected = null;
           unlistenCancelled = null;
           cleanupStorage();
-          await closeOverlays();
+          await hideOverlays();
           if (restoreApp) {
             try {
               await cancelScreenshot();
@@ -363,7 +365,7 @@ export function ImageToMdView() {
             localStorage.removeItem(`doccraft-snip-${m.id}`),
           );
 
-        // Stash snapshots for the overlay windows before creating them.
+        // Stash snapshots for the overlay windows before showing them.
         for (const m of monitors) {
           localStorage.setItem(`doccraft-snip-${m.id}`, JSON.stringify(m));
         }
@@ -377,33 +379,45 @@ export function ImageToMdView() {
         ]);
 
         for (const m of monitors) {
-          const win = new WebviewWindow(`snip-${m.id}`, {
-            x: m.x,
-            y: m.y,
-            width: m.width,
-            height: m.height,
-            url: "index.html",
-            decorations: false,
-            transparent: true,
-            alwaysOnTop: true,
-            skipTaskbar: true,
-            resizable: false,
-            maximizable: false,
-            minimizable: false,
-            shadow: false,
-          });
-          // Constructor options are logical units — enforce exact physical
-          // placement so the overlay covers its monitor pixel-for-pixel.
-          void win.once("tauri://created", async () => {
-            await win.setPosition(new PhysicalPosition(m.x, m.y));
-            await win.setSize(new PhysicalSize(m.width, m.height));
-          });
-          void win.once("tauri://error", (e) => {
-            toast.error(t("snip.beginFailed"), {
-              description: String(e.payload),
+          const label = `snip-${m.id}`;
+          const existing = await WebviewWindow.getByLabel(label);
+          if (existing) {
+            // Reuse path: refresh content while hidden; the overlay reveals
+            // itself once the new snapshot image has finished loading.
+            await existing.setPosition(new PhysicalPosition(m.x, m.y));
+            await existing.setSize(new PhysicalSize(m.width, m.height));
+            await emitTo(label, "snip:meta", m);
+          } else {
+            const win = new WebviewWindow(label, {
+              x: m.x,
+              y: m.y,
+              width: m.width,
+              height: m.height,
+              url: "index.html",
+              decorations: false,
+              transparent: true,
+              alwaysOnTop: true,
+              skipTaskbar: true,
+              resizable: false,
+              maximizable: false,
+              minimizable: false,
+              shadow: false,
+              visible: false,
             });
-            void onCancelled();
-          });
+            // Constructor options are logical units — enforce exact physical
+            // placement so the overlay covers its monitor pixel-for-pixel.
+            void win.once("tauri://created", async () => {
+              await win.setPosition(new PhysicalPosition(m.x, m.y));
+              await win.setSize(new PhysicalSize(m.width, m.height));
+              await emitTo(label, "snip:meta", m).catch(() => {});
+            });
+            void win.once("tauri://error", (e) => {
+              toast.error(t("snip.beginFailed"), {
+                description: String(e.payload),
+              });
+              void onCancelled();
+            });
+          }
         }
       } catch (e) {
         // Any synchronous error during set-up — restore the main window.

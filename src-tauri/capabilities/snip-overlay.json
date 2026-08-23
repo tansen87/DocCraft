@@ -3,5 +3,12 @@
   "identifier": "snip-overlay",
   "description": "Capability for per-monitor region-selection overlay windows (snip-*)",
   "windows": ["snip-*"],
-  "permissions": ["core:default", "core:window:allow-close"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-always-on-top"
+  ]
 }

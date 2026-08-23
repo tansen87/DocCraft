@@ -83,8 +83,8 @@ fn cursor_pos() -> (i32, i32) {
   (0, 0)
 }
 
-/// Encode raw RGBA data as a PNG with zero (or near-zero) compression.
-/// This is the same technique used by `screenshots::Image::to_png(Fast)`.
+/// Encode raw RGBA data as a PNG with fast (low-level) compression. Used for
+/// the persisted selection crop — the OCR engine reads it back from disk.
 fn encode_fast_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
   let mut buf = Vec::new();
   let mut encoder = Encoder::new(&mut buf, width, height);
@@ -103,12 +103,17 @@ fn encode_fast_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, Stri
   Ok(buf)
 }
 
-/// Encode an RGBA frame as PNG bytes (fallback, used for OCR crop).
-fn encode_png(frame: &RgbaImage) -> Result<Vec<u8>, String> {
+/// Encode a full-monitor frame as a JPEG preview for the overlay background.
+/// Much faster and smaller than PNG; fidelity is irrelevant because region
+/// cropping always uses the raw RGBA frame kept in [`SnipStore`]. Screen
+/// captures are opaque, so dropping alpha is lossless here.
+fn encode_preview_jpeg(frame: &RgbaImage) -> Result<Vec<u8>, String> {
+  let rgb = image::DynamicImage::ImageRgba8(frame.clone()).to_rgb8();
   let mut buf = Cursor::new(Vec::new());
-  frame
-    .write_to(&mut buf, image::ImageFormat::Png)
-    .map_err(|e| format!("Failed to encode PNG: {e}"))?;
+  let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 85);
+  rgb
+    .write_with_encoder(encoder)
+    .map_err(|e| format!("JPEG encode failed: {e}"))?;
   Ok(buf.into_inner())
 }
 
@@ -183,8 +188,9 @@ fn capture_under_cursor() -> Result<(MonitorSnapshot, (u32, RgbaImage)), String>
 
   let width = frame.width();
   let height = frame.height();
-  let png = encode_fast_png(frame.as_raw(), width, height)?;
-  let data_url = format!("data:image/png;base64,{}", base64_encode(&png));
+  // JPEG preview only — cropping/OCR always uses the raw frame in SnipStore.
+  let preview = encode_preview_jpeg(&frame)?;
+  let data_url = format!("data:image/jpeg;base64,{}", base64_encode(&preview));
 
   Ok((
     MonitorSnapshot {
@@ -278,7 +284,7 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
         return Err("Selection area is too small".to_string());
       };
       let cropped = crop_imm(&frame, x, y, w, h).to_image();
-      let png = encode_png(&cropped)?;
+      let png = encode_fast_png(cropped.as_raw(), w, h)?;
       let b64 = base64_encode(&png);
 
       let stamp = SystemTime::now()

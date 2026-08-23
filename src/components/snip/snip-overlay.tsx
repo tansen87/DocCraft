@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 import { useI18n } from "@/i18n";
@@ -40,14 +40,51 @@ export function SnipOverlay() {
 
   /** Cursor position in CSS pixels relative to this monitor. */
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
-  const [color, setColor] = useState<{ r: number; g: number; b: number; a: number } | null>(null);
+  const [color, setColor] = useState<{
+    r: number;
+    g: number;
+    b: number;
+    a: number;
+  } | null>(null);
 
   const imgRef = useRef<HTMLImageElement>(null);
   const fullCanvasRef = useRef<HTMLCanvasElement>(null);
   const magCanvasRef = useRef<HTMLCanvasElement>(null);
 
+  /**
+   * Overlay windows are reused across snips (hidden, not closed). The main
+   * window pushes a fresh snapshot via `snip:meta` before revealing us.
+   */
+  useEffect(() => {
+    const unlisten = listen<{
+      dataUrl: string;
+      width: number;
+      height: number;
+      scaleFactor: number;
+      x: number;
+      y: number;
+    }>("snip:meta", (e) => {
+      dragStart.current = null;
+      setRect(null);
+      setCursor(null);
+      setColor(null);
+      setMeta(e.payload);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  /** Reveal the window once the snapshot is actually painted. */
+  const reveal = useCallback(() => {
+    const win = getCurrentWebviewWindow();
+    void win.show();
+    void win.setFocus();
+    void win.setAlwaysOnTop(true);
+  }, []);
+
   const close = useCallback(() => {
-    void getCurrentWebviewWindow().close();
+    void getCurrentWebviewWindow().hide();
   }, []);
 
   const cancel = useCallback(() => {
@@ -82,7 +119,9 @@ export function SnipOverlay() {
     canvas.height = metaNow.height;
     const ctx = canvas.getContext("2d");
     ctx?.drawImage(img, 0, 0);
-  }, [meta]);
+    // Snapshot is painted — reveal the (hidden or brand-new) overlay window.
+    reveal();
+  }, [meta, reveal]);
 
   const updateMagnifierAndColor = useCallback(
     (cssX: number, cssY: number) => {
@@ -245,6 +284,17 @@ export function SnipOverlay() {
         ref={fullCanvasRef}
         className="pointer-events-none absolute left-0 top-0 opacity-0"
       />
+      {/* Dim the frozen screen while no region is picked yet, so users can
+          clearly tell capture mode is active (the selection's own spread
+          shadow takes over once dragging starts). */}
+      {!rect ? (
+        <div className="pointer-events-none absolute inset-0 bg-black/30" />
+      ) : null}
+      {/* Bright frame around the whole monitor marking the capture bounds. */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{ boxShadow: "inset 0 0 0 2px rgba(52, 211, 153, 0.9)" }}
+      />
       {rect ? (
         <div
           className="absolute border border-emerald-400 bg-transparent"
@@ -280,7 +330,9 @@ export function SnipOverlay() {
           <div className="flex justify-between">
             <span className="text-white/60">{t("snip.coordinates")}</span>
             <span>
-              {physicalCursor ? `${physicalCursor.x}, ${physicalCursor.y}` : "-"}
+              {physicalCursor
+                ? `${physicalCursor.x}, ${physicalCursor.y}`
+                : "-"}
             </span>
           </div>
           <div className="flex items-center justify-between">
@@ -300,7 +352,7 @@ export function SnipOverlay() {
         </div>
       </div>
 
-      <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/75 px-4 py-1.5 text-sm text-white">
+      <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-full bg-black/75 px-4 py-1.5 text-sm text-white">
         {t("snip.hint")}
       </div>
     </div>
