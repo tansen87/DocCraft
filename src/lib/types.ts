@@ -97,6 +97,11 @@ export interface AppSettings {
   screenshotHotkey?: string | null;
   /** Whether to show the system tray icon. */
   enableTray: boolean;
+  /**
+   * Keep the local PaddleOCR engine resident between recognitions (skips
+   * ~0.5–2s of model loading per local OCR run; ~100–200 MB of RAM).
+   */
+  cacheOcrEngine: boolean;
   /** Separator between text blocks within a single OCR line. */
   textSeparator: string;
 }

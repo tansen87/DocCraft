@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use ocr_rs::OcrEngine;
@@ -185,6 +185,49 @@ pub fn create_local_ocr_engine(app: &AppHandle) -> Result<LocalOcrEngine, String
   )
 }
 
+/// Managed cache of the shared local PaddleOCR engine. Loading the ~66 MB of
+/// MNN models takes ~0.5–2 s, so when `cache_ocr_engine` is enabled (default)
+/// the engine is created once and kept resident for the whole process.
+///
+/// The inner `Mutex` serializes concurrent recognitions — inference is
+/// CPU-bound, so sharing one engine beats spawning several competing copies.
+pub struct OcrEngineCache(pub Mutex<Option<Arc<Mutex<LocalOcrEngine>>>>);
+
+impl Default for OcrEngineCache {
+  fn default() -> Self {
+    Self(Mutex::new(None))
+  }
+}
+
+impl OcrEngineCache {
+  /// Drop the cached engine (called when the setting is switched off).
+  pub fn clear(&self) {
+    *self.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
+  }
+}
+
+/// Acquire the local PaddleOCR engine for one blocking recognition.
+///
+/// - Cache enabled: returns the resident engine, creating it on first use.
+/// - Cache disabled: builds a fresh engine that is dropped after the call.
+///
+/// Lock the returned `Mutex` around each recognition.
+pub fn acquire_local_ocr_engine(
+  app: &AppHandle,
+  cache: &OcrEngineCache,
+) -> Result<Arc<Mutex<LocalOcrEngine>>, String> {
+  if !settings::get_app_settings(app)?.cache_ocr_engine {
+    return Ok(Arc::new(Mutex::new(create_local_ocr_engine(app)?)));
+  }
+  let mut guard = cache.0.lock().unwrap_or_else(|e| e.into_inner());
+  if let Some(engine) = guard.as_ref() {
+    return Ok(engine.clone());
+  }
+  let engine = Arc::new(Mutex::new(create_local_ocr_engine(app)?));
+  *guard = Some(engine.clone());
+  Ok(engine)
+}
+
 /// Some vision models wrap their markdown answer in a fenced code block even
 /// when asked not to. Strip one outer ``` fence so the OCR result is rendered
 /// as markdown instead of being embedded inside a code block.
@@ -249,6 +292,26 @@ pub struct RemoteOcrProvider {
 /// user-drawn separator positions and answer with a bare GFM table.
 const DRAW_TABLE_PROMPT: &str = "你是一个专业的表格识别引擎.这张PDF页面图片中的表格带有用户标注的列分隔线.请严格按照下方给出的分隔线位置把页面内容切分成列,识别表格的所有行(第一行为表头),输出为规范的GFM(GitHub Flavored Markdown)表格.只输出Markdown表格本身,不要输出任何解释、前言或代码块围栏.";
 
+/// Shared HTTP client for every remote OCR call. `reqwest::Client` is an
+/// cheaply-cloneable handle whose clones share one connection pool, so
+/// repeated recognitions reuse live connections / TLS sessions instead of
+/// re-handshaking on each image.
+fn shared_http_client() -> Result<Client, String> {
+  static CLIENT: OnceLock<Result<Client, String>> = OnceLock::new();
+  if let Some(existing) = CLIENT.get() {
+    return existing.clone();
+  }
+  let built = Client::builder()
+    .timeout(Duration::from_secs(300))
+    .connect_timeout(Duration::from_secs(30))
+    .build()
+    .map_err(|e| format!("HTTP client initialization failed: {e}"));
+  // Racing callers may both build; the first write wins and both results are
+  // equivalent, so this is safe.
+  let _ = CLIENT.set(built.clone());
+  built
+}
+
 /// Resolve the remote vision provider used by the draw-table OCR fallback,
 /// with the same vendor / default-model preference as hybrid conversion
 /// sessions. Returns `None` when no usable vendor is configured.
@@ -259,11 +322,7 @@ pub fn resolve_remote_provider(app: &AppHandle) -> Result<Option<RemoteOcrProvid
   };
   let api_key = settings::api_key_for(app, &vendor.id)?
     .ok_or_else(|| format!("The API Key of supplier '{}' is empty", vendor.name))?;
-  let client = Client::builder()
-    .timeout(Duration::from_secs(300))
-    .connect_timeout(Duration::from_secs(30))
-    .build()
-    .map_err(|e| format!("HTTP client initialization failed: {e}"))?;
+  let client = shared_http_client()?;
   Ok(Some(RemoteOcrProvider {
     client,
     base_url: vendor.base_url.clone(),
@@ -533,11 +592,7 @@ pub fn start_session(
     (None, ocr_set.clone(), NO_PROVIDER_REASON)
   };
 
-  let client = Client::builder()
-    .timeout(Duration::from_secs(300))
-    .connect_timeout(Duration::from_secs(30))
-    .build()
-    .map_err(|e| format!("HTTP client initialization failed: {e}"))?;
+  let client = shared_http_client()?;
 
   let info = DetectResult {
     pdf_type: PdfTypeDto::from(det.pdf_type),
@@ -660,18 +715,23 @@ pub async fn ocr_page_in_session(
 
 /// Run one page through the local OCR engine.
 fn local_ocr_page(app: &AppHandle, page: u32, image_png: &str) -> Result<String, String> {
+  use tauri::Manager;
   // Decode the PNG image from base64
   let image_data = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, image_png)
     .map_err(|e| format!("Failed to decode base64 image: {e}"))?;
 
-  // Create the local OCR engine
-  let engine = create_local_ocr_engine(app)?;
+  // Shared/resident local OCR engine (per the cache_ocr_engine setting).
+  let cache = app.state::<OcrEngineCache>();
+  let engine = acquire_local_ocr_engine(app, &cache)?;
 
   // Use the configured text separator.
   let sep = settings::get_app_settings(app)?.text_separator;
 
   // Run OCR
-  let text = engine.recognize_from_png(&image_data, &sep)?;
+  let text = {
+    let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
+    eng.recognize_from_png(&image_data, &sep)?
+  };
 
   if text.trim().is_empty() {
     return Err(format!("Local OCR returned no content (page {page})"));
@@ -756,14 +816,21 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
   let markdown = if mode.is_local() {
     // Local PaddleOCR is CPU-bound model inference — run it off the async
     // runtime so concurrent conversions never block each other's futures.
+    use tauri::Manager;
     let sep = settings::get_app_settings(app)?.text_separator;
     let app = app.clone();
     let path = path.to_string();
+    // Shared/resident engine (per the cache_ocr_engine setting); the inner
+    // lock serializes concurrent recognitions on the same engine.
+    let cache = app.state::<OcrEngineCache>();
+    let engine = acquire_local_ocr_engine(&app, &cache)?;
     tauri::async_runtime::spawn_blocking(move || {
       let image_data =
         std::fs::read(&path).map_err(|e| format!("Failed to read image file: {e}"))?;
-      let engine = create_local_ocr_engine(&app)?;
-      let text = engine.recognize_bytes(&image_data, &sep)?;
+      let text = {
+        let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
+        eng.recognize_bytes(&image_data, &sep)?
+      };
       if text.trim().is_empty() {
         return Err("Local OCR returned no content".to_string());
       }

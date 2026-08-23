@@ -152,6 +152,7 @@ export function SettingsView() {
   const [cacheExtracted, setCacheExtracted] = useState(true);
   const [excelTablesOnly, setExcelTablesOnly] = useState(true);
   const [screenshotHotkey, setScreenshotHotkey] = useState("");
+  const [cacheOcrEngine, setCacheOcrEngine] = useState(true);
   const [textSeparator, setTextSeparator] = useState("|");
   const [enableTray, setEnableTray] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -171,6 +172,7 @@ export function SettingsView() {
         setCacheExtracted(settings.cacheExtractedText);
         setExcelTablesOnly(settings.excelTablesOnly);
         setScreenshotHotkey(settings.screenshotHotkey ?? "");
+        setCacheOcrEngine(settings.cacheOcrEngine ?? true);
         setTextSeparator(settings.textSeparator);
         setEnableTray(settings.enableTray);
         setLoaded(true);
@@ -217,6 +219,7 @@ export function SettingsView() {
       ocrMode,
       screenshotHotkey: screenshotHotkey.trim() || null,
       enableTray,
+      cacheOcrEngine,
       textSeparator,
     };
     try {
@@ -387,6 +390,11 @@ export function SettingsView() {
                     markDirty();
                   }}
                   loading={loading}
+                  cacheOcrEngine={cacheOcrEngine}
+                  onCacheOcrEngineChange={(v) => {
+                    setCacheOcrEngine(v);
+                    markDirty();
+                  }}
                 />
               </section>
               <section id="settings-threads" className="scroll-mt-3">
@@ -508,12 +516,16 @@ function OcrSettingsPanel({
   ocrMode,
   onOcrModeChange,
   loading,
+  cacheOcrEngine,
+  onCacheOcrEngineChange,
 }: {
   vendors: VendorForm[];
   onChange: (updater: SetStateAction<VendorForm[]>) => void;
   ocrMode: OcrMode;
   onOcrModeChange: (v: OcrMode) => void;
   loading: boolean;
+  cacheOcrEngine: boolean;
+  onCacheOcrEngineChange: (v: boolean) => void;
 }) {
   const { t } = useI18n();
 
@@ -677,6 +689,22 @@ function OcrSettingsPanel({
           <p className="text-xs text-muted-foreground">
             {t(`settings.ocrMode.${ocrMode}Desc`)}
           </p>
+        </div>
+      </Card>
+
+      <Card className="gap-3 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1 space-y-1">
+            <Label>{t("settings.cacheOcrEngine")}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t("settings.cacheOcrEngineDesc")}
+            </p>
+          </div>
+          <Switch
+            checked={cacheOcrEngine}
+            onCheckedChange={onCacheOcrEngineChange}
+            disabled={loading}
+          />
         </div>
       </Card>
 

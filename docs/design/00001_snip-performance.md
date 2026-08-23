@@ -58,24 +58,34 @@
 **阶段 A 预期收益**:第二次起的截图,按键 → 可框选 从 ~1–2s 降至 ~150–350ms
 (捕获 + JPEG 编码 + show 已存窗口)。
 
-## 阶段 B:识别提速 ⬜(待实施)
+## 阶段 B:识别提速 ✅
 
-### B-1 本地 OCR 引擎缓存(可选设置开关)
+### B-1 本地 OCR 引擎缓存(可选设置开关)✅
 
-- **现状**:`create_local_ocr_engine()` 每次调用都重新加载并初始化 MNN 引擎,
+- **原状**:`create_local_ocr_engine()` 每次调用都重新加载并初始化 MNN 引擎,
   影响所有本地 OCR 路径(screenshot / image-to-md / hybrid 页面 / draw-table)。
-- **方案**:
-  - managed state 增加 `Mutex<Option<Arc<LocalOcrEngine>>>`,进程内首次使用后常驻;
-  - 设置页新增开关「缓存本地 OCR 引擎」(默认开):开启后引擎常驻,
-    关闭则每次识别后丢弃释放内存;
+- **实现**:
+  - managed state `OcrEngineCache(Mutex<Option<Arc<Mutex<LocalOcrEngine>>>>)`
+    (`core/ocr.rs`),进程内首次使用后常驻;新增 `acquire_local_ocr_engine()`
+    统一获取入口——设置开启时返回常驻引擎,关闭时每次新建、用后即弃;
+  - 设置页 OCR 区新增开关「缓存本地 OCR 引擎」(默认开);
+    关闭并保存后立即释放内存(`set_app_settings` 中调 `OcrEngineCache::clear`);
   - 内存代价:常驻约 100–200 MB(权重 ~66MB + MNN 会话工作区/中间张量),
     推理瞬间随图片尺寸有峰值;
-  - 不缓存的代价:每次本地识别多等 ~0.5–2s(仅影响结果返回时间,不影响遮罩弹出)。
+  - 不缓存的代价:每次本地识别多等 ~0.5–2s(仅影响结果返回时间,不影响遮罩弹出);
+  - 注意:共享引擎的内部锁会把并发的本地识别串行化(CPU 密集型推理,
+    单引擎串行通常优于多个引擎争抢核心);`ocr_rs::OcrEngine` 未声明 Send/Sync,
+    故以 `Mutex` 包裹保证跨线程安全。
 
 ### 其他候选
 
-- B-2 AI 模式:`reqwest` Client 复用(连接池)减少 TLS 握手。
-- B-3 结果缩略图(pngBase64)降采样,减小 IPC 回传体积。
+- B-2 AI 模式:共享 `reqwest::Client`(连接池复用,减少 TLS 握手)。✅
+  `core/ocr.rs` 新增 `shared_http_client()`(OnceLock 进程级单例),
+  hybrid 会话与 `resolve_remote_provider` 共用同一连接池。
+- B-3 结果缩略图(pngBase64)降采样。✅
+  `snip.rs screenshot_ocr` 的 IPC 回传缩略图长边压到 ≤480px
+  (`thumbnail_rgba`,Triangle 滤镜);落盘 PNG 与 OCR 输入仍为全分辨率,
+  重试/导出不受影响。
 
 ## 验证方式
 

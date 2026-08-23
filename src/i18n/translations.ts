@@ -134,6 +134,9 @@ const en = {
   "settings.ocr": "OCR Service",
   "settings.threads": "Concurrency",
   "settings.ocrEnabled": "OCR Mode",
+  "settings.cacheOcrEngine": "Cache OCR engine",
+  "settings.cacheOcrEngineDesc":
+    "Keep PaddleOCR resident to skip 0.5-2s load per run; uses ~100-200 MB RAM, freed on disable",
   "settings.ocrMode.forceLocal": "Force OCR (Local)",
   "settings.ocrMode.forceLocalDesc":
     "OCR every page using local PaddleOCR engine",
@@ -396,6 +399,9 @@ const zh: Record<TranslationKey, string> = {
   "settings.ocr": "OCR 服务",
   "settings.threads": "并发线程",
   "settings.ocrEnabled": "OCR 模式",
+  "settings.cacheOcrEngine": "缓存本地 OCR 引擎",
+  "settings.cacheOcrEngineDesc":
+    "PaddleOCR 引擎常驻内存,省去每次 0.5-2s 加载耗时,占用约 100-200 MB RAM,关闭后自动释放",
   "settings.ocrMode.forceLocal": "强制OCR(本地)",
   "settings.ocrMode.forceLocalDesc":
     "对所有页面使用本地 PaddleOCR 引擎进行 OCR",

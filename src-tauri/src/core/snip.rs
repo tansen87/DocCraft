@@ -121,6 +121,23 @@ fn base64_encode(data: &[u8]) -> String {
   base64::Engine::encode(&base64::engine::general_purpose::STANDARD, data)
 }
 
+/// Cap the longer side of a screenshot thumbnail at this many pixels.
+const SNIP_THUMB_MAX_PX: u32 = 480;
+
+/// Downscale an image so its longer side is at most [`SNIP_THUMB_MAX_PX`]
+/// (never upscales). Used to keep the IPC result payload small.
+fn thumbnail_rgba(img: &RgbaImage) -> RgbaImage {
+  use image::imageops::FilterType;
+  let long = img.width().max(img.height());
+  if long <= SNIP_THUMB_MAX_PX {
+    return img.clone();
+  }
+  let scale = f64::from(SNIP_THUMB_MAX_PX) / f64::from(long);
+  let nw = ((f64::from(img.width()) * scale).round() as u32).max(1);
+  let nh = ((f64::from(img.height()) * scale).round() as u32).max(1);
+  image::imageops::resize(img, nw, nh, FilterType::Triangle)
+}
+
 /// Normalize a raw selection against the monitor frame. Returns the clamped
 /// `(x, y, width, height)` in physical pixels, or `None` when the selection is
 /// empty / degenerate (< 4 px on a side — treated as an accidental click).
@@ -285,7 +302,6 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
       };
       let cropped = crop_imm(&frame, x, y, w, h).to_image();
       let png = encode_fast_png(cropped.as_raw(), w, h)?;
-      let b64 = base64_encode(&png);
 
       let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -293,6 +309,15 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
         .unwrap_or_default();
       let path = dir.join(format!("shot-{stamp}.png"));
       std::fs::write(&path, &png).map_err(|e| format!("Failed to save screenshot: {e}"))?;
+
+      // The IPC payload only needs a list thumbnail — downsample to keep the
+      // event small. Retry/export always re-read the full-resolution file.
+      let thumb = thumbnail_rgba(&cropped);
+      let b64 = base64_encode(&encode_fast_png(
+        thumb.as_raw(),
+        thumb.width(),
+        thumb.height(),
+      )?);
       Ok((b64, path.to_string_lossy().into_owned()))
     })
     .await
@@ -302,12 +327,18 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
     let app = app.clone();
     let saved_for_read = saved_path.clone();
     let sep = settings::get_app_settings(&app)?.text_separator;
+    // Shared/resident engine (per the cache_ocr_engine setting) — skips the
+    // ~0.5–2 s model load on every shot when caching is enabled.
+    let cache = { app.state::<crate::core::ocr::OcrEngineCache>() };
+    let engine = crate::core::ocr::acquire_local_ocr_engine(&app, &cache)?;
     tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
-      let engine = crate::core::ocr::create_local_ocr_engine(&app)?;
       // Re-read the persisted copy instead of keeping both copies alive.
       let png =
         std::fs::read(&saved_for_read).map_err(|e| format!("Failed to read screenshot: {e}"))?;
-      let text = engine.recognize_bytes(&png, &sep)?;
+      let text = {
+        let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
+        eng.recognize_bytes(&png, &sep)?
+      };
       if text.trim().is_empty() {
         return Err("Local OCR returned no content".to_string());
       }
@@ -421,11 +452,16 @@ pub async fn ocr_image_table(
         .map(|p| *p * img_width / 100.0)
         .collect();
       let sep = settings::get_app_settings(&app)?.text_separator;
+      // Shared/resident engine (per the cache_ocr_engine setting).
+      let cache = app.state::<crate::core::ocr::OcrEngineCache>();
+      let engine = crate::core::ocr::acquire_local_ocr_engine(&app, &cache)?;
       move || -> Result<String, String> {
         let image_data =
           std::fs::read(&path).map_err(|e| format!("Failed to read image file: {e}"))?;
-        let engine = crate::core::ocr::create_local_ocr_engine(&app)?;
-        let recognition = engine.recognize_png_blocks(&image_data)?;
+        let recognition = {
+          let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
+          eng.recognize_png_blocks(&image_data)?
+        };
         Ok(extract_table_from_ocr_blocks(
           &recognition,
           &vertical_px,

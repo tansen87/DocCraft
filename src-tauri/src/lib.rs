@@ -224,6 +224,10 @@ async fn set_app_settings(app: tauri::AppHandle, settings: AppSettings) -> Resul
   if settings_now.enable_tray != tray_enabled_before {
     update_tray(&app, settings_now.enable_tray);
   }
+  // Engine cache turned off → release the resident model memory right away.
+  if !settings_now.cache_ocr_engine {
+    app.state::<core::ocr::OcrEngineCache>().clear();
+  }
   Ok(())
 }
 
@@ -385,6 +389,7 @@ pub fn run() {
     .manage(HybridStore::default())
     .manage(SnipStore::default())
     .manage(crate::core::snip::SnipHotkey::default())
+    .manage(core::ocr::OcrEngineCache::default())
     .manage(TrayState::default())
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())

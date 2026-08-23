@@ -333,6 +333,11 @@ pub struct AppSettings {
   /// Whether to show the system tray icon.
   #[serde(default = "default_true")]
   pub enable_tray: bool,
+  /// Keep the local PaddleOCR engine resident between recognitions instead of
+  /// reloading its ~66 MB of models on every call (~0.5–2 s saved per local
+  /// OCR run). Costs roughly 100–200 MB of resident RAM while enabled.
+  #[serde(default = "default_true")]
+  pub cache_ocr_engine: bool,
   /// Separator between text blocks within a single OCR line.
   /// Supported values: `" "` (space), `","` (comma), `"|"` (pipe),
   /// `"\t"` (tab), `"^"` (caret).
@@ -484,6 +489,7 @@ impl Default for AppSettings {
       ocr_mode: OcrMode::default(),
       screenshot_hotkey: default_screenshot_hotkey(),
       enable_tray: true,
+      cache_ocr_engine: true,
       text_separator: default_text_separator(),
     }
   }
