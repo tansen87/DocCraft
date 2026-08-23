@@ -2,6 +2,7 @@ import { Loader2 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
+import { HeaderActions } from "@/components/header-actions";
 import { useI18n } from "@/i18n";
 import { useGlobalTasks } from "@/lib/global-task";
 
@@ -45,6 +46,7 @@ export function AppHeader({ activeTab, onTabChange }: AppHeaderProps) {
       ))}
 
       <div className="ml-auto flex items-center gap-1">
+        <HeaderActions />
         <LanguageToggle />
         <ThemeToggle />
       </div>

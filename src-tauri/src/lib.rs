@@ -211,24 +211,92 @@ async fn get_app_settings(app: tauri::AppHandle) -> Result<AppSettings, String> 
   core::settings::get_app_settings(&app)
 }
 
-/// Persist global app settings.
-#[tauri::command]
-async fn set_app_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
-  let tray_enabled_before = core::settings::get_app_settings(&app)?.enable_tray;
-  core::settings::set_app_settings(&app, settings)?;
+/// Persist global app settings, then sync every runtime consumer (screenshot
+/// hotkey, tray icon, OCR engine cache). Shared by the `set_app_settings`
+/// command and configuration import.
+fn apply_app_settings(app: &tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
+  let tray_enabled_before = core::settings::get_app_settings(app)?.enable_tray;
+  core::settings::set_app_settings(app, settings)?;
   // Keep the global screenshot hotkey in sync (this also validates it — an
   // unparsable hotkey fails the save).
-  core::snip::apply_hotkey(&app)?;
+  core::snip::apply_hotkey(app)?;
   // Sync the tray icon with the new setting.
-  let settings_now = core::settings::get_app_settings(&app)?;
+  let settings_now = core::settings::get_app_settings(app)?;
   if settings_now.enable_tray != tray_enabled_before {
-    update_tray(&app, settings_now.enable_tray);
+    update_tray(app, settings_now.enable_tray);
   }
   // Engine cache turned off → release the resident model memory right away.
   if !settings_now.cache_ocr_engine {
     app.state::<core::ocr::OcrEngineCache>().clear();
   }
   Ok(())
+}
+
+/// Persist global app settings.
+#[tauri::command]
+async fn set_app_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
+  apply_app_settings(&app, settings)
+}
+
+/// Export the full configuration (app settings + OCR vendors) to a JSON file.
+/// When `include_secrets` is set, API keys are decrypted into **plaintext** —
+/// the frontend warns before choosing this option.
+#[tauri::command]
+async fn export_config(
+  app: tauri::AppHandle,
+  path: String,
+  include_secrets: bool,
+) -> Result<usize, String> {
+  tauri::async_runtime::spawn_blocking(move || {
+    core::config_transfer::export_config(&app, &path, include_secrets)
+  })
+  .await
+  .map_err(|e| e.to_string())?
+}
+
+/// Import a previously exported configuration file. Vendors are merged by id
+/// (local entries not present in the file are kept); imported settings go
+/// through the same side-effect pipeline as a manual save.
+#[tauri::command]
+async fn import_config(
+  app: tauri::AppHandle,
+  path: String,
+) -> Result<core::config_transfer::ImportResult, String> {
+  let imported =
+    tauri::async_runtime::spawn_blocking(move || core::config_transfer::parse_import(&path))
+      .await
+      .map_err(|e| e.to_string())??;
+
+  let mut vendors_imported = 0usize;
+  if let Some(vendors) = &imported.ocr_vendors {
+    let list = vendors.clone();
+    let handle = app.clone();
+    vendors_imported = tauri::async_runtime::spawn_blocking(move || {
+      core::config_transfer::merge_vendors(&handle, list)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+  }
+
+  let mut settings_applied = false;
+  if let Some(settings) = imported.app_settings {
+    apply_app_settings(&app, settings)?;
+    settings_applied = true;
+  }
+
+  Ok(core::config_transfer::ImportResult {
+    vendors_imported,
+    settings_applied,
+  })
+}
+
+/// Ask the configured update endpoint whether a newer release exists.
+/// Network / parse failures return an error string; the frontend ignores it.
+#[tauri::command]
+async fn check_for_update(
+  app: tauri::AppHandle,
+) -> Result<Option<core::update::UpdateInfo>, String> {
+  core::update::check_for_update(&app).await
 }
 
 /// Convert one standalone image file (PNG / JPEG) to Markdown via the OCR
@@ -468,6 +536,9 @@ pub fn run() {
       reveal_ocr_key,
       get_app_settings,
       set_app_settings,
+      export_config,
+      import_config,
+      check_for_update,
       analyze_markdown,
       export_markdown_tables,
       ocr_image_to_md,

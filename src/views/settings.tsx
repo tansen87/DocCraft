@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode, SetStateAction } from "react";
 import {
+  open as openFileDialog,
+  save as saveFileDialog,
+} from "@tauri-apps/plugin-dialog";
+import {
   Camera,
   ChevronDown,
   Cpu,
   Database,
+  Download,
   Eye,
   EyeOff,
   FileSpreadsheet,
@@ -12,12 +17,14 @@ import {
   Loader2,
   Minimize2,
   Plus,
+  RotateCcw,
   Save,
   ScanText,
   SeparatorHorizontal,
   ShieldCheck,
   Star,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -43,8 +50,16 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  exportConfig,
   getAppSettings,
   getOcrConfig,
+  importConfig,
   revealOcrKey,
   saveOcrConfig,
   setAppSettings,
@@ -66,7 +81,8 @@ type SettingsSection =
   | "textSep"
   | "tray"
   | "cache"
-  | "excel";
+  | "excel"
+  | "backup";
 
 const SECTIONS: {
   id: SettingsSection;
@@ -77,7 +93,8 @@ const SECTIONS: {
     | "settings.textSeparator"
     | "settings.tray"
     | "settings.cache"
-    | "settings.excel";
+    | "settings.excel"
+    | "settings.backup";
   icon: typeof ScanText;
 }[] = [
   {
@@ -109,6 +126,11 @@ const SECTIONS: {
     id: "threads",
     labelKey: "settings.threads",
     icon: Cpu,
+  },
+  {
+    id: "backup",
+    labelKey: "settings.backup",
+    icon: RotateCcw,
   },
   {
     id: "tray",
@@ -159,6 +181,8 @@ export function SettingsView() {
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [dirty, setDirty] = useState(false);
+  /** Bumped after a config import so the load effect re-runs. */
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -186,7 +210,7 @@ export function SettingsView() {
     return () => {
       cancelled = true;
     };
-  }, [t]);
+  }, [t, reloadKey]);
 
   const markDirty = () => {
     if (loaded) setDirty(true);
@@ -457,6 +481,16 @@ export function SettingsView() {
                     markDirty();
                   }}
                   disabled={loading}
+                />
+              </section>
+              <section id="settings-backup" className="scroll-mt-3">
+                <SectionHeader title={t("settings.backup")} />
+                <BackupPanel
+                  busy={loading}
+                  onImported={() => {
+                    setDirty(false);
+                    setReloadKey((k) => k + 1);
+                  }}
                 />
               </section>
               <section id="settings-tray" className="scroll-mt-3">
@@ -1210,6 +1244,103 @@ function ExcelSettingsPanel({
           onCheckedChange={onChange}
           disabled={disabled}
         />
+      </SettingRow>
+    </Panel>
+  );
+}
+
+/** Export / import the whole configuration as a JSON file. */
+function BackupPanel({
+  busy,
+  onImported,
+}: {
+  busy: boolean;
+  onImported: () => void;
+}) {
+  const { t } = useI18n();
+  const [working, setWorking] = useState(false);
+  const disabled = busy || working;
+
+  async function handleExport(includeSecrets: boolean) {
+    const path = await saveFileDialog({
+      defaultPath: "doccraft-config.json",
+      filters: [{ name: t("filter.configFiles"), extensions: ["json"] }],
+    });
+    if (!path) return;
+    setWorking(true);
+    try {
+      await exportConfig(path, includeSecrets);
+      toast.success(t("toast.configExported"), { description: path });
+    } catch (e) {
+      toast.error(t("toast.exportFailed"), { description: String(e) });
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function handleImport() {
+    const file = await openFileDialog({
+      multiple: false,
+      filters: [{ name: t("filter.configFiles"), extensions: ["json"] }],
+    });
+    if (!file || typeof file !== "string") return;
+    setWorking(true);
+    try {
+      const result = await importConfig(file);
+      // Let other views re-sync anything derived from app settings.
+      window.dispatchEvent(new Event("doccraft:settings-saved"));
+      toast.success(
+        t("toast.configImported", { vendors: result.vendorsImported }) +
+          (result.settingsApplied ? t("toast.configImportedSettings") : ""),
+        { description: file },
+      );
+      onImported();
+    } catch (e) {
+      toast.error(t("toast.importFailed"), { description: String(e) });
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <Panel>
+      <SettingRow
+        label={t("settings.exportConfig")}
+        description={t("settings.exportConfigDesc")}
+      >
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="secondary" size="sm" disabled={disabled}>
+              {working ? <Loader2 className="animate-spin" /> : <Download />}
+              {t("settings.exportConfig")}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-full">
+            <DropdownMenuItem onClick={() => void handleExport(false)}>
+              {t("settings.exportWithoutKeys")}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => void handleExport(true)}
+            >
+              {t("settings.exportWithKeys")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </SettingRow>
+      <SettingRow
+        label={t("settings.importConfig")}
+        description={t("settings.importConfigDesc")}
+      >
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={disabled}
+          onClick={() => void handleImport()}
+        >
+          <Upload />
+          {t("settings.importConfig")}
+        </Button>
       </SettingRow>
     </Panel>
   );

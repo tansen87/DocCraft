@@ -122,13 +122,28 @@ and Simplified Chinese — switchable at runtime.
 - **Bilingual UI (i18n)** — English (default) and 中文 (Simplified Chinese)
   switched via a dropdown next to the theme toggle; the choice persists in
   `localStorage` and every string goes through a typed translation layer.
-- **Settings page** — sidebar navigation over seven scroll-synced sections
-  (OCR 服务 / 截图 / 文本分隔符 / 缓存 / Excel / 并发线程 / 系统托盘) styled as
-  grouped panels with hairline-separated setting rows ("Soft Rows" layout,
-  see [design/00002_settings-ui-redesign.md](./design/00002_settings-ui-redesign.md)):
+- **Settings page** — sidebar navigation over eight scroll-synced sections
+  (OCR 服务 / 截图 / 文本分隔符 / 缓存 / Excel / 并发线程 / 系统托盘 /
+  备份与恢复) styled as grouped panels with hairline-separated setting rows
+  ("Soft Rows" layout, see
+  [design/00002_settings-ui-redesign.md](./design/00002_settings-ui-redesign.md)):
   vendor/model/key management, OCR mode selector, local-engine caching
   toggle, press-to-record hotkey field, unsaved-changes floating save pill,
   and responsive collapse for narrow windows.
+- **Config backup & restore** — export all app settings plus OCR vendors
+  into one JSON file (API keys excluded by default; including them stores
+  plaintext after an explicit warning), and import such a file again:
+  vendors merge by id (local entries missing from the file are kept,
+  plaintext keys are re-encrypted on import) and settings go through the
+  same side-effect pipeline as a manual save (hotkey re-registration, tray
+  sync, engine-cache release).
+- **Update check** — the header (next to the language toggle) has a manual
+  check button; a non-blocking amber badge appears there automatically when
+  the once-per-session startup check finds a newer release. Both open a
+  dialog rendering the release notes as markdown (`core/update.rs` queries
+  the GitHub Releases API with a 10s timeout), and the dialog's "update"
+  button navigates to the releases page. Up-to-date / offline cases degrade
+  to toasts.
 
 ## Tech Stack
 
@@ -157,6 +172,7 @@ doccraft/
 │  └─ index.md                   # This file
 ├─ src/                          # React frontend
 │  ├─ components/
+│  │  ├─ header-actions.tsx      # Manual update check + "new version" badge
 │  │  ├─ pdf2md/                 # PDF → Markdown workflow
 │  │  │  ├─ convert-workspace.tsx# Workspace: detect → convert → preview
 │  │  │  ├─ convert-toolbar.tsx  # Top toolbar (file info + convert CTA)
@@ -194,7 +210,7 @@ doccraft/
 │  │  ├─ pdf-to-md.tsx           # Batch queue + single-file PDF workspace
 │  │  ├─ image-to-md.tsx         # Image → Markdown (OCR) list + merged preview
 │  │  ├─ md-to-xlsx.tsx          # Markdown → Excel batch list + preview
-│  │  └─ settings.tsx            # Settings (7 sections, grouped-panel layout)
+│  │  └─ settings.tsx            # Settings (8 sections, grouped-panel layout)
 │  ├─ App.tsx                    # App shell, tab switching (PDF/IMG → MD / MD → XLSX / settings)
 │  ├─ index.css                  # Tailwind v4 + design tokens
 │  └─ main.tsx                   # Entry; routes `snip-*` windows to the overlay
@@ -208,6 +224,8 @@ doccraft/
 │  │     ├─ ocr.rs               # Hybrid conversion, OCR HTTP client, local PaddleOCR engine (+cache)
 │  │     ├─ snip.rs              # Screenshot capture / region OCR / hotkey registration
 │  │     ├─ settings.rs          # OCR config + app settings persistence
+│  │     ├─ config_transfer.rs   # Configuration export / import (merge by id)
+│  │     ├─ update.rs            # Lightweight release update check (latest.json)
 │  │     ├─ secret.rs            # API key protection (DPAPI / obfuscation)
 │  │     ├─ line_draw.rs         # Manual "draw-a-table" vertical-line extraction
 │  │     ├─ md_to_xlsx.rs        # Markdown → Excel table parsing + export
@@ -240,6 +258,9 @@ Commands (invoked from `src/lib/ipc.ts`):
 | `reveal_ocr_key`     | `{ vendorId }`                          | `string \| null` (decrypted key, "show key") |
 | `get_app_settings`   | —                                       | `AppSettings` (`maxConcurrent`, `cacheExtractedText`, `excelTablesOnly`, `ocrMode`) |
 | `set_app_settings`   | `{ settings }`                          | `void` (clamped 1–16) |
+| `export_config`      | `{ path, includeSecrets }`              | `usize` — vendors written; keys plaintext only when opted in |
+| `import_config`      | `{ path }`                              | `ImportResult` (`vendorsImported`, `settingsApplied`); merges by id, applies settings with full side effects |
+| `check_for_update`   | —                                       | `UpdateInfo \| null` (`version`, `notes`, `downloadUrl`, `releasePage`) |
 | `analyze_markdown`   | `{ path }`                              | `MdAnalyzeResult` (`tableCount`, `tables[]` with columns/rows/page, `totalRows`, `processingTimeMs`) |
 | `export_markdown_tables` | `{ mdPath, xlsxPath }`              | `MdExportResult` (`tableCount`, `totalRows`, `processingTimeMs`) |
 | `extract_draw_table` | `{ path, drawData }` — `drawData` may carry `totalPages`, `onlyPages` (batching) and `pageImages[]` (`{page, imagePng, renderScale}`) for the mode-selected OCR fallback (local PaddleOCR or remote AI vision) | `DrawTableResult` (`tableCount`, `tables[]`, `regions[]`, `totalRows`, `ocrPages`, `emptyTextPages`, `processingTimeMs`) |
@@ -370,7 +391,8 @@ cargo check --manifest-path src-tauri/Cargo.toml
   [design/00001_snip-performance.md](./design/00001_snip-performance.md).
 - **Design docs** — numbered proposals live under
   [docs/design/](./design/) (`00001_snip-performance.md`,
-  `00002_settings-ui-redesign.md`).
+  `00002_settings-ui-redesign.md`, `00003_ui-ux-audit.md`,
+  `00004_feature-and-ux-proposals.md`).
 
 ## Configuration
 

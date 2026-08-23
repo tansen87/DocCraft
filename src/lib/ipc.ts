@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppSettings,
+  ConfigImportResult,
   ConvertResult,
   DetectResult,
   DrawTableRequest,
@@ -15,6 +16,7 @@ import type {
   OcrVendorInput,
   MonitorSnapshot,
   ShotRegion,
+  UpdateInfo,
 } from "./types";
 
 export const detectPdf = (path: string) =>
@@ -72,6 +74,19 @@ export const getAppSettings = () => invoke<AppSettings>("get_app_settings");
 
 export const setAppSettings = (settings: AppSettings) =>
   invoke<void>("set_app_settings", { settings });
+
+/** Export app settings + OCR vendors to a JSON file. When `includeSecrets`
+ * is set, API keys are written in plaintext (the caller must warn first). */
+export const exportConfig = (path: string, includeSecrets: boolean) =>
+  invoke<number>("export_config", { path, includeSecrets });
+
+/** Import a configuration file: vendors merge by id, settings are applied. */
+export const importConfig = (path: string) =>
+  invoke<ConfigImportResult>("import_config", { path });
+
+/** Check the release endpoint for a newer version (null when up-to-date). */
+export const checkForUpdate = () =>
+  invoke<UpdateInfo | null>("check_for_update");
 
 /** Analyze the tables contained in a Markdown file. */
 export const analyzeMarkdown = (path: string) =>

@@ -364,3 +364,23 @@ export interface WindowInfo {
   width: number;
   height: number;
 }
+
+// ─── Config import / export & update check ───────────────────────────────
+
+/** Summary of a configuration import (for the success toast). */
+export interface ConfigImportResult {
+  vendorsImported: number;
+  settingsApplied: boolean;
+}
+
+/** A newer release found by the update check (GitHub Releases API). */
+export interface UpdateInfo {
+  /** Version without the leading `v` (parsed from `tag_name`). */
+  version: string;
+  /** Release title. */
+  title: string;
+  /** Release notes markdown. */
+  notes: string;
+  /** Release page URL. */
+  url: string;
+}

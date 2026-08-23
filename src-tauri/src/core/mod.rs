@@ -1,3 +1,4 @@
+pub mod config_transfer;
 pub mod convert;
 pub mod extract_cache;
 pub mod grid_rebuild;
@@ -8,6 +9,7 @@ pub mod page_marker;
 pub mod secret;
 pub mod settings;
 pub mod snip;
+pub mod update;
 
 use std::path::{Path, PathBuf};
 

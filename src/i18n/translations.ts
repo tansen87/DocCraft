@@ -117,8 +117,7 @@ const en = {
   "snip.disabledDesc":
     "Enable OCR in Settings before using screenshot recognition.",
   "settings.screenshotHotkey": "Screenshot hotkey",
-  "settings.screenshotHotkeyHint":
-    'Global key that opens region capture. Click the field and press a combination to record it (e.g. "F8" or "Ctrl+Shift+A"). Applies after saving',
+  "settings.screenshotHotkeyHint": "Global key that opens region capture",
   "settings.textSeparator": "Text separator",
   "settings.textSeparatorDesc":
     "Character used to join OCR blocks within a single line",
@@ -272,6 +271,29 @@ const en = {
 
   "markdown.drawTableComment": "<!-- table extracted by drawing -->",
 
+  "settings.backup": "Backup & Restore",
+  "settings.exportConfig": "Export configuration",
+  "settings.exportConfigDesc":
+    "Save all app settings and OCR vendors into one JSON file.",
+  "settings.exportWithoutKeys": "Export without API keys",
+  "settings.exportWithKeys": "Export with API keys (plaintext)",
+  "settings.importConfig": "Import configuration",
+  "settings.importConfigDesc": "Restore from an exported JSON file",
+  "toast.configExported": "Configuration exported",
+  "toast.configImported": "Imported {vendors} vendor(s)",
+  "toast.configImportedSettings": " · settings applied",
+  "toast.importFailed": "Import failed",
+  "filter.configFiles": "DocCraft Configuration",
+
+  "update.available": "v{version} available",
+  "update.tooltip": "A newer version is available — click to view the release",
+  "update.check": "Check for updates",
+  "update.upToDate": "You're on the latest version",
+  "update.checkFailed": "Update check failed",
+  "update.updateNow": "Update",
+  "update.later": "Later",
+  "update.notesEmpty": "No release notes.",
+
   backToList: "Back to list",
 } as const;
 
@@ -389,8 +411,7 @@ const zh: Record<TranslationKey, string> = {
   "snip.disabledTitle": "OCR 未启用",
   "snip.disabledDesc": "请先在设置中启用 OCR,再使用截图识别。",
   "settings.screenshotHotkey": "截图识别快捷键",
-  "settings.screenshotHotkeyHint":
-    "全局触发截图识别的按键.点击输入框后按下组合键即可录入(如 F8 或 Ctrl+Shift+A);保存设置后生效",
+  "settings.screenshotHotkeyHint": "全局触发截图识别的按键",
   "settings.textSeparator": "文本连接符",
   "settings.textSeparatorDesc": "用于连接同一行内 OCR 文本块的字符",
   "settings.tray": "系统托盘",
@@ -534,6 +555,29 @@ const zh: Record<TranslationKey, string> = {
   "drawtable.extractingFirst5": "正在提取前 5 页…",
 
   "markdown.drawTableComment": "<!-- 划线提取表格 -->",
+
+  "settings.backup": "备份与恢复",
+  "settings.exportConfig": "导出配置",
+  "settings.exportConfigDesc":
+    "将全部应用设置和 OCR 服务配置保存为一个 JSON 文件",
+  "settings.exportWithoutKeys": "导出(不含 API 密钥)",
+  "settings.exportWithKeys": "导出并包含 API 密钥(将以明文保存)",
+  "settings.importConfig": "导入配置",
+  "settings.importConfigDesc": "从导出的 JSON 文件恢复",
+  "toast.configExported": "配置已导出",
+  "toast.configImported": "已导入 {vendors} 个服务配置",
+  "toast.configImportedSettings": " · 设置已应用",
+  "toast.importFailed": "导入失败",
+  "filter.configFiles": "DocCraft 配置文件",
+
+  "update.available": "发现新版本 v{version}",
+  "update.tooltip": "有可用的新版本,点击查看发布页面",
+  "update.check": "检查更新",
+  "update.upToDate": "已是最新版本",
+  "update.checkFailed": "检查更新失败",
+  "update.updateNow": "前往更新",
+  "update.later": "稍后",
+  "update.notesEmpty": "暂无更新说明。",
 
   backToList: "返回列表",
 };
