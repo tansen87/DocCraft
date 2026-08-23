@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SetStateAction } from "react";
+import type { ReactNode, SetStateAction } from "react";
 import {
   Camera,
+  ChevronDown,
   Cpu,
   Database,
   Eye,
@@ -22,7 +23,6 @@ import {
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
@@ -337,9 +337,9 @@ export function SettingsView() {
   return (
     <div
       ref={containerRef}
-      className="mx-auto flex w-full max-w-5xl min-h-0 flex-1 gap-3"
+      className="relative mx-auto flex w-full max-w-5xl min-h-0 flex-1 gap-3"
     >
-      <aside className="flex shrink-0 flex-col gap-1.5 md:w-56">
+      <aside className="flex w-14 shrink-0 flex-col gap-1 md:w-52">
         {SECTIONS.map((s) => {
           const Icon = s.icon;
           const active = section === s.id;
@@ -348,21 +348,25 @@ export function SettingsView() {
               key={s.id}
               type="button"
               onClick={() => jumpTo(s.id)}
+              title={t(s.labelKey)}
               className={cn(
-                "relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
+                "flex items-center justify-center gap-3 rounded-xl px-0 py-2 text-left transition-colors duration-150 md:justify-start md:px-2.5",
                 active
-                  ? "bg-muted/40 text-foreground before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-5 before:w-1 before:rounded-full before:bg-muted-foreground/80"
-                  : "text-muted-foreground hover:bg-muted/60",
+                  ? "bg-primary/[0.08] text-foreground"
+                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
               )}
             >
               <span
                 className={cn(
-                  "flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground",
+                  "flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-150",
+                  active
+                    ? "bg-primary/10 text-primary"
+                    : "bg-transparent text-muted-foreground",
                 )}
               >
                 <Icon className="size-4" />
               </span>
-              <span className="min-w-0">
+              <span className="hidden min-w-0 md:block">
                 <span className="block truncate text-sm font-medium">
                   {t(s.labelKey)}
                 </span>
@@ -372,12 +376,12 @@ export function SettingsView() {
         })}
       </aside>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
         <ScrollArea className="min-h-0 flex-1">
           <div className="pb-4 pr-3">
             <div className="space-y-8">
               <section id="settings-ocr" className="scroll-mt-3">
-                <SectionHeader icon={ScanText} title={t("settings.ocr")} />
+                <SectionHeader title={t("settings.ocr")} />
                 <OcrSettingsPanel
                   vendors={vendors}
                   onChange={(updater) => {
@@ -397,19 +401,8 @@ export function SettingsView() {
                   }}
                 />
               </section>
-              <section id="settings-threads" className="scroll-mt-3">
-                <SectionHeader icon={Cpu} title={t("settings.threads")} />
-                <ThreadSettingsPanel
-                  value={maxConcurrent}
-                  onChange={(n) => {
-                    setMaxConcurrent(n);
-                    markDirty();
-                  }}
-                  disabled={loading}
-                />
-              </section>
               <section id="settings-snip" className="scroll-mt-3">
-                <SectionHeader icon={Camera} title={t("snip.capture")} />
+                <SectionHeader title={t("snip.capture")} />
                 <SnipSettingsPanel
                   value={screenshotHotkey}
                   onChange={(v) => {
@@ -420,10 +413,7 @@ export function SettingsView() {
                 />
               </section>
               <section id="settings-textSep" className="scroll-mt-3">
-                <SectionHeader
-                  icon={SeparatorHorizontal}
-                  title={t("settings.textSeparator")}
-                />
+                <SectionHeader title={t("settings.textSeparator")} />
                 <TextSepSettingsPanel
                   value={textSeparator}
                   onChange={(v) => {
@@ -433,19 +423,8 @@ export function SettingsView() {
                   disabled={loading}
                 />
               </section>
-              <section id="settings-tray" className="scroll-mt-3">
-                <SectionHeader icon={Minimize2} title={t("settings.tray")} />
-                <TraySettingsPanel
-                  value={enableTray}
-                  onChange={(v) => {
-                    setEnableTray(v);
-                    markDirty();
-                  }}
-                  disabled={loading}
-                />
-              </section>
               <section id="settings-cache" className="scroll-mt-3">
-                <SectionHeader icon={Database} title={t("settings.cache")} />
+                <SectionHeader title={t("settings.cache")} />
                 <CacheSettingsPanel
                   value={cacheExtracted}
                   onChange={(v) => {
@@ -456,14 +435,33 @@ export function SettingsView() {
                 />
               </section>
               <section id="settings-excel" className="scroll-mt-3">
-                <SectionHeader
-                  icon={FileSpreadsheet}
-                  title={t("settings.excel")}
-                />
+                <SectionHeader title={t("settings.excel")} />
                 <ExcelSettingsPanel
                   value={excelTablesOnly}
                   onChange={(v) => {
                     setExcelTablesOnly(v);
+                    markDirty();
+                  }}
+                  disabled={loading}
+                />
+              </section>
+              <section id="settings-threads" className="scroll-mt-3">
+                <SectionHeader title={t("settings.threads")} />
+                <ThreadSettingsPanel
+                  value={maxConcurrent}
+                  onChange={(n) => {
+                    setMaxConcurrent(n);
+                    markDirty();
+                  }}
+                  disabled={loading}
+                />
+              </section>
+              <section id="settings-tray" className="scroll-mt-3">
+                <SectionHeader title={t("settings.tray")} />
+                <TraySettingsPanel
+                  value={enableTray}
+                  onChange={(v) => {
+                    setEnableTray(v);
                     markDirty();
                   }}
                   disabled={loading}
@@ -474,18 +472,21 @@ export function SettingsView() {
         </ScrollArea>
 
         {dirty ? (
-          <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border bg-card px-4 py-2.5 shadow-sm">
-            <span className="text-xs text-muted-foreground">
-              {t("settings.unsavedChanges")}
-            </span>
-            <Button
-              onClick={handleSave}
-              disabled={saving || !loaded}
-              variant="secondary"
-            >
-              {saving ? <Loader2 className="animate-spin" /> : <Save />}
-              {t("settings.save")}
-            </Button>
+          <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center">
+            <div className="pointer-events-auto flex animate-in fade-in-0 slide-in-from-bottom-2 items-center gap-3 rounded-full border bg-background/80 py-1.5 pl-4 pr-1.5 shadow-lg backdrop-blur-md">
+              <span className="text-xs text-muted-foreground">
+                {t("settings.unsavedChanges")}
+              </span>
+              <Button
+                onClick={handleSave}
+                disabled={saving || !loaded}
+                className="rounded-full"
+                size="sm"
+              >
+                {saving ? <Loader2 className="animate-spin" /> : <Save />}
+                {t("settings.save")}
+              </Button>
+            </div>
           </div>
         ) : null}
       </div>
@@ -493,19 +494,68 @@ export function SettingsView() {
   );
 }
 
-function SectionHeader({
-  icon: Icon,
-  title,
+/** Grouped panel: rounded container whose children are hairline-separated. */
+function Panel({
+  children,
+  className,
 }: {
-  icon: typeof ScanText;
-  title: string;
+  children: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="mb-3 flex items-center gap-2">
-      <span className="flex size-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-        <Icon className="size-4" />
-      </span>
-      <h2 className="text-base font-semibold">{title}</h2>
+    <div
+      className={cn(
+        "divide-y divide-border/60 overflow-hidden rounded-2xl border bg-card shadow-xs",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** One settings row: label + description on the left, control on the right. */
+function SettingRow({
+  label,
+  description,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  description?: string;
+  htmlFor?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3.5">
+      <div className="min-w-0 space-y-0.5">
+        <Label htmlFor={htmlFor}>{label}</Label>
+        {description ? (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {description}
+          </p>
+        ) : null}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  );
+}
+
+function SectionHeader({
+  title,
+  description,
+}: {
+  title: string;
+  description?: string;
+}) {
+  return (
+    <div className="mb-3 space-y-0.5">
+      <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </h2>
+      {description ? (
+        <p className="text-sm text-muted-foreground">{description}</p>
+      ) : null}
     </div>
   );
 }
@@ -641,9 +691,14 @@ function OcrSettingsPanel({
 
   return (
     <>
-      <Card className="gap-3 p-4">
-        <div className="space-y-2">
-          <Label>{t("settings.ocrEnabled")}</Label>
+      <Panel>
+        <div className="space-y-3 px-4 py-3.5">
+          <div className="space-y-0.5">
+            <Label>{t("settings.ocrEnabled")}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t(`settings.ocrMode.${ocrMode}Desc`)}
+            </p>
+          </div>
           <Tabs
             value={ocrMode}
             onValueChange={(v) => onOcrModeChange(v as OcrMode)}
@@ -652,70 +707,64 @@ function OcrSettingsPanel({
               <TabsTrigger
                 value="forceLocal"
                 disabled={loading}
-                className="flex-1 text-xs"
+                className="min-w-0 flex-1 truncate px-1.5 text-xs"
               >
                 {t("settings.ocrMode.forceLocal")}
               </TabsTrigger>
               <TabsTrigger
                 value="forceAi"
                 disabled={loading}
-                className="flex-1 text-xs"
+                className="min-w-0 flex-1 truncate px-1.5 text-xs"
               >
                 {t("settings.ocrMode.forceAi")}
               </TabsTrigger>
               <TabsTrigger
                 value="nonTextLocal"
                 disabled={loading}
-                className="flex-1 text-xs"
+                className="min-w-0 flex-1 truncate px-1.5 text-xs"
               >
                 {t("settings.ocrMode.nonTextLocal")}
               </TabsTrigger>
               <TabsTrigger
                 value="nonTextAi"
                 disabled={loading}
-                className="flex-1 text-xs"
+                className="min-w-0 flex-1 truncate px-1.5 text-xs"
               >
                 {t("settings.ocrMode.nonTextAi")}
               </TabsTrigger>
               <TabsTrigger
                 value="disabled"
                 disabled={loading}
-                className="flex-1 text-xs"
+                className="min-w-0 flex-1 truncate px-1.5 text-xs"
               >
                 {t("settings.ocrMode.disabled")}
               </TabsTrigger>
             </TabsList>
           </Tabs>
-          <p className="text-xs text-muted-foreground">
-            {t(`settings.ocrMode.${ocrMode}Desc`)}
-          </p>
         </div>
-      </Card>
+      </Panel>
 
-      <Card className="gap-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1 space-y-1">
-            <Label>{t("settings.cacheOcrEngine")}</Label>
-            <p className="text-xs text-muted-foreground">
-              {t("settings.cacheOcrEngineDesc")}
-            </p>
-          </div>
+      <Panel>
+        <SettingRow
+          label={t("settings.cacheOcrEngine")}
+          description={t("settings.cacheOcrEngineDesc")}
+        >
           <Switch
             checked={cacheOcrEngine}
             onCheckedChange={onCacheOcrEngineChange}
             disabled={loading}
           />
-        </div>
-      </Card>
+        </SettingRow>
+      </Panel>
 
       <div className="space-y-3">
         {loading ? (
-          <div className="flex items-center justify-center gap-2 rounded-xl border bg-card py-10 text-sm text-muted-foreground">
+          <div className="flex items-center justify-center gap-2 rounded-2xl border bg-card py-10 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
             {t("settings.loadingConfig")}
           </div>
         ) : vendors.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed bg-card px-6 py-10 text-center">
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card px-6 py-10 text-center">
             <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
               <KeyRound className="size-6" />
             </span>
@@ -778,36 +827,34 @@ function ThreadSettingsPanel({
   const { t } = useI18n();
 
   return (
-    <>
-      <Card className="gap-3 p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <Label>{t("settings.maxConcurrent")}</Label>
-            <Input
-              type="number"
-              inputMode="numeric"
-              min={THREAD_MIN}
-              max={THREAD_MAX}
-              step={1}
-              value={Number.isFinite(value) ? value : ""}
-              onChange={(e) => onChange(e.target.valueAsNumber)}
-              disabled={disabled}
-              placeholder={t("settings.threadPlaceholder")}
-            />
-          </div>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {t("settings.threadsHint2")}
-        </p>
-      </Card>
-    </>
+    <Panel>
+      <SettingRow
+        label={t("settings.maxConcurrent")}
+        description={t("settings.threadsHint2")}
+        htmlFor="settings-threads-input"
+      >
+        <Input
+          id="settings-threads-input"
+          type="number"
+          inputMode="numeric"
+          min={THREAD_MIN}
+          max={THREAD_MAX}
+          step={1}
+          value={Number.isFinite(value) ? value : ""}
+          onChange={(e) => onChange(e.target.valueAsNumber)}
+          disabled={disabled}
+          placeholder={t("settings.threadPlaceholder")}
+          className="w-24 text-right"
+        />
+      </SettingRow>
+    </Panel>
   );
 }
 
 /**
  * Global hotkey that triggers screenshot recognition. Recorded by pressing a
  * key combination; stored in the accelerator syntax understood by the backend
- * (`Ctrl+Shift+KeyA`, `F8`, …); empty disables the hotkey.
+ * (`Ctrl+Shift+KeyA`, `F8`, ...); empty disables the hotkey.
  */
 function SnipSettingsPanel({
   value,
@@ -821,17 +868,14 @@ function SnipSettingsPanel({
   const { t } = useI18n();
 
   return (
-    <Card className="gap-3 p-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <Label>{t("settings.screenshotHotkey")}</Label>
-          <HotkeyInput value={value} onChange={onChange} disabled={disabled} />
-        </div>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {t("settings.screenshotHotkeyHint")}
-      </p>
-    </Card>
+    <Panel>
+      <SettingRow
+        label={t("settings.screenshotHotkey")}
+        description={t("settings.screenshotHotkeyHint")}
+      >
+        <HotkeyInput value={value} onChange={onChange} disabled={disabled} />
+      </SettingRow>
+    </Panel>
   );
 }
 
@@ -855,28 +899,25 @@ function TextSepSettingsPanel({
   ];
 
   return (
-    <Card className="gap-3 p-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <Label>{t("settings.textSeparator")}</Label>
-          <Select value={value} onValueChange={onChange} disabled={disabled}>
-            <SelectTrigger className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SEPARATOR_OPTIONS.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {t("settings.textSeparatorDesc")}
-      </p>
-    </Card>
+    <Panel>
+      <SettingRow
+        label={t("settings.textSeparator")}
+        description={t("settings.textSeparatorDesc")}
+      >
+        <Select value={value} onValueChange={onChange} disabled={disabled}>
+          <SelectTrigger className="w-36">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SEPARATOR_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingRow>
+    </Panel>
   );
 }
 
@@ -892,21 +933,18 @@ function TraySettingsPanel({
   const { t } = useI18n();
 
   return (
-    <Card className="gap-3 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0 flex-1 space-y-0.5">
-          <Label>{t("settings.tray")}</Label>
-          <p className="text-xs text-muted-foreground">
-            {t("settings.trayDesc")}
-          </p>
-        </div>
+    <Panel>
+      <SettingRow
+        label={t("settings.tray")}
+        description={t("settings.trayDesc")}
+      >
         <Switch
           checked={value}
           onCheckedChange={onChange}
           disabled={disabled}
         />
-      </div>
-    </Card>
+      </SettingRow>
+    </Panel>
   );
 }
 
@@ -921,7 +959,7 @@ const HOTKEY_MODIFIER_CODES = new Set([
   "MetaRight",
 ]);
 
-/** Friendly label for one token of an accelerator (`Ctrl`, `KeyA`, `F8`, …). */
+/** Friendly label for one token of an accelerator (`Ctrl`, `KeyA`, `F8`, ...). */
 function hotkeyTokenLabel(part: string): string {
   const lower = part.toLowerCase();
   if (lower === "ctrl" || lower === "control") return "Ctrl";
@@ -953,10 +991,10 @@ function hotkeyTokenLabel(part: string): string {
     End: "End",
     PageUp: "PgUp",
     PageDown: "PgDn",
-    ArrowUp: "↑",
-    ArrowDown: "↓",
-    ArrowLeft: "←",
-    ArrowRight: "→",
+    ArrowUp: "\u2191",
+    ArrowDown: "\u2193",
+    ArrowLeft: "\u2190",
+    ArrowRight: "\u2192",
     Escape: "Esc",
     PrintScreen: "PrtSc",
     ScrollLock: "ScrollLock",
@@ -1077,7 +1115,7 @@ function HotkeyInput({
         disabled={disabled}
         aria-label={t("settings.screenshotHotkey")}
         className={cn(
-          "flex h-9 min-w-52 flex-1 items-center gap-1.5 rounded-lg border px-3 text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          "flex h-9 w-56 items-center gap-1.5 rounded-lg border px-3 text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
           recording
             ? "border-primary bg-primary/5 ring-2 ring-primary/20"
             : "border-input hover:bg-muted/40",
@@ -1132,23 +1170,18 @@ function CacheSettingsPanel({
   const { t } = useI18n();
 
   return (
-    <>
-      <Card className="gap-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1 space-y-1">
-            <Label>{t("settings.cacheExtracted")}</Label>
-            <p className="text-xs text-muted-foreground">
-              {t("settings.cacheExtractedDesc")}
-            </p>
-          </div>
-          <Switch
-            checked={value}
-            onCheckedChange={onChange}
-            disabled={disabled}
-          />
-        </div>
-      </Card>
-    </>
+    <Panel>
+      <SettingRow
+        label={t("settings.cacheExtracted")}
+        description={t("settings.cacheExtractedDesc")}
+      >
+        <Switch
+          checked={value}
+          onCheckedChange={onChange}
+          disabled={disabled}
+        />
+      </SettingRow>
+    </Panel>
   );
 }
 
@@ -1164,23 +1197,18 @@ function ExcelSettingsPanel({
   const { t } = useI18n();
 
   return (
-    <>
-      <Card className="gap-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1 space-y-1">
-            <Label>{t("settings.excelTablesOnly")}</Label>
-            <p className="text-xs text-muted-foreground">
-              {t("settings.excelTablesOnlyDesc")}
-            </p>
-          </div>
-          <Switch
-            checked={value}
-            onCheckedChange={onChange}
-            disabled={disabled}
-          />
-        </div>
-      </Card>
-    </>
+    <Panel>
+      <SettingRow
+        label={t("settings.excelTablesOnly")}
+        description={t("settings.excelTablesOnlyDesc")}
+      >
+        <Switch
+          checked={value}
+          onCheckedChange={onChange}
+          disabled={disabled}
+        />
+      </SettingRow>
+    </Panel>
   );
 }
 
@@ -1205,109 +1233,147 @@ function VendorCard({
 }) {
   const { t } = useI18n();
   const v = vendor;
+  const [open, setOpen] = useState(!vendor.apiKeySet);
   return (
-    <Card className="gap-3 p-4">
-      <div className="flex items-center gap-2">
-        <Input
-          value={v.name}
-          onChange={(e) => onPatch({ name: e.target.value })}
-          placeholder={t("settings.vendorName")}
-          className="h-9 flex-1 text-base font-medium"
+    <Panel>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+      >
+        <ChevronDown
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
+            open && "rotate-180",
+          )}
         />
-        <Button variant="ghost" size="icon" onClick={onRemove}>
-          <Trash2 />
-        </Button>
-      </div>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="truncate text-sm font-medium">
+            {v.name || (
+              <span className="text-muted-foreground">
+                {t("settings.vendorName")}
+              </span>
+            )}
+          </span>
+          <span className="truncate font-mono text-xs text-muted-foreground">
+            {v.baseUrl || "-"}
+          </span>
+        </span>
+        {v.models.length > 0 ? (
+          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+            {v.models.length}
+          </span>
+        ) : null}
+        {v.apiKeySet && !v.clearApiKey ? (
+          <span className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+            <ShieldCheck className="size-3" />
+            {t("settings.keySaved")}
+          </span>
+        ) : null}
+      </button>
 
-      <div className="space-y-1.5">
-        <Label>{t("settings.baseUrl")}</Label>
-        <Input
-          value={v.baseUrl}
-          onChange={(e) => onPatch({ baseUrl: e.target.value })}
-          placeholder={t("settings.baseUrlPlaceholder")}
-        />
-      </div>
+      {open ? (
+        <div className="space-y-4 px-4 py-4">
+          <div className="flex items-center gap-2">
+            <Input
+              value={v.name}
+              onChange={(e) => onPatch({ name: e.target.value })}
+              placeholder={t("settings.vendorName")}
+              className="h-9 flex-1 text-base font-medium"
+            />
+            <Button variant="ghost" size="icon" onClick={onRemove}>
+              <Trash2 />
+            </Button>
+          </div>
 
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <Label>{t("settings.apiKey")}</Label>
-          {v.apiKeySet && !v.clearApiKey ? (
-            <span className="flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-              <ShieldCheck className="size-3" />
-              {t("settings.keySaved")}
-            </span>
-          ) : null}
-          {v.clearApiKey ? (
-            <span className="rounded-md bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
-              {t("settings.keyWillBeCleared")}
-            </span>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2">
-          <Input
-            type={v.showKey ? "text" : "password"}
-            value={v.apiKey}
-            onChange={(e) => onPatch({ apiKey: e.target.value })}
-            placeholder={
-              v.apiKeySet ? t("settings.keyPlaceholderSet") : "sk-..."
-            }
-            disabled={v.clearApiKey}
-          />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onToggleKey}
-            disabled={!v.apiKeySet && !v.apiKey}
-          >
-            {v.showKey ? <EyeOff /> : <Eye />}
-          </Button>
-        </div>
-      </div>
+          <div className="space-y-1.5">
+            <Label>{t("settings.baseUrl")}</Label>
+            <Input
+              value={v.baseUrl}
+              onChange={(e) => onPatch({ baseUrl: e.target.value })}
+              placeholder={t("settings.baseUrlPlaceholder")}
+            />
+          </div>
 
-      <Separator />
-
-      <div className="space-y-2">
-        <Label>{t("settings.models")}</Label>
-        <div className="space-y-2">
-          {v.models.map((m) => (
-            <div key={m.id} className="flex items-center gap-2">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={() => onSetDefaultModel(m.id)}
-                    className={
-                      m.default
-                        ? "text-amber-500 hover:text-amber-500"
-                        : "text-muted-foreground"
-                    }
-                  >
-                    <Star className={m.default ? "fill-current" : ""} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t("settings.defaultModel")}</TooltipContent>
-              </Tooltip>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <Label>{t("settings.apiKey")}</Label>
+              {v.clearApiKey ? (
+                <span className="rounded-md bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
+                  {t("settings.keyWillBeCleared")}
+                </span>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-2">
               <Input
-                value={m.name}
-                onChange={(e) => onUpdateModel(m.id, e.target.value)}
-                placeholder={t("settings.modelPlaceholder")}
+                type={v.showKey ? "text" : "password"}
+                value={v.apiKey}
+                onChange={(e) => onPatch({ apiKey: e.target.value })}
+                placeholder={
+                  v.apiKeySet ? t("settings.keyPlaceholderSet") : "sk-..."
+                }
+                disabled={v.clearApiKey}
               />
               <Button
                 variant="ghost"
-                size="icon-xs"
-                onClick={() => onRemoveModel(m.id)}
+                size="icon"
+                onClick={onToggleKey}
+                disabled={!v.apiKeySet && !v.apiKey}
               >
-                <X />
+                {v.showKey ? <EyeOff /> : <Eye />}
               </Button>
             </div>
-          ))}
+          </div>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <Label>{t("settings.models")}</Label>
+            <div className="space-y-2">
+              {v.models.map((m) => (
+                <div key={m.id} className="flex items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => onSetDefaultModel(m.id)}
+                        className={
+                          m.default
+                            ? "text-amber-500 hover:text-amber-500"
+                            : "text-muted-foreground"
+                        }
+                      >
+                        <Star className={m.default ? "fill-current" : ""} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {t("settings.defaultModel")}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Input
+                    value={m.name}
+                    onChange={(e) => onUpdateModel(m.id, e.target.value)}
+                    placeholder={t("settings.modelPlaceholder")}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => onRemoveModel(m.id)}
+                  >
+                    <X />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <Button variant="secondary" size="sm" onClick={onAddModel}>
+              <Plus />
+              {t("settings.addModel")}
+            </Button>
+          </div>
         </div>
-        <Button variant="secondary" size="sm" onClick={onAddModel}>
-          <Plus />
-          {t("settings.addModel")}
-        </Button>
-      </div>
-    </Card>
+      ) : null}
+    </Panel>
   );
 }
