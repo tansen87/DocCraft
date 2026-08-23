@@ -104,6 +104,15 @@ export interface AppSettings {
   cacheOcrEngine: boolean;
   /** Separator between text blocks within a single OCR line. */
   textSeparator: string;
+  /** Show a result popup after every screenshot recognition (default true). */
+  snipResultPopup?: boolean;
+  /** Auto-copy the screenshot recognition result to the clipboard (default true). */
+  snipAutoCopy?: boolean;
+  /**
+   * Glassmorphism background opacity for the snip result window (0–100, default 60).
+   * 0 = fully transparent, 100 = fully opaque.
+   */
+  snipResultOpacity?: number;
 }
 
 export type OcrMode =

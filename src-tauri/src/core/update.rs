@@ -13,9 +13,6 @@ use serde::Serialize;
 /// notes as markdown.
 const RELEASE_API_URL: &str = "https://api.github.com/repos/tansen87/DocCraft/releases/latest";
 
-/// Page the frontend's "update" button navigates to.
-pub const RELEASE_PAGE_URL: &str = "https://github.com/tansen87/DocCraft/releases/latest/";
-
 const HTTP_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Debug, Clone, Serialize)]

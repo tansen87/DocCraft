@@ -4,6 +4,7 @@ import {
   open as openFileDialog,
   save as saveFileDialog,
 } from "@tauri-apps/plugin-dialog";
+import { emitTo } from "@tauri-apps/api/event";
 import {
   Camera,
   ChevronDown,
@@ -177,6 +178,9 @@ export function SettingsView() {
   const [cacheOcrEngine, setCacheOcrEngine] = useState(true);
   const [textSeparator, setTextSeparator] = useState("|");
   const [enableTray, setEnableTray] = useState(true);
+  const [snipResultPopup, setSnipResultPopup] = useState(true);
+  const [snipAutoCopy, setSnipAutoCopy] = useState(true);
+  const [snipResultOpacity, setSnipResultOpacity] = useState(60);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -199,6 +203,9 @@ export function SettingsView() {
         setCacheOcrEngine(settings.cacheOcrEngine ?? true);
         setTextSeparator(settings.textSeparator);
         setEnableTray(settings.enableTray);
+        setSnipResultPopup(settings.snipResultPopup ?? true);
+        setSnipAutoCopy(settings.snipAutoCopy ?? true);
+        setSnipResultOpacity(settings.snipResultOpacity ?? 60);
         setLoaded(true);
       })
       .catch((e) =>
@@ -245,6 +252,9 @@ export function SettingsView() {
       enableTray,
       cacheOcrEngine,
       textSeparator,
+      snipResultPopup,
+      snipAutoCopy,
+      snipResultOpacity,
     };
     try {
       await Promise.all([
@@ -269,6 +279,8 @@ export function SettingsView() {
       // Let other views re-sync anything derived from app settings
       // (e.g. MD→Excel's tables-only toggle).
       window.dispatchEvent(new Event("doccraft:settings-saved"));
+      // Notify the snip-result window so its opacity updates immediately.
+      emitTo("snip-result", "snip:settings-changed", {}).catch(() => {});
       toast.success(t("toast.configSaved"));
     } catch (e) {
       toast.error(t("toast.saveFailed"), { description: String(e) });
@@ -434,6 +446,21 @@ export function SettingsView() {
                   value={screenshotHotkey}
                   onChange={(v) => {
                     setScreenshotHotkey(v);
+                    markDirty();
+                  }}
+                  resultPopup={snipResultPopup}
+                  onResultPopupChange={(v) => {
+                    setSnipResultPopup(v);
+                    markDirty();
+                  }}
+                  autoCopy={snipAutoCopy}
+                  onAutoCopyChange={(v) => {
+                    setSnipAutoCopy(v);
+                    markDirty();
+                  }}
+                  resultOpacity={snipResultOpacity}
+                  onResultOpacityChange={(v) => {
+                    setSnipResultOpacity(v);
                     markDirty();
                   }}
                   disabled={loading}
@@ -891,28 +918,86 @@ function ThreadSettingsPanel({
 /**
  * Global hotkey that triggers screenshot recognition. Recorded by pressing a
  * key combination; stored in the accelerator syntax understood by the backend
- * (`Ctrl+Shift+KeyA`, `F8`, ...); empty disables the hotkey.
+ * (`Ctrl+Shift+KeyA`, `F8`, ...); empty disables the hotkey. Also carries the
+ * post-recognition behaviours (result popup + auto-copy).
  */
 function SnipSettingsPanel({
   value,
   onChange,
+  resultPopup,
+  onResultPopupChange,
+  autoCopy,
+  onAutoCopyChange,
+  resultOpacity,
+  onResultOpacityChange,
   disabled,
 }: {
   value: string;
   onChange: (v: string) => void;
+  resultPopup: boolean;
+  onResultPopupChange: (v: boolean) => void;
+  autoCopy: boolean;
+  onAutoCopyChange: (v: boolean) => void;
+  resultOpacity: number;
+  onResultOpacityChange: (v: number) => void;
   disabled?: boolean;
 }) {
   const { t } = useI18n();
 
   return (
-    <Panel>
-      <SettingRow
-        label={t("settings.screenshotHotkey")}
-        description={t("settings.screenshotHotkeyHint")}
-      >
-        <HotkeyInput value={value} onChange={onChange} disabled={disabled} />
-      </SettingRow>
-    </Panel>
+    <>
+      <Panel>
+        <SettingRow
+          label={t("settings.screenshotHotkey")}
+          description={t("settings.screenshotHotkeyHint")}
+        >
+          <HotkeyInput value={value} onChange={onChange} disabled={disabled} />
+        </SettingRow>
+        <SettingRow
+          label={t("settings.snipResultPopup")}
+          description={t("settings.snipResultPopupDesc")}
+        >
+          <Switch
+            checked={resultPopup}
+            onCheckedChange={onResultPopupChange}
+            disabled={disabled}
+          />
+        </SettingRow>
+        <SettingRow
+          label={t("settings.snipAutoCopy")}
+          description={t("settings.snipAutoCopyDesc")}
+        >
+          <Switch
+            checked={autoCopy}
+            onCheckedChange={onAutoCopyChange}
+            disabled={disabled}
+          />
+        </SettingRow>
+        <SettingRow
+          label={t("settings.snipResultOpacity")}
+          description={t("settings.snipResultOpacityDesc")}
+        >
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={resultOpacity}
+              onChange={(e) => onResultOpacityChange(Number(e.target.value))}
+              disabled={disabled}
+              className="h-2 w-32 cursor-pointer appearance-none rounded-full bg-border accent-primary
+                [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4
+                [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full
+                [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-sm"
+            />
+            <span className="w-8 text-right text-sm tabular-nums text-muted-foreground">
+              {resultOpacity}%
+            </span>
+          </div>
+        </SettingRow>
+      </Panel>
+    </>
   );
 }
 

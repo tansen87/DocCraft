@@ -5,10 +5,12 @@
   "windows": ["snip-*"],
   "permissions": [
     "core:default",
+    "clipboard-manager:allow-write-text",
     "core:window:allow-close",
     "core:window:allow-hide",
     "core:window:allow-show",
     "core:window:allow-set-focus",
-    "core:window:allow-set-always-on-top"
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-start-dragging"
   ]
 }

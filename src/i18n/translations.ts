@@ -116,6 +116,19 @@ const en = {
   "snip.disabledTitle": "OCR is disabled",
   "snip.disabledDesc":
     "Enable OCR in Settings before using screenshot recognition.",
+  "snip.resultTitle": "Recognition result",
+  "snip.pin": "Pin on top",
+  "snip.unpin": "Unpin",
+  "snip.close": "Close",
+  "settings.snipResultPopup": "Show result popup",
+  "settings.snipResultPopupDesc":
+    "Open a popup with the recognized text after every screenshot recognition",
+  "settings.snipAutoCopy": "Auto-copy result",
+  "settings.snipAutoCopyDesc":
+    "Copy the recognition result to the clipboard as soon as it is ready",
+  "settings.snipResultOpacity": "Glass opacity",
+  "settings.snipResultOpacityDesc":
+    "Background transparency of the result popup (0 = fully transparent, 100 = fully opaque)",
   "settings.screenshotHotkey": "Screenshot hotkey",
   "settings.screenshotHotkeyHint": "Global key that opens region capture",
   "settings.textSeparator": "Text separator",
@@ -410,6 +423,17 @@ const zh: Record<TranslationKey, string> = {
   "snip.color": "颜色",
   "snip.disabledTitle": "OCR 未启用",
   "snip.disabledDesc": "请先在设置中启用 OCR,再使用截图识别。",
+  "snip.resultTitle": "识别结果",
+  "snip.pin": "钉住置顶",
+  "snip.unpin": "取消置顶",
+  "snip.close": "关闭",
+  "settings.snipResultPopup": "弹出识别窗口",
+  "settings.snipResultPopupDesc": "截图识别完成后,弹窗显示识别结果",
+  "settings.snipAutoCopy": "复制识别结果",
+  "settings.snipAutoCopyDesc": "识别完成后,自动把结果复制到剪贴板",
+  "settings.snipResultOpacity": "毛玻璃透明度",
+  "settings.snipResultOpacityDesc":
+    "结果窗口背景的透明度 (0 = 完全透明, 100 = 完全不透明)",
   "settings.screenshotHotkey": "截图识别快捷键",
   "settings.screenshotHotkeyHint": "全局触发截图识别的按键",
   "settings.textSeparator": "文本连接符",

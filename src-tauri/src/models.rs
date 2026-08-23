@@ -343,6 +343,18 @@ pub struct AppSettings {
   /// `"\t"` (tab), `"^"` (caret).
   #[serde(default = "default_text_separator")]
   pub text_separator: String,
+  /// Show a popup with the recognized text after every screenshot
+  /// recognition (pin / copy / clear actions included).
+  #[serde(default = "default_true")]
+  pub snip_result_popup: bool,
+  /// Copy the screenshot recognition result to the clipboard automatically
+  /// as soon as it is ready.
+  #[serde(default = "default_true")]
+  pub snip_auto_copy: bool,
+  /// Glassmorphism background opacity for the snip result window (0–100).
+  /// 0 = fully transparent, 100 = fully opaque.
+  #[serde(default = "default_snip_result_opacity")]
+  pub snip_result_opacity: u32,
 }
 
 /// Controls when and how OCR is applied during conversion.
@@ -480,6 +492,10 @@ fn default_text_separator() -> String {
   "|".to_string()
 }
 
+fn default_snip_result_opacity() -> u32 {
+  60
+}
+
 impl Default for AppSettings {
   fn default() -> Self {
     Self {
@@ -491,6 +507,9 @@ impl Default for AppSettings {
       enable_tray: true,
       cache_ocr_engine: true,
       text_separator: default_text_separator(),
+      snip_result_popup: true,
+      snip_auto_copy: true,
+      snip_result_opacity: 60,
     }
   }
 }

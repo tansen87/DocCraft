@@ -27,6 +27,7 @@ import { PreviewPane } from "@/components/pdf2md/preview-pane";
 import { StatusBar } from "@/components/pdf2md/status-bar";
 import { useFileDrop } from "@/components/pdf2md/use-pdf-drop";
 import { ImageTableOverlay } from "@/components/image-table/image-table-overlay";
+import { showSnipResultWindow } from "@/components/snip/snip-result-window";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -303,6 +304,26 @@ export function ImageToMdView() {
         );
         // Focus the preview (and its Copy button) on the freshest shot.
         setSelectedId(id);
+
+        // Post-recognition extras, both on by default and configurable in
+        // Settings → Screenshot: auto-copy the text and show a popup. They
+        // run independently so a clipboard failure never blocks the popup
+        // (and an older backend missing the fields keeps defaults).
+        const settings = await getAppSettings().catch(() => null);
+        if ((settings?.snipAutoCopy ?? true) && result.markdown) {
+          try {
+            // Native clipboard write (no focus / user-gesture requirement —
+            // the webview API gets rejected right after the snip restore).
+            const { writeText } =
+              await import("@tauri-apps/plugin-clipboard-manager");
+            await writeText(result.markdown);
+          } catch {
+            /* clipboard unavailable */
+          }
+        }
+        if (settings?.snipResultPopup ?? true) {
+          void showSnipResultWindow(result.markdown).catch(() => {});
+        }
       } catch (e) {
         mutate((prev) =>
           prev.map((it) =>
