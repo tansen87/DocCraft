@@ -242,6 +242,9 @@ export function SettingsView() {
         })),
       );
       setDirty(false);
+      // Let other views re-sync anything derived from app settings
+      // (e.g. MD→Excel's tables-only toggle).
+      window.dispatchEvent(new Event("doccraft:settings-saved"));
       toast.success(t("toast.configSaved"));
     } catch (e) {
       toast.error(t("toast.saveFailed"), { description: String(e) });

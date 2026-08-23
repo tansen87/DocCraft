@@ -148,7 +148,7 @@ export function ImageTableOverlay({
 
   const handleConfirm = useCallback(async () => {
     if (lines.length === 0) {
-      toast.error("Please draw at least one vertical line");
+      toast.error(t("imgTable.needLine"));
       return;
     }
     setLoading(true);
@@ -160,7 +160,7 @@ export function ImageTableOverlay({
       onResult(result);
       onClose();
     } catch (e) {
-      toast.error("Failed to extract table", { description: String(e) });
+      toast.error(t("imgTable.extractFailed"), { description: String(e) });
     } finally {
       setLoading(false);
     }

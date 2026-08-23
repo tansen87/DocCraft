@@ -100,3 +100,21 @@ export const extractDrawTableToMarkdown = (
 /** Extract a table from an image using OCR + drawn vertical lines. */
 export const ocrImageTable = (request: ImageTableRequest) =>
   invoke<ImageTableResult>("ocr_image_table", { request });
+
+/** Reveal an exported file in the system file manager (single file: select
+ * it; multiple files / failure fallback: open the containing folder). */
+export async function revealExport(paths: string | string[]): Promise<void> {
+  const list = Array.isArray(paths) ? paths : [paths];
+  const { revealItemInDir, openPath } =
+    await import("@tauri-apps/plugin-opener");
+  const dirOf = (p: string) => p.replace(/[/\\][^/\\]+$/, "");
+  if (list.length === 1) {
+    try {
+      await revealItemInDir(list[0]);
+      return;
+    } catch {
+      /* fall back to opening the folder */
+    }
+  }
+  await openPath(dirOf(list[0]));
+}

@@ -15,6 +15,7 @@ import {
   detectPdf,
   exportMarkdown,
   getAppSettings,
+  revealExport,
 } from "@/lib/ipc";
 import type {
   ActivityProgress,
@@ -221,7 +222,13 @@ export function ConvertWorkspace({
     if (typeof target !== "string") return;
     try {
       await exportMarkdown(target, content);
-      toast.success(t("toast.exported"), { description: target });
+      toast.success(t("toast.exported"), {
+        description: target,
+        action: {
+          label: t("action.openFolder"),
+          onClick: () => void revealExport(target),
+        },
+      });
     } catch (e) {
       toast.error(t("toast.exportFailed"), { description: String(e) });
     }

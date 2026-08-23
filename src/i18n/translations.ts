@@ -30,6 +30,7 @@ const en = {
   "batch.remove": "Remove",
   "batch.add": "Add",
   "batch.stop": "Stop",
+  "batch.cancel": "Cancel",
   "batch.start": "Start",
   "batch.exportAll": "Export All",
 
@@ -132,6 +133,9 @@ const en = {
   "tooltip.drawTable": "Draw table lines on the image and extract",
 
   "settings.ocr": "OCR Service",
+  "action.openFolder": "Open folder",
+  "imgTable.extractFailed": "Table extraction failed",
+  "imgTable.needLine": "Draw at least one vertical line first",
   "settings.threads": "Concurrency",
   "settings.ocrEnabled": "OCR Mode",
   "settings.cacheOcrEngine": "Cache OCR engine",
@@ -303,6 +307,7 @@ const zh: Record<TranslationKey, string> = {
   "batch.remove": "移除",
   "batch.add": "添加",
   "batch.stop": "停止",
+  "batch.cancel": "取消",
   "batch.start": "开始",
   "batch.exportAll": "全部导出",
 
@@ -397,6 +402,9 @@ const zh: Record<TranslationKey, string> = {
   "tooltip.drawTable": "在图片上划线提取表格",
 
   "settings.ocr": "OCR 服务",
+  "action.openFolder": "打开文件夹",
+  "imgTable.extractFailed": "表格提取失败",
+  "imgTable.needLine": "请先画出至少一条竖线",
   "settings.threads": "并发线程",
   "settings.ocrEnabled": "OCR 模式",
   "settings.cacheOcrEngine": "缓存本地 OCR 引擎",

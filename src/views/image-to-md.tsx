@@ -41,6 +41,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { setViewTask } from "@/lib/global-task";
 import { useI18n } from "@/i18n";
 import { ensureMaxConcurrent } from "@/lib/concurrency";
 import {
@@ -49,6 +50,7 @@ import {
   getAppSettings,
   ocrImageToMd,
   screenshotOcrRegion,
+  revealExport,
 } from "@/lib/ipc";
 import type {
   ActivityProgress,
@@ -246,6 +248,24 @@ export function ImageToMdView() {
     setRunning(false);
     setActivity(null);
   }, []);
+
+  // Report recognition progress to the header's global task indicator.
+  useEffect(() => {
+    if (!running) {
+      setViewTask("imgtomd", null);
+      return;
+    }
+    if (activity?.total != null) {
+      const current = activity.current ?? 0;
+      setViewTask(
+        "imgtomd",
+        `${Math.min(current, activity.total)}/${activity.total}`,
+      );
+      return;
+    }
+    const done = items.filter((it) => it.status === "done").length;
+    setViewTask("imgtomd", `${Math.min(done, items.length)}/${items.length}`);
+  }, [running, activity, items]);
 
   /**
    * Recognize one captured screen region: insert a converting row, run the
@@ -547,7 +567,13 @@ export function ImageToMdView() {
     if (typeof target !== "string") return;
     try {
       await exportMarkdown(target, item.result.markdown);
-      toast.success(t("toast.exported"), { description: target });
+      toast.success(t("toast.exported"), {
+        description: target,
+        action: {
+          label: t("action.openFolder"),
+          onClick: () => void revealExport(target),
+        },
+      });
     } catch (e) {
       toast.error(t("toast.exportFailed"), { description: String(e) });
     }
@@ -563,7 +589,13 @@ export function ImageToMdView() {
     setExporting(true);
     try {
       await exportMarkdown(target, mergedMarkdown);
-      toast.success(t("toast.exported"), { description: target });
+      toast.success(t("toast.exported"), {
+        description: target,
+        action: {
+          label: t("action.openFolder"),
+          onClick: () => void revealExport(target),
+        },
+      });
     } catch (e) {
       toast.error(t("toast.exportFailed"), { description: String(e) });
     } finally {
@@ -613,6 +645,10 @@ export function ImageToMdView() {
       }
       toast.success(t("toast.exportedCount", { count: ok }), {
         description: dir,
+        action: {
+          label: t("action.openFolder"),
+          onClick: () => void revealExport(dir),
+        },
       });
     } finally {
       setExportingAll(false);

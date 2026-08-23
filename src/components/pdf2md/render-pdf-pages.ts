@@ -16,6 +16,14 @@ import {
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 
+/** Thrown when a conversion is cancelled via its `isCancelled` signal. */
+export class CancelledError extends Error {
+  constructor() {
+    super("conversion cancelled");
+    this.name = "CancelledError";
+  }
+}
+
 /** Render DPI multiplier (~180 DPI). */
 const OCR_RENDER_SCALE = 2.5;
 
@@ -73,18 +81,23 @@ export async function convertWithOcr(
   pages: number[],
   /** Optional per-page progress for the status bar activity indicator. */
   onProgress?: (p: ActivityProgress | null) => void,
+  /** Pollled between stages; when it turns true the session is aborted. */
+  isCancelled?: () => boolean,
 ): Promise<ConvertResult> {
+  if (isCancelled?.()) throw new CancelledError();
   const session = await startHybridSession(path, pages);
   try {
     if (session.ocrConfigured) {
       let done = 0;
       onProgress?.({ phase: "ocr", current: 0, total: pages.length });
       for await (const img of renderPdfPagesForOcr(path, pages)) {
+        if (isCancelled?.()) throw new CancelledError();
         await hybridPageOcr(session.sessionId, img.page, img.imagePng);
         done += 1;
         onProgress?.({ phase: "ocr", current: done, total: pages.length });
       }
     }
+    if (isCancelled?.()) throw new CancelledError();
     return await finishHybridSession(session.sessionId);
   } catch (e) {
     await abortHybridSession(session.sessionId).catch(() => undefined);

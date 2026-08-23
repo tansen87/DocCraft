@@ -30,7 +30,9 @@ import {
   analyzeMarkdown,
   exportMarkdownTables,
   getAppSettings,
+  revealExport,
 } from "@/lib/ipc";
+import { setViewTask } from "@/lib/global-task";
 import { useI18n } from "@/i18n";
 import type { MdAnalyzeResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -109,15 +111,12 @@ export function MdToXlsxView() {
       }
     }
     void loadTablesOnly();
-    const el = rootRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      if (el.clientWidth > 0) void loadTablesOnly();
-    });
-    ro.observe(el);
+    // Re-sync whenever settings are saved (the Settings page dispatches this),
+    // so the tables-only toggle can never go stale.
+    window.addEventListener("doccraft:settings-saved", loadTablesOnly);
     return () => {
       cancelled = true;
-      ro.disconnect();
+      window.removeEventListener("doccraft:settings-saved", loadTablesOnly);
     };
   }, []);
 
@@ -165,6 +164,15 @@ export function MdToXlsxView() {
     },
     [mutate, analyzeItem],
   );
+
+  // Report analyzing count to the header's global task indicator.
+  const analyzingCount = items.filter((it) => it.status === "analyzing").length;
+  useEffect(() => {
+    setViewTask(
+      "mdtoexcel",
+      analyzingCount > 0 ? String(analyzingCount) : null,
+    );
+  }, [analyzingCount]);
 
   const { dragging } = useFileDrop(addFiles, {
     extensions: ["md"],
@@ -217,6 +225,10 @@ export function MdToXlsxView() {
           count: r.tableCount,
           rows: r.totalRows,
         }),
+        action: {
+          label: t("action.openFolder"),
+          onClick: () => void revealExport(target),
+        },
       });
     } catch (e) {
       toast.error(t("toast.exportFailed"), { description: String(e) });
@@ -270,6 +282,10 @@ export function MdToXlsxView() {
       }
       toast.success(t("toast.exportedCount", { count: ok }), {
         description: dir,
+        action: {
+          label: t("action.openFolder"),
+          onClick: () => void revealExport(dir),
+        },
       });
     } finally {
       setExportingAll(false);

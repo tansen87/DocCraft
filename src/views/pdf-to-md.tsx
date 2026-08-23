@@ -21,7 +21,10 @@ import { DragOverlay } from "@/components/pdf2md/drag-overlay";
 import { DropZone } from "@/components/pdf2md/drop-zone";
 import { formatDuration } from "@/lib/format-duration";
 import { usePdfDrop } from "@/components/pdf2md/use-pdf-drop";
-import { convertWithOcr } from "@/components/pdf2md/render-pdf-pages";
+import {
+  convertWithOcr,
+  CancelledError,
+} from "@/components/pdf2md/render-pdf-pages";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,8 +37,10 @@ import {
   detectPdf,
   exportMarkdown,
   getAppSettings,
+  revealExport,
 } from "@/lib/ipc";
 import { ensureMaxConcurrent } from "@/lib/concurrency";
+import { setViewTask } from "@/lib/global-task";
 import { useI18n } from "@/i18n";
 import type { ConvertResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -123,6 +128,7 @@ export function BatchView() {
   const queueRef = useRef<{ id: string; path: string }[]>([]);
   const activeRef = useRef(0);
   const runningRef = useRef(false);
+  const cancelRef = useRef(new Set<string>());
   const waitersRef = useRef<(() => void)[]>([]);
 
   const mutate = useCallback((fn: (prev: BatchItem[]) => BatchItem[]) => {
@@ -149,8 +155,10 @@ export function BatchView() {
   const runJob = useCallback(
     async (job: { id: string; path: string }) => {
       activeRef.current += 1;
+      const isCancelled = () => cancelRef.current.has(job.id);
       patchItem(job.id, { status: "converting" });
       try {
+        if (isCancelled()) throw new CancelledError();
         let result: ConvertResult;
         const det = await detectPdf(job.path);
         const needOcr = det.pagesNeedingOcr;
@@ -165,17 +173,25 @@ export function BatchView() {
           : needOcr;
         result =
           settings.ocrMode !== "disabled"
-            ? await convertWithOcr(job.path, ocrPages)
+            ? await convertWithOcr(job.path, ocrPages, undefined, isCancelled)
             : await convertPdf(job.path);
+        if (isCancelled()) throw new CancelledError();
         patchItem(job.id, { status: "done", result });
       } catch (e) {
-        patchItem(job.id, { status: "error", error: String(e) });
-      }
-      activeRef.current -= 1;
-      if (queueRef.current.length === 0 && activeRef.current === 0) {
-        runningRef.current = false;
-        setRunning(false);
-        wake();
+        if (isCancelled() || e instanceof CancelledError) {
+          // Cancelled — back to the queue as a plain unconverted item.
+          patchItem(job.id, { status: "queued", error: undefined });
+        } else {
+          patchItem(job.id, { status: "error", error: String(e) });
+        }
+      } finally {
+        cancelRef.current.delete(job.id);
+        activeRef.current -= 1;
+        if (queueRef.current.length === 0 && activeRef.current === 0) {
+          runningRef.current = false;
+          setRunning(false);
+          wake();
+        }
       }
     },
     [patchItem, wake],
@@ -199,12 +215,38 @@ export function BatchView() {
     for (let i = 0; i < concurrency; i += 1) void worker();
   }, [worker, concurrency]);
 
+  // Report batch progress to the header's global task indicator.
+  useEffect(() => {
+    if (!running) {
+      setViewTask("pdftomd", null);
+      return;
+    }
+    const done = items.filter((it) => it.status === "done").length;
+    setViewTask("pdftomd", `${Math.min(done, items.length)}/${items.length}`);
+  }, [running, items]);
+
   const stop = useCallback(() => {
     if (!runningRef.current) return;
     runningRef.current = false;
+    // Full cancel: abort in-flight conversions and keep every unfinished file
+    // resumable — pressing Start picks up exactly where things stopped.
+    for (const it of itemsRef.current) {
+      if (it.status !== "converting") continue;
+      cancelRef.current.add(it.id);
+      if (!queueRef.current.some((j) => j.id === it.id)) {
+        queueRef.current.push({ id: it.id, path: it.path });
+      }
+    }
     setRunning(false);
     wake();
   }, [wake]);
+
+  /** Cancel one converting file — it goes back to a plain queued row that
+   * will NOT restart with the pool (explicit retry required). */
+  const cancelItem = useCallback((id: string) => {
+    queueRef.current = queueRef.current.filter((j) => j.id !== id);
+    cancelRef.current.add(id);
+  }, []);
 
   const addFiles = useCallback(
     (paths: string[]) => {
@@ -299,7 +341,13 @@ export function BatchView() {
       });
       if (typeof target !== "string") return;
       await exportMarkdown(target, item.result.markdown);
-      toast.success(t("toast.exported"), { description: target });
+      toast.success(t("toast.exported"), {
+        description: target,
+        action: {
+          label: t("action.openFolder"),
+          onClick: () => void revealExport(target),
+        },
+      });
     } catch (e) {
       toast.error(t("toast.exportFailed"), { description: String(e) });
     } finally {
@@ -349,6 +397,10 @@ export function BatchView() {
       }
       toast.success(t("toast.exportedCount", { count: ok }), {
         description: dir,
+        action: {
+          label: t("action.openFolder"),
+          onClick: () => void revealExport(dir),
+        },
       });
     } finally {
       setExportingAll(false);
@@ -593,20 +645,37 @@ export function BatchView() {
                               </TooltipContent>
                             </Tooltip>
                           ) : null}
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={() => removeItem(item.id)}
-                              >
-                                <X />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              {t("tooltip.removeFromList")}
-                            </TooltipContent>
-                          </Tooltip>
+                          {item.status === "converting" ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={() => cancelItem(item.id)}
+                                >
+                                  <Square />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {t("batch.cancel")}
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={() => removeItem(item.id)}
+                                >
+                                  <X />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {t("tooltip.removeFromList")}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
                         </div>
                       </td>
                     </tr>
