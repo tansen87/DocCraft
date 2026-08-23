@@ -967,8 +967,9 @@ export function ImageToMdView() {
         <ImageTableOverlay
           imagePath={drawTablePath}
           onClose={() => setDrawTablePath(null)}
-          onResult={(markdown) => {
-            // Add the extracted table markdown as a new item result
+          onResult={(result) => {
+            // Add the extracted table markdown as a new item result,
+            // carrying over the real engine + duration from the backend.
             const id = crypto.randomUUID();
             mutate((prev) => [
               ...prev,
@@ -978,12 +979,14 @@ export function ImageToMdView() {
                 name: `Table_from_${drawTablePath.split(/[/\\]/).pop() ?? "image"}`,
                 status: "done",
                 result: {
-                  markdown,
-                  engine: "local",
-                  durationMs: 0,
+                  markdown: result.markdown,
+                  engine: result.engine,
+                  durationMs: result.durationMs,
                 },
               },
             ]);
+            // Focus the preview on the freshly extracted table.
+            setSelectedId(id);
           }}
         />
       ) : null}

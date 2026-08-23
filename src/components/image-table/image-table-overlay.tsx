@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useI18n } from "@/i18n";
 import { ocrImageTable } from "@/lib/ipc";
+import type { ImageTableResult } from "@/lib/types";
 
 interface ImageTableOverlayProps {
   imagePath: string;
   onClose: () => void;
-  onResult: (markdown: string) => void;
+  onResult: (result: ImageTableResult) => void;
 }
 
 /**
@@ -156,7 +157,7 @@ export function ImageTableOverlay({
         imagePath,
         verticalLines: lines,
       });
-      onResult(result.markdown);
+      onResult(result);
       onClose();
     } catch (e) {
       toast.error("Failed to extract table", { description: String(e) });
