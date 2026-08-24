@@ -175,9 +175,8 @@ export function SettingsView() {
   const [cacheExtracted, setCacheExtracted] = useState(true);
   const [excelTablesOnly, setExcelTablesOnly] = useState(true);
   const [screenshotHotkey, setScreenshotHotkey] = useState("");
-  const [cacheOcrEngine, setCacheOcrEngine] = useState(true);
   const [ocrLowPrecision, setOcrLowPrecision] = useState(true);
-  const [ocrModelSize, setOcrModelSize] = useState<OcrModelSize>("medium");
+  const [ocrModelSize, setOcrModelSize] = useState<OcrModelSize>("small");
   const [textSeparator, setTextSeparator] = useState("|");
   const [enableTray, setEnableTray] = useState(true);
   const [snipResultPopup, setSnipResultPopup] = useState(true);
@@ -202,9 +201,8 @@ export function SettingsView() {
         setCacheExtracted(settings.cacheExtractedText);
         setExcelTablesOnly(settings.excelTablesOnly);
         setScreenshotHotkey(settings.screenshotHotkey ?? "");
-        setCacheOcrEngine(settings.cacheOcrEngine ?? true);
         setOcrLowPrecision(settings.ocrLowPrecision ?? true);
-        setOcrModelSize(settings.ocrModelSize ?? "medium");
+        setOcrModelSize(settings.ocrModelSize ?? "small");
         setTextSeparator(settings.textSeparator);
         setEnableTray(settings.enableTray);
         setSnipResultPopup(settings.snipResultPopup ?? true);
@@ -254,7 +252,6 @@ export function SettingsView() {
       ocrMode,
       screenshotHotkey: screenshotHotkey.trim() || null,
       enableTray,
-      cacheOcrEngine,
       ocrLowPrecision,
       ocrModelSize,
       textSeparator,
@@ -439,11 +436,6 @@ export function SettingsView() {
                     markDirty();
                   }}
                   loading={loading}
-                  cacheOcrEngine={cacheOcrEngine}
-                  onCacheOcrEngineChange={(v) => {
-                    setCacheOcrEngine(v);
-                    markDirty();
-                  }}
                   ocrLowPrecision={ocrLowPrecision}
                   onOcrLowPrecisionChange={(v) => {
                     setOcrLowPrecision(v);
@@ -646,8 +638,6 @@ function OcrSettingsPanel({
   ocrMode,
   onOcrModeChange,
   loading,
-  cacheOcrEngine,
-  onCacheOcrEngineChange,
   ocrLowPrecision,
   onOcrLowPrecisionChange,
   ocrModelSize,
@@ -658,8 +648,6 @@ function OcrSettingsPanel({
   ocrMode: OcrMode;
   onOcrModeChange: (v: OcrMode) => void;
   loading: boolean;
-  cacheOcrEngine: boolean;
-  onCacheOcrEngineChange: (v: boolean) => void;
   ocrLowPrecision: boolean;
   onOcrLowPrecisionChange: (v: boolean) => void;
   ocrModelSize: OcrModelSize;
@@ -833,20 +821,7 @@ function OcrSettingsPanel({
       </Panel>
 
       <Panel>
-        <SettingRow
-          label={t("settings.cacheOcrEngine")}
-          description={t("settings.cacheOcrEngineDesc")}
-        >
-          <Switch
-            checked={cacheOcrEngine}
-            onCheckedChange={onCacheOcrEngineChange}
-            disabled={loading}
-          />
-        </SettingRow>
-        <SettingRow
-          label={t("settings.ocrModelSize")}
-          description={t("settings.ocrModelSizeDesc")}
-        >
+        <SettingRow label={t("settings.ocrModelSize")}>
           <Select
             value={ocrModelSize}
             onValueChange={(v) => onOcrModelSizeChange(v as OcrModelSize)}
@@ -856,6 +831,9 @@ function OcrSettingsPanel({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="tiny">
+                {t("settings.ocrModelSize.tiny")}
+              </SelectItem>
               <SelectItem value="small">
                 {t("settings.ocrModelSize.small")}
               </SelectItem>

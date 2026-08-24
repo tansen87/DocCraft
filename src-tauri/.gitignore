@@ -12,3 +12,6 @@
 /resources/models/ppocr_keys_v6_small.txt
 /resources/models/PP-OCRv6_small_det.mnn
 /resources/models/PP-OCRv6_small_rec.mnn
+/resources/models/ppocr_keys_v6_tiny.txt
+/resources/models/PP-OCRv6_tiny_det.mnn
+/resources/models/PP-OCRv6_tiny_rec.mnn

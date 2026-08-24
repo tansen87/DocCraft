@@ -75,7 +75,7 @@ const en = {
   "toast.tableExtracted": "Table extracted",
   "toast.extractDone": "Extraction complete, merged into Markdown",
   "toast.extractDoneOcr":
-    "Extraction complete — {count} page(s) recognized via OCR",
+    "Extraction complete - {count} page(s) recognized via OCR",
   "toast.noTable": "No table extracted",
   "toast.noTableDesc": "Please adjust the vertical lines and retry",
   "toast.extractFailed": "Extraction failed",
@@ -106,6 +106,10 @@ const en = {
   "img2md.exportSingle": "Export single",
   "img2md.previewScope": "Preview scope",
   "img2md.previewMerged": "All images (merged)",
+  "img2md.zoomIn": "Zoom in",
+  "img2md.zoomOut": "Zoom out",
+  "img2md.zoomReset": "Reset zoom",
+  "img2md.imageUnavailable": "Source image unavailable",
   "snip.capture": "Screenshot",
   "snip.tooltip": "Capture a screen region and recognize it with OCR",
   "snip.hint":
@@ -116,7 +120,6 @@ const en = {
   "snip.disabledTitle": "OCR is disabled",
   "snip.disabledDesc":
     "Enable OCR in Settings before using screenshot recognition.",
-  "snip.resultTitle": "Recognition result",
   "snip.pin": "Pin on top",
   "snip.unpin": "Unpin",
   "snip.close": "Close",
@@ -150,16 +153,12 @@ const en = {
   "imgTable.needLine": "Draw at least one vertical line first",
   "settings.threads": "Concurrency",
   "settings.ocrEnabled": "OCR Mode",
-  "settings.cacheOcrEngine": "Cache OCR engine",
-  "settings.cacheOcrEngineDesc":
-    "Keep PaddleOCR resident to skip 0.5-2s load per run; uses ~100-200 MB RAM, freed on disable",
   "settings.ocrLowPrecision": "Low-precision inference",
   "settings.ocrLowPrecisionDesc":
-    "Run local PaddleOCR in MNN f16 mode — ~30-50% faster on CPU with negligible accuracy loss",
+    "Run local PaddleOCR in MNN f16 mode - ~30-50% faster on CPU with negligible accuracy loss",
   "settings.ocrModelSize": "Recognition model",
-  "settings.ocrModelSizeDesc":
-    "Small runs roughly 2-3x faster with slightly lower accuracy; medium prioritizes accuracy",
-  "settings.ocrModelSize.small": "Small (faster)",
+  "settings.ocrModelSize.tiny": "Tiny (faster)",
+  "settings.ocrModelSize.small": "Small (balance)",
   "settings.ocrModelSize.medium": "Medium (accurate)",
   "settings.ocrMode.forceLocal": "Force OCR (Local)",
   "settings.ocrMode.forceLocalDesc":
@@ -246,8 +245,7 @@ const en = {
     "{count} page(s) were skipped because no OCR provider is configured.",
   "notice.ocrFallbackPages":
     "{count} page(s) have no text layer and will be recognized via OCR.",
-  "notice.failedImages":
-    "{count} image(s) failed to recognize. Click a thumbnail number to locate it.",
+  "notice.failedImages": "{count} image(s) failed to recognize",
 
   "pdfmeta.text": "Text",
   "pdfmeta.textHint": "No OCR needed, converted locally",
@@ -307,7 +305,7 @@ const en = {
   "filter.configFiles": "DocCraft Configuration",
 
   "update.available": "v{version} available",
-  "update.tooltip": "A newer version is available — click to view the release",
+  "update.tooltip": "A newer version is available - click to view the release",
   "update.check": "Check for updates",
   "update.upToDate": "You're on the latest version",
   "update.checkFailed": "Update check failed",
@@ -423,6 +421,10 @@ const zh: Record<TranslationKey, string> = {
   "img2md.exportSingle": "逐张导出",
   "img2md.previewScope": "预览范围",
   "img2md.previewMerged": "全部图片(合并)",
+  "img2md.zoomIn": "放大",
+  "img2md.zoomOut": "缩小",
+  "img2md.zoomReset": "重置缩放",
+  "img2md.imageUnavailable": "原图不可用",
   "snip.capture": "截图识别",
   "snip.tooltip": "框选屏幕区域并用 OCR 识别",
   "snip.hint": "拖拽框选识别区域 · Esc 或右键取消 · 双击全屏",
@@ -430,8 +432,7 @@ const zh: Record<TranslationKey, string> = {
   "snip.coordinates": "坐标",
   "snip.color": "颜色",
   "snip.disabledTitle": "OCR 未启用",
-  "snip.disabledDesc": "请先在设置中启用 OCR,再使用截图识别。",
-  "snip.resultTitle": "识别结果",
+  "snip.disabledDesc": "请先在设置中启用 OCR,再使用截图识别",
   "snip.pin": "钉住置顶",
   "snip.unpin": "取消置顶",
   "snip.close": "关闭",
@@ -460,16 +461,12 @@ const zh: Record<TranslationKey, string> = {
   "imgTable.needLine": "请先画出至少一条竖线",
   "settings.threads": "并发线程",
   "settings.ocrEnabled": "OCR 模式",
-  "settings.cacheOcrEngine": "缓存本地 OCR 引擎",
-  "settings.cacheOcrEngineDesc":
-    "PaddleOCR 引擎常驻内存,省去每次 0.5-2s 加载耗时,占用约 100-200 MB RAM,关闭后自动释放",
   "settings.ocrLowPrecision": "低精度推理加速",
   "settings.ocrLowPrecisionDesc":
     "本地 PaddleOCR 使用 MNN f16 模式推理,CPU 上约快 30-50%,精度损失可忽略",
   "settings.ocrModelSize": "识别模型",
-  "settings.ocrModelSizeDesc":
-    "small 模型速度约快 2-3 倍,精度略低;medium 为精度优先的默认档位",
-  "settings.ocrModelSize.small": "small(更快)",
+  "settings.ocrModelSize.tiny": "tiny(更快)",
+  "settings.ocrModelSize.small": "small(均衡)",
   "settings.ocrModelSize.medium": "medium(更准)",
   "settings.ocrMode.forceLocal": "强制OCR(本地)",
   "settings.ocrMode.forceLocalDesc":
@@ -552,7 +549,7 @@ const zh: Record<TranslationKey, string> = {
   "notice.failedPages": "{count} 页 OCR 失败, 已用占位注释替代",
   "notice.skippedPages": "{count} 页因未配置 OCR 服务而被跳过",
   "notice.ocrFallbackPages": "{count} 页无文本层, 将通过 OCR 识别",
-  "notice.failedImages": "{count} 张图片识别失败, 点击缩略图编号可定位",
+  "notice.failedImages": "{count} 张图片识别失败",
 
   "pdfmeta.text": "文本型",
   "pdfmeta.textHint": "无需 OCR, 本地直接转换",

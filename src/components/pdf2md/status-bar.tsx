@@ -350,7 +350,7 @@ export function StatusBar({
             ) : result ? (
               `${Math.round(result.confidence * 100)}%`
             ) : (
-              "—"
+              "-"
             )}
           </Stat>
 
@@ -378,7 +378,7 @@ export function StatusBar({
               t("status.none")
             )
           ) : (
-            "—"
+            "-"
           )}
         </Stat>
       )}

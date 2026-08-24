@@ -10,7 +10,7 @@ use crate::models::{ConvertResult, DetectResult};
 ///
 /// Runs the real extraction so `pages_needing_ocr` reflects the actual pages
 /// that would need OCR (detection-flagged plus image-only pages whose markdown
-/// is empty) — the status bar shows this before any conversion. The extraction
+/// is empty) - the status bar shows this before any conversion. The extraction
 /// is cached so a following conversion reuses it instead of decoding the
 /// document again.
 pub fn detect_pdf(path: &str, use_cache: bool) -> Result<DetectResult, PdfError> {
@@ -44,7 +44,7 @@ pub fn convert_pdf(path: &str, use_cache: bool) -> Result<ConvertResult, PdfErro
     grid_rebuild::merge_ocr_pages(&info.pages_needing_ocr, &ext.page_markdowns);
 
   // A local-only conversion never runs OCR, so every page that needs it is
-  // skipped — record them so the UI can surface them in the status bar.
+  // skipped - record them so the UI can surface them in the status bar.
   let skipped_pages = info.pages_needing_ocr.clone();
 
   Ok(ConvertResult {

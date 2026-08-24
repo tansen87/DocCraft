@@ -7,6 +7,7 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   Check,
+  CircleAlert,
   Clock,
   Download,
   FileImage,
@@ -24,12 +25,18 @@ import { DragOverlay } from "@/components/pdf2md/drag-overlay";
 import { DropZone } from "@/components/pdf2md/drop-zone";
 import { formatDuration } from "@/lib/format-duration";
 import { PreviewPane } from "@/components/pdf2md/preview-pane";
-import { StatusBar } from "@/components/pdf2md/status-bar";
 import { useFileDrop } from "@/components/pdf2md/use-pdf-drop";
 import { ImageTableOverlay } from "@/components/image-table/image-table-overlay";
+import { ImagePreviewPane } from "@/components/img2md/image-preview-pane";
 import { showSnipResultWindow } from "@/components/snip/snip-result-window";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -59,7 +66,6 @@ import type {
   MonitorSnapshot,
   OcrImageResult,
   ShotRegion,
-  StatusNotice,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -315,7 +321,7 @@ export function ImageToMdView() {
           snipSettings ?? (await getAppSettings().catch(() => null));
         if ((settings?.snipAutoCopy ?? true) && result.markdown) {
           try {
-            // Native clipboard write (no focus / user-gesture requirement —
+            // Native clipboard write (no focus / user-gesture requirement -
             // the webview API gets rejected right after the snip restore).
             const { writeText } =
               await import("@tauri-apps/plugin-clipboard-manager");
@@ -325,7 +331,9 @@ export function ImageToMdView() {
           }
         }
         if (settings?.snipResultPopup ?? true) {
-          void showSnipResultWindow(result.markdown).catch(() => {});
+          void showSnipResultWindow(result.markdown, result.durationMs).catch(
+            () => {},
+          );
         }
       } catch (e) {
         mutate((prev) =>
@@ -371,7 +379,7 @@ export function ImageToMdView() {
 
         /**
          * Tear down the snip session UI. When a region *was* selected we must NOT
-         * call `cancelScreenshot` — the follow-up `screenshot_ocr` command
+         * call `cancelScreenshot` - the follow-up `screenshot_ocr` command
          * consumes the cached snapshot and restores the main window itself;
          * cancelling here first would wipe the snapshot ("session expired").
          */
@@ -454,7 +462,7 @@ export function ImageToMdView() {
               shadow: false,
               visible: false,
             });
-            // Constructor options are logical units — enforce exact physical
+            // Constructor options are logical units - enforce exact physical
             // placement so the overlay covers its monitor pixel-for-pixel.
             void win.once("tauri://created", async () => {
               await win.setPosition(new PhysicalPosition(m.x, m.y));
@@ -470,7 +478,7 @@ export function ImageToMdView() {
           }
         }
       } catch (e) {
-        // Any synchronous error during set-up — restore the main window.
+        // Any synchronous error during set-up - restore the main window.
         try {
           await cancelScreenshot();
         } catch {
@@ -559,11 +567,12 @@ export function ImageToMdView() {
     () => items.filter((it) => it.status === "done" && it.result),
     [items],
   );
-  const failedIndices = useMemo(
+  /** Failed items with their 1-indexed positions, for the preview notice. */
+  const failedItems = useMemo(
     () =>
       items
-        .map((it, i) => (it.status === "error" ? i + 1 : 0))
-        .filter((n) => n > 0),
+        .map((item, i) => ({ item, index: i + 1 }))
+        .filter(({ item }) => item.status === "error"),
     [items],
   );
 
@@ -698,22 +707,6 @@ export function ImageToMdView() {
     extensions: IMAGE_EXTENSIONS,
   });
 
-  const notices = useMemo<StatusNotice[]>(() => {
-    if (failedIndices.length === 0) return [];
-    return [
-      {
-        id: "images-failed",
-        level: "error",
-        text: t("notice.failedImages", { count: failedIndices.length }),
-        pages: failedIndices,
-        onPageClick: scrollToItem,
-        actions: [
-          { label: t("status.actionRetry"), onClick: () => retryRef.current() },
-        ],
-      },
-    ];
-  }, [failedIndices, t, scrollToItem]);
-
   const total = items.length;
   const doneCount = doneItems.length;
   const hasQueued = items.some((it) => it.status === "queued");
@@ -722,6 +715,11 @@ export function ImageToMdView() {
     items.find(
       (it) => it.id === selectedId && it.status === "done" && it.result,
     ) ?? null;
+  /**
+   * Side-by-side comparison mode: when a single done item is selected, its
+   * source image is shown between the list and the markdown result.
+   */
+  const compare = !!previewItem && !!(previewItem.path || previewItem.thumbUrl);
 
   /**
    * Picker in the preview header: choose the merged document or any single
@@ -877,126 +875,154 @@ export function ImageToMdView() {
         </div>
       </div>
 
-      {/* Image list + merged markdown preview */}
+      {/* Image list | source image (when a single item is selected) | result */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-2">
-        <div className="min-h-0 overflow-hidden rounded-xl border bg-card shadow-sm">
-          <div className="h-full overflow-y-auto p-2">
-            {items.map((item, index) => (
-              <div
-                key={item.id}
-                ref={(el) => {
-                  if (el) rowRefs.current.set(item.id, el);
-                  else rowRefs.current.delete(item.id);
-                }}
-                className={cn(
-                  "mb-2 flex cursor-pointer items-center gap-3 rounded-lg border p-2 transition-all last:mb-0",
-                  highlightId === item.id &&
-                    "border-primary bg-primary/5 ring-2 ring-primary/40",
-                  highlightId !== item.id &&
-                    selectedId === item.id &&
-                    "border-primary bg-primary/5",
-                )}
-                onClick={() =>
-                  setSelectedId(
-                    item.status === "done" && selectedId !== item.id
-                      ? item.id
-                      : null,
-                  )
-                }
-              >
-                <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                  {index + 1}
-                </span>
-                {item.thumbUrl || item.path ? (
-                  <img
-                    src={item.thumbUrl ?? convertFileSrc(item.path)}
-                    alt={item.name}
-                    className="size-10 shrink-0 rounded-md border bg-muted object-cover"
-                  />
-                ) : (
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-md border bg-muted">
-                    <FileImage className="size-4 text-muted-foreground" />
-                  </span>
-                )}
-                <span className="min-w-0 flex-1 truncate text-sm">
-                  {item.name}
-                </span>
-                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                  {item.result ? formatDuration(item.result.durationMs) : ""}
-                </span>
-                <ItemStatusBadge status={item.status} error={item.error} />
-                <div className="flex shrink-0 items-center gap-1">
-                  {item.path ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          disabled={running}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDrawTablePath(item.path);
-                          }}
-                        >
-                          <Columns3Cog />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{t("tooltip.drawTable")}</TooltipContent>
-                    </Tooltip>
-                  ) : null}
-                  {item.status === "error" && !running ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            mutate((prev) =>
-                              prev.map((it) =>
-                                it.id === item.id
-                                  ? {
-                                      ...it,
-                                      status: "queued",
-                                      error: undefined,
-                                    }
-                                  : it,
-                              ),
-                            );
-                            void start();
-                          }}
-                        >
-                          <Play />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{t("tooltip.retry")}</TooltipContent>
-                    </Tooltip>
-                  ) : null}
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        disabled={running}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeItem(item.id);
-                        }}
-                      >
-                        <X />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {t("tooltip.removeFromList")}
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
+        {/* Left column: list on top, zoomable source image below. */}
+        <div className="flex min-h-0 flex-col gap-3">
+          <div
+            className={cn(
+              "min-h-0 overflow-hidden rounded-xl border bg-card shadow-sm",
+              compare ? "flex-1" : "h-full",
+            )}
+          >
+            <ScrollArea className="h-full">
+              <div className="p-2">
+                {items.map((item, index) => (
+                  <div
+                    key={item.id}
+                    ref={(el) => {
+                      if (el) rowRefs.current.set(item.id, el);
+                      else rowRefs.current.delete(item.id);
+                    }}
+                    className={cn(
+                      "mb-2 flex cursor-pointer items-center gap-3 rounded-lg border p-2 transition-all last:mb-0",
+                      highlightId === item.id &&
+                        "border-primary bg-primary/5 ring-2 ring-primary/40",
+                      highlightId !== item.id &&
+                        selectedId === item.id &&
+                        "border-primary bg-primary/5",
+                    )}
+                    onClick={() =>
+                      setSelectedId(
+                        item.status === "done" && selectedId !== item.id
+                          ? item.id
+                          : null,
+                      )
+                    }
+                  >
+                    <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                      {index + 1}
+                    </span>
+                    {item.thumbUrl || item.path ? (
+                      <img
+                        src={item.thumbUrl ?? convertFileSrc(item.path)}
+                        alt={item.name}
+                        className="size-10 shrink-0 rounded-md border bg-muted object-cover"
+                      />
+                    ) : (
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-md border bg-muted">
+                        <FileImage className="size-4 text-muted-foreground" />
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-sm">
+                      {item.name}
+                    </span>
+                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                      {item.result
+                        ? formatDuration(item.result.durationMs)
+                        : ""}
+                    </span>
+                    <ItemStatusBadge status={item.status} error={item.error} />
+                    <div className="flex shrink-0 items-center gap-1">
+                      {item.path ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              disabled={running}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDrawTablePath(item.path);
+                              }}
+                            >
+                              <Columns3Cog />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {t("tooltip.drawTable")}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                      {item.status === "error" && !running ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                mutate((prev) =>
+                                  prev.map((it) =>
+                                    it.id === item.id
+                                      ? {
+                                          ...it,
+                                          status: "queued",
+                                          error: undefined,
+                                        }
+                                      : it,
+                                  ),
+                                );
+                                void start();
+                              }}
+                            >
+                              <Play />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t("tooltip.retry")}</TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            disabled={running}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeItem(item.id);
+                            }}
+                          >
+                            <X />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {t("tooltip.removeFromList")}
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </ScrollArea>
           </div>
+
+          {compare ? (
+            <ImagePreviewPane
+              key={previewItem!.id}
+              src={
+                previewItem!.path
+                  ? convertFileSrc(previewItem!.path)
+                  : undefined
+              }
+              fallbackSrc={previewItem!.thumbUrl}
+              name={previewItem!.name}
+              className="min-h-0 flex-1"
+            />
+          ) : null}
         </div>
 
-        <div className="min-h-0 min-w-0">
+        <div className="relative min-h-0 min-w-0">
           {previewItem ? (
             <PreviewPane
               key={previewItem.id}
@@ -1016,17 +1042,41 @@ export function ImageToMdView() {
               toolbar={previewToolbar}
             />
           ) : null}
-        </div>
-      </div>
 
-      <div className="-mb-3">
-        <StatusBar
-          result={null}
-          loading={false}
-          hidePdfStats
-          notices={notices}
-          progress={activity}
-        />
+          {/* Failure notice, anchored to the preview's bottom-right corner. */}
+          {failedItems.length > 0 ? (
+            <div className="absolute bottom-3 right-3 z-10">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="destructive" size="sm">
+                    <CircleAlert />
+                    {t("notice.failedImages", { count: failedItems.length })}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  side="top"
+                  align="end"
+                  className="w-64 space-y-2"
+                >
+                  <div className="max-h-40 space-y-1 overflow-y-auto">
+                    {failedItems.map(({ item, index }) => (
+                      <button
+                        key={item.id}
+                        className={cn(
+                          "block w-full truncate rounded-md px-2 py-1 text-left text-xs hover:bg-muted",
+                          "text-muted-foreground",
+                        )}
+                        onClick={() => scrollToItem(index)}
+                      >
+                        {index}. {item.name}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       {drawTablePath ? (

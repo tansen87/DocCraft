@@ -1,5 +1,5 @@
 //! Page markers embedded in PDF-converted Markdown so downstream tooling
-//! (e.g. Markdown → Excel export) can attribute tables to their source page.
+//! (e.g. Markdown > Excel export) can attribute tables to their source page.
 
 /// English marker emitted into converted Markdown (`<!-- Page N -->`).
 const EN_PREFIX: &str = "<!-- Page ";

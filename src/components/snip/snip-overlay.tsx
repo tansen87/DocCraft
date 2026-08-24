@@ -119,7 +119,7 @@ export function SnipOverlay() {
     canvas.height = metaNow.height;
     const ctx = canvas.getContext("2d");
     ctx?.drawImage(img, 0, 0);
-    // Snapshot is painted — reveal the (hidden or brand-new) overlay window.
+    // Snapshot is painted - reveal the (hidden or brand-new) overlay window.
     reveal();
   }, [meta, reveal]);
 

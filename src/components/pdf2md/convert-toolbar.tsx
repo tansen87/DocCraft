@@ -62,7 +62,7 @@ export function ConvertToolbar({
         <TooltipContent>{t("toolbar.remove")}</TooltipContent>
       </Tooltip>
 
-      {/* Draw Table mode toggle — styled like the header tabs */}
+      {/* Draw Table mode toggle - styled like the header tabs */}
       <Tooltip>
         <TooltipTrigger asChild>
           <button

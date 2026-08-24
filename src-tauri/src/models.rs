@@ -178,7 +178,7 @@ pub struct MdTable {
   pub columns: Vec<String>,
   pub rows: Vec<Vec<String>>,
   /// Source PDF page (1-indexed) when the table came from this app's
-  /// PDF→Markdown conversion; `None` for tables without a page marker.
+  /// PDF>Markdown conversion; `None` for tables without a page marker.
   pub page: Option<u32>,
 }
 
@@ -301,7 +301,7 @@ pub struct DrawTableResult {
   /// 1-indexed pages whose content came from the local PaddleOCR fallback
   /// (the page had no extractable text layer).
   pub ocr_pages: Vec<u32>,
-  /// 1-indexed pages that had no text layer and no usable OCR result — they
+  /// 1-indexed pages that had no text layer and no usable OCR result - they
   /// were processed but produced nothing.
   pub empty_text_pages: Vec<u32>,
 }
@@ -333,11 +333,6 @@ pub struct AppSettings {
   /// Whether to show the system tray icon.
   #[serde(default = "default_true")]
   pub enable_tray: bool,
-  /// Keep the local PaddleOCR engine resident between recognitions instead of
-  /// reloading its ~66 MB of models on every call (~0.5–2 s saved per local
-  /// OCR run). Costs roughly 100–200 MB of resident RAM while enabled.
-  #[serde(default = "default_true")]
-  pub cache_ocr_engine: bool,
   /// Separator between text blocks within a single OCR line.
   /// Supported values: `" "` (space), `","` (comma), `"|"` (pipe),
   /// `"\t"` (tab), `"^"` (caret).
@@ -355,7 +350,7 @@ pub struct AppSettings {
   /// 0 = fully transparent, 100 = fully opaque.
   #[serde(default = "default_snip_result_opacity")]
   pub snip_result_opacity: u32,
-  /// Run the local PaddleOCR engine in MNN low-precision (f16) mode —
+  /// Run the local PaddleOCR engine in MNN low-precision (f16) mode -
   /// roughly 30–50% faster on CPU with negligible accuracy loss.
   #[serde(default = "default_true")]
   pub ocr_low_precision: bool,
@@ -364,19 +359,22 @@ pub struct AppSettings {
   pub ocr_model_size: OcrModelSize,
 }
 
-/// Local PaddleOCR model tier. Small is roughly 2–3× faster with slightly
-/// lower accuracy; medium (the previous default bundle) prioritizes accuracy.
+/// Local PaddleOCR model tier. Tiny is the fastest with the lowest accuracy,
+/// small is roughly 2–3× faster than medium with slightly lower accuracy;
+/// medium prioritizes accuracy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OcrModelSize {
-  Small,
   #[default]
+  Small,
+  Tiny,
   Medium,
 }
 
 impl OcrModelSize {
   pub fn as_str(&self) -> &'static str {
     match self {
+      Self::Tiny => "tiny",
       Self::Small => "small",
       Self::Medium => "medium",
     }
@@ -432,7 +430,7 @@ pub struct OcrImageResult {
   pub engine: String,
   /// Wall-clock duration of the recognition in milliseconds.
   pub duration_ms: u64,
-  /// Base64 PNG of the recognized region — only set by the screenshot
+  /// Base64 PNG of the recognized region - only set by the screenshot
   /// pipeline so the frontend can thumbnail without touching disk.
   #[serde(skip_serializing_if = "Option::is_none")]
   pub png_base64: Option<String>,
@@ -541,7 +539,6 @@ impl Default for AppSettings {
       ocr_mode: OcrMode::default(),
       screenshot_hotkey: default_screenshot_hotkey(),
       enable_tray: true,
-      cache_ocr_engine: true,
       text_separator: default_text_separator(),
       snip_result_popup: true,
       snip_auto_copy: true,

@@ -54,7 +54,7 @@ impl LocalOcrEngine {
   }
 
   /// Recognize text in an already-decoded image. Lets in-memory pipelines
-  /// (e.g. screenshots) skip an encode → write → read → decode round-trip.
+  /// (e.g. screenshots) skip an encode > write > read > decode round-trip.
   pub fn recognize_image(
     &self,
     image: &image::DynamicImage,
@@ -207,6 +207,11 @@ fn engine_config_for(low_precision: bool) -> OcrEngineConfig {
 pub fn create_local_ocr_engine(app: &AppHandle) -> Result<LocalOcrEngine, String> {
   let dir = ocr_resource_dir(app)?;
   let (det_name, rec_name, keys_name) = match settings::get_app_settings(app)?.ocr_model_size {
+    OcrModelSize::Tiny => (
+      "PP-OCRv6_tiny_det.mnn",
+      "PP-OCRv6_tiny_rec.mnn",
+      "ppocr_keys_v6_tiny.txt",
+    ),
     OcrModelSize::Small => (
       "PP-OCRv6_small_det.mnn",
       "PP-OCRv6_small_rec.mnn",
@@ -244,10 +249,10 @@ pub fn create_local_ocr_engine(app: &AppHandle) -> Result<LocalOcrEngine, String
 }
 
 /// Managed cache of the shared local PaddleOCR engine. Loading the ~66 MB of
-/// MNN models takes ~0.5–2 s, so when `cache_ocr_engine` is enabled (default)
-/// the engine is created once and kept resident for the whole process.
+/// MNN models takes ~0.5–2 s, so the engine is created once and kept resident
+/// for the whole process.
 ///
-/// The inner `Mutex` serializes concurrent recognitions — inference is
+/// The inner Mutex serializes concurrent recognitions - inference is
 /// CPU-bound, so sharing one engine beats spawning several competing copies.
 pub struct OcrEngineCache(pub Mutex<Option<Arc<Mutex<LocalOcrEngine>>>>);
 
@@ -258,21 +263,19 @@ impl Default for OcrEngineCache {
 }
 
 impl OcrEngineCache {
-  /// Drop the cached engine (called when the setting is switched off).
+  /// Drop the cached engine (called when inference parameters change).
   pub fn clear(&self) {
     *self.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
   }
 }
 
-/// Acquire the local PaddleOCR engine for one blocking recognition from a
-/// specific cache cell. Shared by both engine caches below.
+/// Acquire a resident local PaddleOCR engine from a specific cache cell.
+/// Shared by both engine caches below. Engines are always cached in-process:
+/// reloading the ~66 MB of MNN models per recognition costs ~0.5–2 s.
 fn acquire_from_cell(
   app: &AppHandle,
   cell: &Mutex<Option<Arc<Mutex<LocalOcrEngine>>>>,
 ) -> Result<Arc<Mutex<LocalOcrEngine>>, String> {
-  if !settings::get_app_settings(app)?.cache_ocr_engine {
-    return Ok(Arc::new(Mutex::new(create_local_ocr_engine(app)?)));
-  }
   let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
   if let Some(engine) = guard.as_ref() {
     return Ok(engine.clone());
@@ -285,9 +288,7 @@ fn acquire_from_cell(
 /// Acquire the shared local PaddleOCR engine used by batch paths
 /// (hybrid pages, image-to-md, draw-table).
 ///
-/// - Cache enabled: returns the resident engine, creating it on first use.
-/// - Cache disabled: builds a fresh engine that is dropped after the call.
-///
+/// Returns the resident engine, creating it on first use.
 /// Lock the returned `Mutex` around each recognition.
 pub fn acquire_local_ocr_engine(
   app: &AppHandle,
@@ -301,7 +302,7 @@ pub fn acquire_local_ocr_engine(
 /// S-2). Sharing one engine with the batch worker pool means a screenshot
 /// waits behind every in-flight batch recognition on the inner `Mutex`;
 /// a dedicated instance keeps snips latency-independent of batch work at the
-/// cost of ~66 MB extra RAM while `cache_ocr_engine` is enabled.
+/// cost of ~66 MB extra RAM.
 pub struct SnipEngineCache(pub Mutex<Option<Arc<Mutex<LocalOcrEngine>>>>);
 
 impl Default for SnipEngineCache {
@@ -311,8 +312,7 @@ impl Default for SnipEngineCache {
 }
 
 impl SnipEngineCache {
-  /// Drop the cached engine (called when the setting is switched off or the
-  /// inference parameters change).
+  /// Drop the cached engine (called when the inference parameters change).
   pub fn clear(&self) {
     *self.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
   }
@@ -628,7 +628,7 @@ pub fn start_session(
   ocr_set.dedup();
 
   // Resolve the OCR provider whenever OCR is enabled in settings. If OCR is
-  // disabled, or no provider is configured, the conversion still proceeds —
+  // disabled, or no provider is configured, the conversion still proceeds -
   // those pages are skipped and recorded instead of aborting the whole
   // document.
   const OCR_DISABLED_REASON: &str = "OCR is disabled in settings";
@@ -660,7 +660,7 @@ pub fn start_session(
 
   // Detection can classify a document as Mixed (image pages present) without
   // flagging any page for OCR. Always record pages whose local text extraction
-  // produced nothing — those are the image-only pages the detector missed — so
+  // produced nothing - those are the image-only pages the detector missed - so
   // `pages_needing_ocr` reflects the real situation regardless of the OCR
   // toggle or whether a provider was resolved.
   for (i, md) in page_markdowns.iter().enumerate() {
@@ -818,7 +818,7 @@ fn local_ocr_page(app: &AppHandle, page: u32, image_png: &str) -> Result<String,
   let image_data = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, image_png)
     .map_err(|e| format!("Failed to decode base64 image: {e}"))?;
 
-  // Shared/resident local OCR engine (per the cache_ocr_engine setting).
+  // Shared/resident local OCR engine.
   let cache = app.state::<OcrEngineCache>();
   let engine = acquire_local_ocr_engine(app, &cache)?;
 
@@ -912,13 +912,13 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
   }
 
   let markdown = if mode.is_local() {
-    // Local PaddleOCR is CPU-bound model inference — run it off the async
+    // Local PaddleOCR is CPU-bound model inference - run it off the async
     // runtime so concurrent conversions never block each other's futures.
     use tauri::Manager;
     let sep = settings::get_app_settings(app)?.text_separator;
     let app = app.clone();
     let path = path.to_string();
-    // Shared/resident engine (per the cache_ocr_engine setting); the inner
+    // Shared/resident engine; the inner
     // lock serializes concurrent recognitions on the same engine.
     let cache = app.state::<OcrEngineCache>();
     let engine = acquire_local_ocr_engine(&app, &cache)?;
@@ -940,7 +940,7 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
     // AI-based modes: route through the configured remote vision provider.
     let provider = resolve_remote_provider(app)?
       .ok_or_else(|| "No available OCR supplier configured".to_string())?;
-    // Reading and encoding the image is blocking work — keep it off the
+    // Reading and encoding the image is blocking work - keep it off the
     // async runtime just like local inference.
     let path = path.to_string();
     let encoded = tauri::async_runtime::spawn_blocking(move || {

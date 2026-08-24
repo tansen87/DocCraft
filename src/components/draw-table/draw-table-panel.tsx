@@ -54,7 +54,7 @@ interface DrawTablePanelProps {
   /**
    * Whether any page might need the local PaddleOCR fallback (document is not
    * purely text-based). When omitted, extraction conservatively assumes OCR
-   * may be needed — attaching images is harmless for text pages.
+   * may be needed - attaching images is harmless for text pages.
    */
   mayNeedOcr?: boolean;
   /** Called when tables are extracted and ready to merge into Markdown. The

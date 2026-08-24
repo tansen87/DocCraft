@@ -4,34 +4,34 @@ A cross-platform **PDF → Markdown** and **Markdown → Excel** desktop convert
 built with [Tauri 2](https://tauri.app), React, TypeScript,
 [shadcn/ui](https://ui.shadcn.com) and
 [`pdf-inspector`](https://crates.io/crates/pdf-inspector) (Firecrawl's pure-Rust
-PDF classification / extraction engine). The UI is bilingual — English (default)
-and Simplified Chinese — switchable at runtime.
+PDF classification / extraction engine). The UI is bilingual - English (default)
+and Simplified Chinese - switchable at runtime.
 
 > Chinese architecture design document: [docs/architecture.md](./architecture.md)
 
 ## Features
 
-- **Hybrid text + OCR conversion** — text pages are extracted locally by
+- **Hybrid text + OCR conversion** - text pages are extracted locally by
   `pdf-inspector`; pages that need OCR (scanned / image-only / undecodable
   fonts) are rendered to PNG and sent to either a configured remote AI vision
   provider **or** the built-in local PaddleOCR engine (`ocr-rs`). Per-page
   results are reassembled in document order, so page 1 & 3 (text) and page 2
   (scan) come out as 1 → 2 → 3.
-- **Smart PDF routing** — `pdf-inspector` classifies each PDF (~10–50ms) as
+- **Smart PDF routing** - `pdf-inspector` classifies each PDF (~10–50ms) as
   `TextBased` / `Scanned` / `ImageBased` / `Mixed` and reports exactly which
   pages need OCR (`pages_needing_ocr`). Pure-text PDFs never touch the network.
   Because classification and per-page OCR flagging can disagree (a `Mixed` doc
   may have image pages that are never flagged), the backend also OCRs every
-  page whose local text extraction came up empty whenever OCR is enabled — so
+  page whose local text extraction came up empty whenever OCR is enabled - so
   image-only pages are never silently dropped.
-- **Local markdown extraction** — headings, lists, code blocks, tables, links,
-  and repeated-header/footer stripping — no OCR needed for native text PDFs.
+- **Local markdown extraction** - headings, lists, code blocks, tables, links,
+  and repeated-header/footer stripping - no OCR needed for native text PDFs.
   Every converted page is delimited by a `<!-- Page N -->` marker, which lets
   downstream tooling like the Excel export attribute tables to their source
   page. The preview can surface these markers as visible **"Page N" dividers**,
   and both the render and raw preview tabs paginate by marker, rendering pages
   lazily so large documents are never parsed in full at once.
-- **Configurable OCR providers** — any **OpenAI-chat-completions-compatible**
+- **Configurable OCR providers** - any **OpenAI-chat-completions-compatible**
   vision API (`base_url`, per-vendor multiple models) **or** the built-in
   **local PaddleOCR** engine (no network required). API keys are encrypted at
   rest (DPAPI on Windows) and never sent back to the frontend. Each model can
@@ -41,27 +41,27 @@ and Simplified Chinese — switchable at runtime.
   `ForceLocal` (always local PaddleOCR), `ForceAi` (always remote AI vision),
   `NonTextLocal` (local OCR only for pages without extracted text),
   `NonTextAi` (remote OCR only for pages without extracted text), and
-  `Disabled` (no OCR — scanned pages are skipped and never leave the machine).
-- **Graceful OCR fallback** — when no usable OCR provider is configured (AI
+  `Disabled` (no OCR - scanned pages are skipped and never leave the machine).
+- **Graceful OCR fallback** - when no usable OCR provider is configured (AI
   mode) or the local engine is unavailable, the conversion still completes:
   pages flagged for OCR are skipped (marked with a `<!-- OCR 跳过 … -->`
   comment) and recorded instead of failing the document. Per-page OCR failures
   degrade to a `<!-- OCR 失败 … -->` comment as well. A **bell icon** at the
-  far right of the status bar collects these as structured notices — severity
-  colored, unread badge, clear-all — with clickable page chips (long lists
+  far right of the status bar collects these as structured notices - severity
+  colored, unread badge, clear-all - with clickable page chips (long lists
   collapse to first/last pages with prev/next stepping and a jump input) that
   scroll the PDF preview to that page, plus a retry action.
-- **Batch queue with configurable concurrency** — multi-file drag & drop,
+- **Batch queue with configurable concurrency** - multi-file drag & drop,
   worker-pool conversion, retry / remove / export-all, and a user-adjustable
   concurrency limit (1–16, default 1) persisted in app settings.
-- **Editor-style workspace** — top toolbar (file name + convert action),
+- **Editor-style workspace** - top toolbar (file name + convert action),
   split-view middle (PDF preview | Markdown preview) and a bottom status bar
   (PDF type, pages, confidence, OCR needs, a notices bell and a live activity
   indicator showing the current extraction/OCR stage, e.g. "Recognizing page
   3/12").
-- **Whole-window drag & drop** — drop any PDF anywhere in the window; a drag
+- **Whole-window drag & drop** - drop any PDF anywhere in the window; a drag
   overlay confirms the drop target; auto-detect runs immediately on select.
-- **Markdown → Excel** — batch-analyze `.md` files, auto-detect tables
+- **Markdown → Excel** - batch-analyze `.md` files, auto-detect tables
   (count + rows), preview each table, and export to `.xlsx` (single file or
   export-all into a chosen directory). A **tables-only** mode (configurable in
   Settings) exports only GFM tables; when off, the whole document content is
@@ -70,7 +70,7 @@ and Simplified Chinese — switchable at runtime.
   thousands of rows stay responsive. Each table in the workbook is labeled
   with its source PDF page (`Page N`) when the file was produced by this app's
   PDF conversion; otherwise it falls back to `Table N`.
-- **Draw-a-table extraction** — in the PDF workspace, manually draw vertical
+- **Draw-a-table extraction** - in the PDF workspace, manually draw vertical
   separators over a rendered page to define table regions, then extract them
   into the Markdown output (undo/redo, per-page lines, Enter to extract).
   Supports **"apply to all pages"** mode with optional page limit (e.g. first
@@ -85,11 +85,11 @@ and Simplified Chinese — switchable at runtime.
   selected **OCR mode**: `forceLocal` / `nonTextLocal` use the on-device
   PaddleOCR engine, while `forceAi` / `nonTextAi` send the rendered page to
   the configured remote AI vision provider together with the drawn separator
-  positions (as percentages) and parse the GFM answer directly — the model is
+  positions (as percentages) and parse the GFM answer directly - the model is
   asked to cut the table by the user-drawn lines. `disabled` keeps draw-table
   extraction text-layer-only, and missing local models or an unconfigured
   provider degrade silently to empty results instead of failing.
-- **Image → Markdown** — a dedicated workspace tab accepts PNG / JPEG images
+- **Image → Markdown** - a dedicated workspace tab accepts PNG / JPEG images
   (drag & drop anywhere or file picker, deduplicated list with thumbnails).
   Each image is recognized by the OCR engine selected by the current
   **OCR mode** (local PaddleOCR or remote AI vision; `disabled` reports an
@@ -98,31 +98,31 @@ and Simplified Chinese — switchable at runtime.
   progress ("Recognizing image 3/10") in the status bar; failed images raise
   an error notice whose chips locate and highlight the row, plus a retry
   action. Results are previewed as one merged GFM document (`---`-separated)
-  or individually — click a row or use the preview-header picker to focus any
+  or individually - click a row or use the preview-header picker to focus any
   single image's markdown (copy / export act on whatever is shown), and every
   recognized image can be exported per-file or merged into a single `.md`.
   Tables inside imported images can also be extracted by drawing vertical
   column separators over them (local PaddleOCR block cutting or AI vision
   with drawn-line hints). See [image-to-markdown.md](./image-to-markdown.md)
   for the design notes.
-- **Screenshot recognition** — press the global hotkey (default `F8`,
+- **Screenshot recognition** - press the global hotkey (default `F8`,
   re-recordable by pressing a key combination in Settings) and the monitor
   under the cursor freezes into a full-screen region-selection overlay with a
   cursor-following tool palette (magnifier, physical coordinates, color
   picker). Drag a rectangle (or double-click for full screen) to OCR exactly
-  that region — Esc / right-click cancels. Overlay windows are created once
+  that region - Esc / right-click cancels. Overlay windows are created once
   per monitor and reused (hidden between captures) so the hotkey-to-overlay
   latency stays low; snapshots are JPEG-previews while cropping / OCR always
   use the raw frame, and results land in the Image → Markdown list like any
   imported file (retry / export included). Performance notes live in
   [design/00001_snip-performance.md](./design/00001_snip-performance.md).
-- **System tray** — optional tray icon (on by default) with Open DocCraft /
+- **System tray** - optional tray icon (on by default) with Open DocCraft /
   Start Screenshot / Exit menu items; closing the window hides to tray
   instead of quitting when enabled.
-- **Bilingual UI (i18n)** — English (default) and 中文 (Simplified Chinese)
+- **Bilingual UI (i18n)** - English (default) and 中文 (Simplified Chinese)
   switched via a dropdown next to the theme toggle; the choice persists in
   `localStorage` and every string goes through a typed translation layer.
-- **Settings page** — sidebar navigation over eight scroll-synced sections
+- **Settings page** - sidebar navigation over eight scroll-synced sections
   (OCR 服务 / 截图 / 文本分隔符 / 缓存 / Excel / 并发线程 / 系统托盘 /
   备份与恢复) styled as grouped panels with hairline-separated setting rows
   ("Soft Rows" layout, see
@@ -130,14 +130,14 @@ and Simplified Chinese — switchable at runtime.
   vendor/model/key management, OCR mode selector, local-engine caching
   toggle, press-to-record hotkey field, unsaved-changes floating save pill,
   and responsive collapse for narrow windows.
-- **Config backup & restore** — export all app settings plus OCR vendors
+- **Config backup & restore** - export all app settings plus OCR vendors
   into one JSON file (API keys excluded by default; including them stores
   plaintext after an explicit warning), and import such a file again:
   vendors merge by id (local entries missing from the file are kept,
   plaintext keys are re-encrypted on import) and settings go through the
   same side-effect pipeline as a manual save (hotkey re-registration, tray
   sync, engine-cache release).
-- **Update check** — the header (next to the language toggle) has a manual
+- **Update check** - the header (next to the language toggle) has a manual
   check button; a non-blocking amber badge appears there automatically when
   the once-per-session startup check finds a newer release. Both open a
   dialog rendering the release notes as markdown (`core/update.rs` queries
@@ -154,7 +154,7 @@ and Simplified Chinese — switchable at runtime.
 | UI kit            | shadcn/ui (Radix primitives, Tailwind CSS v4) |
 | Package manager   | pnpm 10 |
 | PDF engine        | `pdf-inspector` 1.14 (pure Rust, `lopdf`) |
-| Local OCR engine  | `ocr-rs` 2.4 (PaddleOCR, pure Rust) — engine cached in-process (toggleable) |
+| Local OCR engine  | `ocr-rs` 2.4 (PaddleOCR, pure Rust) - engine cached in-process (toggleable) |
 | Screen capture    | `xcap` 0.9 (monitor snapshots) + `tauri-plugin-global-shortcut` (hotkey) |
 | PDF preview / OCR images | `pdfjs-dist` 6.x (renders preview pages; also renders OCR pages to PNG for the backend) |
 | Markdown / Excel  | `react-markdown` + GFM on the frontend; `rust_xlsxwriter` on the backend for `.xlsx` export |
@@ -248,29 +248,29 @@ Commands (invoked from `src/lib/ipc.ts`):
 |----------------------|-----------------------------------------|------------------------------|
 | `detect_pdf`         | `{ path }`                              | `DetectResult` (type, confidence, pages needing OCR, layout) |
 | `convert_pdf`        | `{ path }`                              | `ConvertResult` (`DetectResult` + `markdown` + `processingTimeMs`) |
-| `hybrid_session_start` | `{ path, ocrPages }` — 1-indexed pages needing OCR | `HybridSessionInfo` (sessionId + `ocrConfigured` + detect info; text pages extracted once and kept on the backend; no engine → OCR pages are skipped, not failed) |
-| `hybrid_page_ocr`    | `{ sessionId, page, imagePng }` — one rendered page | `string` — that page's markdown (local PaddleOCR or remote AI; OCR failures degrade to a `<!-- OCR 失败 … -->` comment) |
-| `hybrid_session_finish` | `{ sessionId }`                       | `ConvertResult` — text + OCR pages reassembled in document order; reports `skippedPages` and `failedPages` |
+| `hybrid_session_start` | `{ path, ocrPages }` - 1-indexed pages needing OCR | `HybridSessionInfo` (sessionId + `ocrConfigured` + detect info; text pages extracted once and kept on the backend; no engine → OCR pages are skipped, not failed) |
+| `hybrid_page_ocr`    | `{ sessionId, page, imagePng }` - one rendered page | `string` - that page's markdown (local PaddleOCR or remote AI; OCR failures degrade to a `<!-- OCR 失败 … -->` comment) |
+| `hybrid_session_finish` | `{ sessionId }`                       | `ConvertResult` - text + OCR pages reassembled in document order; reports `skippedPages` and `failedPages` |
 | `hybrid_session_abort` | `{ sessionId }`                      | `void` (discards an abandoned session) |
 | `export_markdown`    | `{ path, content }`                     | `void` (writes markdown to file) |
-| `get_ocr_config`     | —                                       | `OcrVendor[]` (keys never returned, only `apiKeySet`) |
+| `get_ocr_config`     | -                                       | `OcrVendor[]` (keys never returned, only `apiKeySet`) |
 | `save_ocr_config`    | `{ vendors }`                           | `void` (merges/encrypts API keys) |
 | `reveal_ocr_key`     | `{ vendorId }`                          | `string \| null` (decrypted key, "show key") |
-| `get_app_settings`   | —                                       | `AppSettings` (`maxConcurrent`, `cacheExtractedText`, `excelTablesOnly`, `ocrMode`) |
+| `get_app_settings`   | -                                       | `AppSettings` (`maxConcurrent`, `cacheExtractedText`, `excelTablesOnly`, `ocrMode`) |
 | `set_app_settings`   | `{ settings }`                          | `void` (clamped 1–16) |
-| `export_config`      | `{ path, includeSecrets }`              | `usize` — vendors written; keys plaintext only when opted in |
+| `export_config`      | `{ path, includeSecrets }`              | `usize` - vendors written; keys plaintext only when opted in |
 | `import_config`      | `{ path }`                              | `ImportResult` (`vendorsImported`, `settingsApplied`); merges by id, applies settings with full side effects |
-| `check_for_update`   | —                                       | `UpdateInfo \| null` (`version`, `notes`, `downloadUrl`, `releasePage`) |
+| `check_for_update`   | -                                       | `UpdateInfo \| null` (`version`, `notes`, `downloadUrl`, `releasePage`) |
 | `analyze_markdown`   | `{ path }`                              | `MdAnalyzeResult` (`tableCount`, `tables[]` with columns/rows/page, `totalRows`, `processingTimeMs`) |
 | `export_markdown_tables` | `{ mdPath, xlsxPath }`              | `MdExportResult` (`tableCount`, `totalRows`, `processingTimeMs`) |
-| `extract_draw_table` | `{ path, drawData }` — `drawData` may carry `totalPages`, `onlyPages` (batching) and `pageImages[]` (`{page, imagePng, renderScale}`) for the mode-selected OCR fallback (local PaddleOCR or remote AI vision) | `DrawTableResult` (`tableCount`, `tables[]`, `regions[]`, `totalRows`, `ocrPages`, `emptyTextPages`, `processingTimeMs`) |
-| `extract_draw_table_to_markdown` | `{ path, drawData, existingMarkdown? }` | `string` — merged markdown with extracted tables appended |
-| `ocr_image_to_md`    | `{ path }` — a PNG / JPEG file          | `OcrImageResult` (`markdown`, `engine`: `"local" \| "ai"`, `durationMs`) |
-| `screenshot_begin`   | — (hides nothing; freezes the monitor under the cursor) | `MonitorSnapshot[]` (`dataUrl` JPEG preview + geometry; raw frame cached server-side) |
-| `screenshot_ocr`     | `{ region }` — `ShotRegion` in physical px | `OcrImageResult` (+`pngBase64` thumbnail, `savedPath`); consumes the cached snapshot |
-| `screenshot_cancel`  | —                                       | `void` (drops cached snapshots) |
-| `get_window_under_cursor` | —                                  | `WindowInfo` (`title`, `className`, rect) |
-| `ocr_image_table`    | `{ imagePath, verticalLines[] }` — percentages | `ImageTableResult` (GFM table cut at the drawn lines) |
+| `extract_draw_table` | `{ path, drawData }` - `drawData` may carry `totalPages`, `onlyPages` (batching) and `pageImages[]` (`{page, imagePng, renderScale}`) for the mode-selected OCR fallback (local PaddleOCR or remote AI vision) | `DrawTableResult` (`tableCount`, `tables[]`, `regions[]`, `totalRows`, `ocrPages`, `emptyTextPages`, `processingTimeMs`) |
+| `extract_draw_table_to_markdown` | `{ path, drawData, existingMarkdown? }` | `string` - merged markdown with extracted tables appended |
+| `ocr_image_to_md`    | `{ path }` - a PNG / JPEG file          | `OcrImageResult` (`markdown`, `engine`: `"local" \| "ai"`, `durationMs`) |
+| `screenshot_begin`   | - (hides nothing; freezes the monitor under the cursor) | `MonitorSnapshot[]` (`dataUrl` JPEG preview + geometry; raw frame cached server-side) |
+| `screenshot_ocr`     | `{ region }` - `ShotRegion` in physical px | `OcrImageResult` (+`pngBase64` thumbnail, `savedPath`); consumes the cached snapshot |
+| `screenshot_cancel`  | -                                       | `void` (drops cached snapshots) |
+| `get_window_under_cursor` | -                                  | `WindowInfo` (`title`, `className`, rect) |
+| `ocr_image_table`    | `{ imagePath, verticalLines[] }` - percentages | `ImageTableResult` (GFM table cut at the drawn lines) |
 
 Hotkey path: the global shortcut emits `snip:ready` (snapshots) directly to
 the frontend, avoiding an IPC round-trip; overlays report back via
@@ -288,7 +288,7 @@ Result fields are serialized in camelCase; `PdfTypeDto` mirrors `pdf-inspector`'
 [2] detect_pdf(path)                → auto-runs on select → classification + OCR routing signals
 [3] Convert (OCR disabled / nonText modes with no OCR needed)
     convert_pdf(path)               → pdf-inspector::process_pdf → full local Markdown
-[4] Convert (OCR enabled — forceLocal / forceAi / nonTextLocal / nonTextAi)
+[4] Convert (OCR enabled - forceLocal / forceAi / nonTextLocal / nonTextAi)
     startHybridSession(path, N)     → backend extracts text pages once, resolves OCR engine;
                                        local PaddleOCR or remote AI vision provider;
                                        nonText modes also add any page whose local text
@@ -320,15 +320,15 @@ tracked the same way via `failedPages`.
 
 A small custom layer (no external dependency) keeps every UI string bilingual:
 
-- `src/i18n/translations.ts` — two dictionaries, `en` (default) and `zh`.
+- `src/i18n/translations.ts` - two dictionaries, `en` (default) and `zh`.
   The `TranslationKey` type is derived from the `en` keys, and `zh` is typed
   as `Record<TranslationKey, string>`, so adding a key to one language fails
   type-check until it exists in both.
-- `src/i18n/index.tsx` — `LanguageProvider` + the `useI18n()` hook. It exposes
+- `src/i18n/index.tsx` - `LanguageProvider` + the `useI18n()` hook. It exposes
   `t(key, params?)` which interpolates `{param}` placeholders (e.g.
   `t("batch.completed", { done, total })`). The active language is persisted in
   `localStorage` (`doccraft-language`, default `en`).
-- `src/components/language-toggle.tsx` — a dropdown button next to the theme
+- `src/components/language-toggle.tsx` - a dropdown button next to the theme
   toggle in the app header (English / 中文, native labels). Views and shared
   components consume translations through `t()`; toasts, tooltips, dialogs,
   drag-drop overlays and status badges are all covered.
@@ -352,25 +352,25 @@ cargo check --manifest-path src-tauri/Cargo.toml
 
 ## Roadmap
 
-- **M1 (done)** — Scaffold (Tauri + React + shadcn), IPC, single-file local
+- **M1 (done)** - Scaffold (Tauri + React + shadcn), IPC, single-file local
   PDF → Markdown with editor-style preview workspace: whole-window drag & drop,
   auto-detect, pdf.js inline PDF preview (ScrollArea, dark mode), status bar.
-- **M2 (done)** — OCR pipeline: sidebar settings page (OpenAI-compatible
+- **M2 (done)** - OCR pipeline: sidebar settings page (OpenAI-compatible
   vendors / models / API keys + local PaddleOCR engine via `ocr-rs`), unified
   `OcrMode` selector (forceLocal / forceAi / nonTextLocal / nonTextAi /
   disabled), page rendering via pdf.js, hybrid conversion that routes text
   pages to pdf-inspector and scanned pages to the configured OCR engine,
   reassembled in document order.
-- **M3 (mostly done)** — Batch processing: worker pool with a user-configurable
+- **M3 (mostly done)** - Batch processing: worker pool with a user-configurable
   concurrency limit (settings → Concurrent threads, default 1), retry / remove /
   export-all. (Live progress events & per-file OCR cancellation still optional.)
-- **M3.5 (done)** — **Markdown → Excel**: batch `.md` analysis, auto table
+- **M3.5 (done)** - **Markdown → Excel**: batch `.md` analysis, auto table
   detection, table-by-table preview, and `.xlsx` export (single or all) with
   configurable **tables-only** mode. Plus manual **draw-a-table** extraction
   for scanned PDF regions (vertical-line-only mode, "apply to all pages" with
   page limit, page-filtered text extraction, extraction caching, and a local
   PaddleOCR fallback for pages without a text layer).
-- **M4 (mostly done)** — Polish: **bilingual i18n (en/zh, runtime toggle)**
+- **M4 (mostly done)** - Polish: **bilingual i18n (en/zh, runtime toggle)**
   and dark mode. **Large-document performance**: the Markdown preview and the
   Excel table preview both render lazily (page / table sections + windowed
   rows via IntersectionObserver, real-height placeholders), so big files no
@@ -382,14 +382,14 @@ cargo check --manifest-path src-tauri/Cargo.toml
   selected OCR mode with a concurrency-bounded worker pool, merged or
   per-image export, and status-bar notices for failures.
   (Config import/export and release packaging MSI/NSIS still planned.)
-- **M5 (done)** — **Screenshot recognition**: global hotkey → frozen
+- **M5 (done)** - **Screenshot recognition**: global hotkey → frozen
   full-screen overlay with magnifier / coordinates / color picker → drag a
   region → OCR result lands in the Image → Markdown workspace. Overlay
   windows are reused across captures, snapshots use JPEG previews with raw
   frames for exact crops, the local OCR engine stays resident (toggleable),
-  and remote AI calls share one HTTP connection pool — see
+  and remote AI calls share one HTTP connection pool - see
   [design/00001_snip-performance.md](./design/00001_snip-performance.md).
-- **Design docs** — numbered proposals live under
+- **Design docs** - numbered proposals live under
   [docs/design/](./design/) (`00001_snip-performance.md`,
   `00002_settings-ui-redesign.md`, `00003_ui-ux-audit.md`,
   `00004_feature-and-ux-proposals.md`).
@@ -401,33 +401,34 @@ cargo check --manifest-path src-tauri/Cargo.toml
   list of models (each with a `default` flag; a ★-marked model is the one used
   for OCR).
 - `app-settings.json`: `maxConcurrent` (1–16, default 1) driving the batch
-  worker-pool size, `cacheExtractedText` (default `true`) — when on, the
+  worker-pool size, `cacheExtractedText` (default `true`) - when on, the
   line-draw table extraction decodes the current PDF's text once and reuses it
   across draw/merge calls; toggle it off for very large documents to free
-  memory (the cache is evicted when another file is opened) —
-  `excelTablesOnly` (default `false`) — when on, only GFM tables are exported
+  memory (the cache is evicted when another file is opened) -
+  `excelTablesOnly` (default `false`) - when on, only GFM tables are exported
   to Excel; when off, the whole document content is written into the workbook
-  — `ocrMode` (default `disabled`), a unified OCR mode with five options:
+  - `ocrMode` (default `disabled`), a unified OCR mode with five options:
   `forceLocal` (always local PaddleOCR), `forceAi` (always remote AI vision),
   `nonTextLocal` (local OCR only for pages without extracted text),
   `nonTextAi` (remote OCR only for pages without extracted text), and
-  `disabled` (no OCR — pages needing OCR are skipped and never leave the
+  `disabled` (no OCR - pages needing OCR are skipped and never leave the
   machine). When OCR is enabled, conversion routes through the hybrid session
-  and — in addition to the pages detection flagged — any page whose local text
+  and - in addition to the pages detection flagged - any page whose local text
   extraction produced no content is also sent to the OCR engine. The draw-table
   extraction shares the same mode selector: local modes (`forceLocal` /
   `nonTextLocal`) enable its on-device PaddleOCR fallback for scanned pages,
   AI modes (`forceAi` / `nonTextAi`) enable the remote vision fallback with
   drawn-line hints, and `disabled` keeps it text-layer-only.
   Further keys: `screenshotHotkey` (global hotkey accelerator, default `F8`,
-  empty disables), `cacheOcrEngine` (default `true` — keep the ~66 MB local
-  PaddleOCR engine resident instead of reloading per recognition, saving
-  ~0.5–2s each run at the cost of RAM),   `textSeparator` (joins same-line OCR
+  empty disables), `textSeparator` (joins same-line OCR
   blocks: `" "` / `","` / `"|"` / tab / `"^"`), and `enableTray` (default
-  `true`, system tray icon with close-to-tray behaviour). Local-engine
-  inference tuning: `ocrModelSize` (`"small"` / `"medium"` (default) —
-  which bundled PaddleOCR tier to load; small is ~2–3× faster) and
-  `ocrLowPrecision` (default `true` — MNN f16 mode, ~30–50% faster on
+  `true`, system tray icon with close-to-tray behaviour). The local
+  PaddleOCR engine(s) are always resident in-process (skips a ~0.5–2s model
+  load per recognition). Local-engine
+  inference tuning: `ocrModelSize` (`"tiny"` / `"small"` (default) /
+  `"medium"` - which bundled PaddleOCR tier to load; tiny is fastest,
+  small is ~2–3× faster than medium) and
+  `ocrLowPrecision` (default `true` - MNN f16 mode, ~30–50% faster on
   CPU); changing either rebuilds the resident engine(s). See
   [design/00005_snip-local-ocr-latency.md](./design/00005_snip-local-ocr-latency.md)
   for the screenshot-OCR latency work.

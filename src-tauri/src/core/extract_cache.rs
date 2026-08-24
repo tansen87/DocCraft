@@ -26,7 +26,7 @@ pub struct FullExtraction {
 ///
 /// Extraction (font `/ToUnicode` CMap + content-stream decoding) is the
 /// dominant cost of a conversion, and the same document is decoded once by
-/// detection and again by conversion. This cache makes a detect→convert
+/// detection and again by conversion. This cache makes a detect>convert
 /// sequence decode the document a single time instead of twice. Switching
 /// files evicts the previous document.
 ///

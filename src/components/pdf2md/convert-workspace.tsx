@@ -115,7 +115,7 @@ export function ConvertWorkspace({
           const pageY = rawDims.pageY;
           const rect = container.getBoundingClientRect();
           const availableWidth = Math.max(rect.width, 100);
-          // Fill width only — the container will scroll vertically if the
+          // Fill width only - the container will scroll vertically if the
           // page is taller than the viewport. This avoids the "smaller PDF"
           // effect caused by constraining scale with Math.min against height,
           // and ensures the overlay coordinate system (CSS pixels per PDF

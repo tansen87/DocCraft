@@ -179,7 +179,7 @@ export function BatchView() {
         patchItem(job.id, { status: "done", result });
       } catch (e) {
         if (isCancelled() || e instanceof CancelledError) {
-          // Cancelled — back to the queue as a plain unconverted item.
+          // Cancelled - back to the queue as a plain unconverted item.
           patchItem(job.id, { status: "queued", error: undefined });
         } else {
           patchItem(job.id, { status: "error", error: String(e) });
@@ -229,7 +229,7 @@ export function BatchView() {
     if (!runningRef.current) return;
     runningRef.current = false;
     // Full cancel: abort in-flight conversions and keep every unfinished file
-    // resumable — pressing Start picks up exactly where things stopped.
+    // resumable - pressing Start picks up exactly where things stopped.
     for (const it of itemsRef.current) {
       if (it.status !== "converting") continue;
       cancelRef.current.add(it.id);
@@ -241,7 +241,7 @@ export function BatchView() {
     wake();
   }, [wake]);
 
-  /** Cancel one converting file — it goes back to a plain queued row that
+  /** Cancel one converting file - it goes back to a plain queued row that
    * will NOT restart with the pool (explicit retry required). */
   const cancelItem = useCallback((id: string) => {
     queueRef.current = queueRef.current.filter((j) => j.id !== id);

@@ -73,7 +73,7 @@ export async function* renderPdfPagesForOcr(
  * so the backend never holds the whole document's images. Text pages are
  * extracted once by the backend session.
  *
- * When no usable OCR provider is configured, no pages are rendered or sent —
+ * When no usable OCR provider is configured, no pages are rendered or sent -
  * the backend skips them and records which pages were skipped in the result.
  */
 export async function convertWithOcr(

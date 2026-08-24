@@ -18,7 +18,7 @@ function routeWindow(): RoutedWindow {
     if (label === "snip-result") return "snip-result";
     if (label.startsWith("snip-")) return "snip-overlay";
   } catch {
-    /* no webview window context — fall through to the app shell */
+    /* no webview window context - fall through to the app shell */
   }
   return "app";
 }

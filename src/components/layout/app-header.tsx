@@ -31,7 +31,7 @@ export function AppHeader({ activeTab, onTabChange }: AppHeaderProps) {
         </TabsList>
       </Tabs>
 
-      {/* Running background tasks — click to jump back to that workspace. */}
+      {/* Running background tasks - click to jump back to that workspace. */}
       {[...tasks.entries()].map(([tab, text]) => (
         <button
           key={tab}

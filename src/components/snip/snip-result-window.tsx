@@ -14,12 +14,22 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { formatDuration } from "@/lib/format-duration";
 import { getAppSettings } from "@/lib/ipc";
 
 const WINDOW_LABEL = "snip-result";
 
 /** localStorage stash so a freshly created window has the content on first paint. */
 export const SNIP_RESULT_KEY = "doccraft-snip-result";
+
+/** localStorage stash of the recognition duration (ms, empty when unknown). */
+const SNIP_RESULT_DURATION_KEY = "doccraft-snip-result-duration";
+
+/** Payload pushed to an already-open result window. */
+interface SnipResultPayload {
+  markdown: string;
+  durationMs?: number;
+}
 
 /** localStorage stash of the last user-chosen window position (physical px). */
 const SNIP_RESULT_POS_KEY = "doccraft-snip-result-pos";
@@ -97,16 +107,26 @@ async function placeAtRememberedOrDefault(win: WebviewWindow) {
  * in it. Called from the main window after a successful snip recognition.
  *
  * The window always reveals *itself* (on mount, and whenever a
- * `snip:result` event arrives) — the main window deliberately never touches
+ * `snip:result` event arrives) - the main window deliberately never touches
  * the window handle, because `WebviewWindow.getByLabel` loses track of
  * windows after a dev-page reload and would mis-route into a duplicate
  * label creation.
  */
-export async function showSnipResultWindow(markdown: string): Promise<void> {
+export async function showSnipResultWindow(
+  markdown: string,
+  durationMs?: number,
+): Promise<void> {
   localStorage.setItem(SNIP_RESULT_KEY, markdown);
+  localStorage.setItem(
+    SNIP_RESULT_DURATION_KEY,
+    durationMs != null ? String(durationMs) : "",
+  );
 
   const notify = () =>
-    emitTo(WINDOW_LABEL, "snip:result", markdown).catch(() => {});
+    emitTo(WINDOW_LABEL, "snip:result", {
+      markdown,
+      durationMs,
+    } satisfies SnipResultPayload).catch(() => {});
 
   const existing = await WebviewWindow.getByLabel(WINDOW_LABEL).catch(
     () => null,
@@ -142,7 +162,7 @@ export async function showSnipResultWindow(markdown: string): Promise<void> {
     await win.setShadow(false).catch(() => {});
     await placeAtRememberedOrDefault(win);
   } catch {
-    // The window already exists (e.g. stale metadata after a reload) —
+    // The window already exists (e.g. stale metadata after a reload) -
     // pushing the event is enough; it will reveal itself.
     await notify();
   }
@@ -161,10 +181,14 @@ export function SnipResultWindow() {
   const [markdown, setMarkdown] = useState<string>(
     () => localStorage.getItem(SNIP_RESULT_KEY) ?? "",
   );
+  const [durationMs, setDurationMs] = useState<number | null>(() => {
+    const raw = localStorage.getItem(SNIP_RESULT_DURATION_KEY);
+    return raw ? Number(raw) || null : null;
+  });
   const [pinned, setPinned] = useState(false);
   const [copied, setCopied] = useState(false);
   const [glassOpacity, setGlassOpacity] = useState(60);
-  // Tooltip open state for each button — closed on pointer-down so dragging
+  // Tooltip open state for each button - closed on pointer-down so dragging
   // the header never leaves a stale tooltip visible.
   const [pinTipOpen, setPinTipOpen] = useState(false);
   const [copyTipOpen, setCopyTipOpen] = useState(false);
@@ -251,11 +275,14 @@ export function SnipResultWindow() {
   }
 
   // Live updates when the window is reused for a new screenshot. The main
-  // window only pushes the text — showing is our own job, so a stale handle
+  // window only pushes the text - showing is our own job, so a stale handle
   // on either side can never leave the window hidden.
   useEffect(() => {
-    const unlisten = listen<string>("snip:result", (e) => {
-      setMarkdown(e.payload);
+    const unlisten = listen<SnipResultPayload>("snip:result", (e) => {
+      setMarkdown(e.payload.markdown);
+      setDurationMs(
+        typeof e.payload.durationMs === "number" ? e.payload.durationMs : null,
+      );
       setCopied(false);
       reloadOpacity();
       reveal();
@@ -289,7 +316,7 @@ export function SnipResultWindow() {
     try {
       await getCurrentWebviewWindow().setAlwaysOnTop(next);
     } catch {
-      /* window control unavailable — keep the toggle visual only */
+      /* window control unavailable - keep the toggle visual only */
     }
   }
 
@@ -339,12 +366,22 @@ export function SnipResultWindow() {
           }}
           className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border/30 bg-white/[0.03] pl-3 pr-1.5 transition-colors hover:bg-green-500/15"
         >
-          <span
+          <div
             data-tauri-drag-region
-            className="truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+            className="flex min-w-0 items-center gap-2"
           >
-            {t("snip.resultTitle")}
-          </span>
+            <span
+              data-tauri-drag-region
+              className="truncate text-xs font-semibold tracking-wider text-muted-foreground"
+            >
+              DocCraft
+            </span>
+            {durationMs != null ? (
+              <span className="shrink-0 rounded-full bg-muted/70 px-1.5 py-0.5 text-[10px] leading-none tabular-nums text-muted-foreground">
+                {formatDuration(durationMs)}
+              </span>
+            ) : null}
+          </div>
           <div className="flex shrink-0 items-center gap-0.5">
             <Tooltip open={pinTipOpen} onOpenChange={setPinTipOpen}>
               <TooltipTrigger asChild>

@@ -98,18 +98,13 @@ export interface AppSettings {
   /** Whether to show the system tray icon. */
   enableTray: boolean;
   /**
-   * Keep the local PaddleOCR engine resident between recognitions (skips
-   * ~0.5–2s of model loading per local OCR run; ~100–200 MB of RAM).
-   */
-  cacheOcrEngine: boolean;
-  /**
-   * Low-precision (f16) MNN inference for the local PaddleOCR engine —
+   * Low-precision (f16) MNN inference for the local PaddleOCR engine -
    * ~30–50% faster on CPU with negligible accuracy loss (default true).
    */
   ocrLowPrecision?: boolean;
   /**
-   * Which local PaddleOCR model tier to load (default "medium").
-   * "small" is roughly 2–3× faster with slightly lower accuracy.
+   * Which local PaddleOCR model tier to load (default "small").
+   * "tiny" is the fastest, "medium" prioritizes accuracy.
    */
   ocrModelSize?: OcrModelSize;
   /** Separator between text blocks within a single OCR line. */
@@ -133,7 +128,7 @@ export type OcrMode =
   | "disabled";
 
 /** Local PaddleOCR model tier (files bundled under resources/ppocr). */
-export type OcrModelSize = "small" | "medium";
+export type OcrModelSize = "tiny" | "small" | "medium";
 
 /** A single GitHub-Flavored Markdown table parsed by the backend. */
 export interface MdTable {
@@ -280,7 +275,7 @@ export interface DrawRect {
   color: string;
 }
 
-/** Canvas overlay element — either a line or a rectangle. */
+/** Canvas overlay element - either a line or a rectangle. */
 export type CanvasElement = DrawLine | DrawRect;
 
 /** Mode for the canvas overlay interaction. */
@@ -309,7 +304,7 @@ export interface StatusNoticeAction {
 
 /** A structured notification shown in the status bar bell popover. */
 export interface StatusNotice {
-  /** Stable id — used for read/dismissed tracking across renders. */
+  /** Stable id - used for read/dismissed tracking across renders. */
   id: string;
   level: NoticeLevel;
   text: string;
@@ -331,7 +326,7 @@ export interface OcrImageResult {
   engine: "local" | "ai";
   durationMs: number;
   /**
-   * Base64 PNG of the recognized region — only set by the screenshot
+   * Base64 PNG of the recognized region - only set by the screenshot
    * pipeline so the frontend can thumbnail without touching disk.
    */
   pngBase64?: string;

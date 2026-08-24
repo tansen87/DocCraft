@@ -84,7 +84,7 @@ fn cursor_pos() -> (i32, i32) {
 }
 
 /// Encode raw RGBA data as a PNG with fast (low-level) compression. Used for
-/// the persisted selection crop — the OCR engine reads it back from disk.
+/// the persisted selection crop - the OCR engine reads it back from disk.
 fn encode_fast_png(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
   let mut buf = Vec::new();
   let mut encoder = Encoder::new(&mut buf, width, height);
@@ -140,7 +140,7 @@ fn thumbnail_rgba(img: &RgbaImage) -> RgbaImage {
 
 /// Normalize a raw selection against the monitor frame. Returns the clamped
 /// `(x, y, width, height)` in physical pixels, or `None` when the selection is
-/// empty / degenerate (< 4 px on a side — treated as an accidental click).
+/// empty / degenerate (< 4 px on a side - treated as an accidental click).
 /// The frontend always sends a normalized top-left origin with positive size.
 fn clamp_region(
   region: &ShotRegion,
@@ -205,7 +205,7 @@ fn capture_under_cursor() -> Result<(MonitorSnapshot, (u32, RgbaImage)), String>
 
   let width = frame.width();
   let height = frame.height();
-  // JPEG preview only — cropping/OCR always uses the raw frame in SnipStore.
+  // JPEG preview only - cropping/OCR always uses the raw frame in SnipStore.
   let preview = encode_preview_jpeg(&frame)?;
   let data_url = format!("data:image/jpeg;base64,{}", base64_encode(&preview));
 
@@ -287,7 +287,7 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
     let mut map = store.lock();
     map
       .remove(&region.monitor_id)
-      .ok_or_else(|| "Screenshot session expired — please capture again".to_string())?
+      .ok_or_else(|| "Screenshot session expired - please capture again".to_string())?
   };
 
   let start = Instant::now();
@@ -307,7 +307,7 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
         return Err("Selection area is too small".to_string());
       };
       let cropped = crop_imm(&frame, x, y, w, h).to_image();
-      // The IPC payload only needs a list thumbnail — downsample to keep the
+      // The IPC payload only needs a list thumbnail - downsample to keep the
       // event small. Retry/export always re-read the full-resolution file.
       let thumb = thumbnail_rgba(&cropped);
       let thumb_png = encode_fast_png(thumb.as_raw(), thumb.width(), thumb.height())?;
@@ -328,8 +328,8 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
     // async runtime (S-4).
     tauri::async_runtime::spawn_blocking(move || -> Result<(String, u64), String> {
       let engine = crate::core::ocr::acquire_snip_ocr_engine(&app)?;
-      // Feed the in-memory crop straight to the engine — no PNG encode →
-      // write → read → decode round-trip on the hot path (S-3).
+      // Feed the in-memory crop straight to the engine - no PNG encode >
+      // write > read > decode round-trip on the hot path (S-3).
       let image = image::DynamicImage::ImageRgba8(cropped.clone());
       let text = {
         let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
@@ -468,7 +468,7 @@ pub async fn ocr_image_table(
         .map(|p| *p * img_width / 100.0)
         .collect();
       let sep = settings::get_app_settings(&app)?.text_separator;
-      // Shared/resident engine (per the cache_ocr_engine setting).
+      // Shared/resident engine.
       let cache = app.state::<crate::core::ocr::OcrEngineCache>();
       let engine = crate::core::ocr::acquire_local_ocr_engine(&app, &cache)?;
       move || -> Result<String, String> {
@@ -533,7 +533,7 @@ fn extract_table_from_ocr_blocks(
     return String::new();
   }
 
-  // Sort blocks by y (top → bottom), then x (left → right).
+  // Sort blocks by y (top > bottom), then x (left > right).
   let mut blocks: Vec<&crate::core::ocr::OcrBlock> = recognition.blocks.iter().collect();
   blocks.sort_by(|a, b| {
     a.top
@@ -664,7 +664,7 @@ mod tests {
       clamp_region(&region(1900, 1000, 500, 500), 1920, 1080),
       Some((1900, 1000, 20, 80))
     );
-    // Starts fully outside — nothing of the selection intersects the frame.
+    // Starts fully outside - nothing of the selection intersects the frame.
     assert_eq!(clamp_region(&region(-50, -50, 40, 40), 1920, 1080), None);
   }
 

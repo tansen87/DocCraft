@@ -41,7 +41,7 @@ struct TextElement {
 /// content is recovered correctly). Images and links are excluded.
 ///
 /// `page_filter` restricts extraction to those 1-indexed pages (text on other
-/// pages is not decoded). This is the main cost of a line-draw extraction —
+/// pages is not decoded). This is the main cost of a line-draw extraction -
 /// font CMap + content-stream decoding scales with the number of pages decoded,
 /// so skipping pages we do not process keeps previews and single-page work fast.
 fn extract_text_elements(
@@ -664,7 +664,7 @@ pub fn extract_tables_from_draw_lines(
   let effective_pages: Vec<PageDrawTable> =
     if let Some(template) = template.filter(|_| use_for_all_pages) {
       // Without a page limit the lines apply to every page, bounded by the last
-      // page that actually has text items — or by the page count reported by
+      // page that actually has text items - or by the page count reported by
       // the frontend, since scanned documents have no text items at all.
       let total_pages = items
         .iter()
@@ -1255,10 +1255,10 @@ mod tests {
     assert_eq!(elements[0].x, 8.0);
     assert_eq!(elements[0].width, 20.0);
     // y flips from top-left pixel origin to bottom-left point origin.
-    // Block 0: bottom edge at px 65 → (500 - 65) / 2.5 = 174.
+    // Block 0: bottom edge at px 65 > (500 - 65) / 2.5 = 174.
     assert_eq!(elements[0].y, 174.0);
     assert_eq!(elements[0].font_size, 10.0);
-    // Block 1: bottom edge at px 120 → (500 - 120) / 2.5 = 152.
+    // Block 1: bottom edge at px 120 > (500 - 120) / 2.5 = 152.
     assert_eq!(elements[1].y, 152.0);
   }
 
@@ -1312,7 +1312,7 @@ mod tests {
 
   #[test]
   fn test_line_percentages() {
-    // 750px image at scale 2.5 → 300pt wide; points map linearly to percent.
+    // 750px image at scale 2.5 > 300pt wide; points map linearly to percent.
     let pcts = line_percentages(&[75.0, 150.0, 400.0], 2.5, 750);
     assert_eq!(pcts, vec![25.0, 50.0, 100.0]);
     // Degenerate inputs yield no positions.

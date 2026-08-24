@@ -21,77 +21,97 @@
 
 ## 链路回顾(框选确认 → 结果)
 
+优化前的链路(各热点标注在右侧):
+
 ```
 snip:selected
-  → finish(false):隐藏遮罩窗口(await,IPC 往返 ×N)        [前端]
+  → finish(false):隐藏遮罩窗口(await,IPC 往返 ×N)        [前端,H-6]
   → screenshot_ocr 命令
-      → 裁剪 + PNG(Fast)编码 + 写盘                        [Rust]
-      → 缩略图编码 + base64                                 [Rust]
-      → get_app_settings()(读盘 JSON ×3 次)                [Rust]
-      → acquire_local_ocr_engine()(async 线程上直接调用)    [Rust]
-      → 从磁盘读回 PNG → 解码                               [Rust]
-      → engine.lock() → det 推理 → N 行 × rec 推理           [Rust,MNN]
+      → 裁剪 + PNG(Fast)编码 + 写盘                        [Rust,H-3]
+      → 缩略图编码 + base64                                 [Rust,H-3]
+      → get_app_settings()(读盘 JSON ×3 次)                [Rust,H-4]
+      → acquire_local_ocr_engine()(async 线程上直接调用)    [Rust,H-5]
+      → 从磁盘读回 PNG → 解码                               [Rust,H-3]
+      → engine.lock() → det 推理 → N 行 × rec 推理           [Rust,MNN,H-1/H-2]
   → 自动复制剪贴板 + 弹出结果窗口                            [前端]
+```
+
+优化后的链路(S-1…S-6 落地):
+
+```
+snip:selected
+  → void finish(false)(与 OCR 并发)+ 预取设置               [前端,S-5]
+  → screenshot_ocr 命令
+      → [blocking] 裁剪 + 缩略图 base64                      [Rust,S-3]
+      → [blocking] acquire_snip_ocr_engine()(专用引擎,S-2;
+        冷加载不再阻塞命令执行器,S-4)
+      → [blocking] 内存 RGBA 直送 recognize_image()          [Rust,S-3]
+        (线程自适应 + f16 低精度,S-1;设置走进程内缓存,S-4)
+      → 识别后才编码 PNG 落盘(retry/export 用)              [Rust,S-3]
+      → 返回 cropMs / inferMs / saveMs 分段计时              [S-6]
+  → 自动复制剪贴板(用预取设置)+ 弹出结果窗口                [前端,S-5]
 ```
 
 ## 热点分析
 
-### H-1 MNN 推理参数全部使用默认值 ⬜(主要热点)
+### H-1 MNN 推理参数全部使用默认值 ✅(已由 S-1 / S-7 解决)
 
 `LocalOcrEngine::new`(`src-tauri/src/core/ocr.rs`)调用
 `OcrEngine::new(det, rec, keys, None)` —— 第 4 参 `config` 传 `None`,
 即 ocr-rs 2.4 的 `OcrEngineConfig::default()`:
 
-| 参数 | 默认值 | 问题 |
-|------|--------|------|
-| `InferenceConfig.thread_count` | 固定 `4` | 不是按物理核数自适应;8 核以上机器浪费算力,2 核机器可能过订阅 |
-| `InferenceConfig.precision_mode` | `PrecisionMode::Normal` | ocr-rs 提供 `Low`(f16)模式,CPU 上通常再快 ~30–50%,OCR 精度损失可忽略 |
-| `InferenceConfig.use_cache` | `false` | MNN 几何/权重缓存未启用;**ocr-rs 2.4 公开 API 无法设置,放弃** |
-| 模型档位 | `medium` rec(~36.6MB) | 已由 S-7 提供 `small` / `medium` 设置项(见下文) |
+| 参数 | 默认值 | 问题 | 处理 |
+|------|--------|------|------|
+| `InferenceConfig.thread_count` | 固定 `4` | 不是按物理核数自适应;8 核以上机器浪费算力,2 核机器可能过订阅 | ✅ S-1:`available_parallelism()` 自适应 |
+| `InferenceConfig.precision_mode` | `PrecisionMode::Normal` | ocr-rs 提供 `Low`(f16)模式,CPU 上通常再快 ~30–50%,OCR 精度损失可忽略 | ✅ S-1:默认 `Low`,`ocrLowPrecision` 可关 |
+| `InferenceConfig.use_cache` | `false` | MNN 几何/权重缓存未启用 | ⬜ ocr-rs 2.4 公开 API 无法设置,放弃 |
+| 模型档位 | `medium` rec(~36.6MB) | small 档更快 | ✅ S-7:`ocrModelSize` 设置项 |
 
 对一张 1000×300、含若干文本行的截图,det 一次 + 每行一次 rec,
 在"4 线程 + Normal 精度"下典型耗时 **300ms–1s+**;调优后有数倍的下降空间。
 
-### H-2 引擎互斥锁串行化 ⬜
+### H-2 引擎互斥锁串行化 ✅(已由 S-2 解决)
 
 常驻引擎为 `Arc<Mutex<LocalOcrEngine>>`,截图识别在 `engine.lock()` 内完成
 (`snip.rs` `screenshot_ocr` 本地分支)。若 Image→Markdown 批量队列、hybrid PDF
 页面或 draw-table 正在进行本地识别,截图推理必须排队等锁 —— 表现为
 "小截图也要等很久"。截图是交互路径,不应排在批量任务之后。
+现已由截图专用 `SnipEngineCache` 实例解决,批量任务继续走共享实例。
 
-### H-3 磁盘往返与重复编解码 ⬜
+### H-3 磁盘往返与重复编解码 ✅(已由 S-3 解决)
 
-`screenshot_ocr` 当前流程:
+`screenshot_ocr` 原流程:
 
 1. 裁剪出的 RGBA → PNG 编码 → 写入 `screenshots/shot-*.png`;
 2. 再从磁盘把这个 PNG **读回来** → 解码成 `DynamicImage` 才喂给引擎;
 3. 另外还做了缩略图的第二次 PNG 编码 + base64。
 
-对 1000×300 约 30–80ms 的纯开销。裁剪帧本来就在内存里
-(`SnipStore` 的原始 RGBA),完全可以零拷贝构造 `DynamicImage` 直接送推理;
-落盘只服务于 retry/export,可在识别后异步进行。
+对 1000×300 约 30–80ms 的纯开销。现已改为内存直送推理
+(`recognize_image`),落盘移到识别之后仅服务 retry/export。
 
-### H-4 设置文件反复读盘 ⬜
+### H-4 设置文件反复读盘 ✅(已由 S-4 解决)
 
 单次 `screenshot_ocr` 调用 `settings::get_app_settings()` 三次
 (顶层 `ocr_mode`、本地分支的 `text_separator`、`acquire_local_ocr_engine`
 内部的 `cache_ocr_engine`),每次都读盘并解析 JSON。量级小(~几 ms),
 但属于白丢的时间,且阻塞 async 运行时线程。
+现已由进程内 `OnceLock<RwLock>` 缓存(写穿同步)解决。
 
-### H-5 `acquire_local_ocr_engine` 在 async 线程上同步调用 ⬜
+### H-5 `acquire_local_ocr_engine` 在 async 线程上同步调用 ✅(已由 S-4 解决)
 
-`snip.rs` 中该调用发生在 `spawn_blocking` 之外。缓存命中时只是拿个
+原实现中该调用发生在 `spawn_blocking` 之外。缓存命中时只是拿个
 `Arc` 很快;但一旦缓存被关闭又重新打开、或进程内引擎刚被释放,
 ~0.5–2s 的模型加载会**卡住整个 Tauri 命令执行器**,其他 IPC 全部停摆。
+现已整体挪进 `spawn_blocking`。
 
-### H-6 前端串行的收尾流程 ⬜
+### H-6 前端串行的收尾流程 ✅(已由 S-5 解决)
 
-`image-to-md.tsx` `onSelected`:先 `await finish(false)`(隐藏所有遮罩窗口,
+`image-to-md.tsx` `onSelected`:原来先 `await finish(false)`(隐藏所有遮罩窗口,
 每显示器一次 IPC 往返)**然后才**发起 `screenshot_ocr`;识别完成后还要先查
-设置再复制剪贴板 / 弹结果窗。这些步骤可并行化或提前,能砍掉 50–150ms
-的可感知延迟。
+设置再复制剪贴板 / 弹结果窗。现已改为遮罩隐藏与 OCR 请求并发、
+设置在框选期间预取。
 
-### H-7 rec 模型档位 ⬜ → ✅(经 S-7 落地)
+### H-7 rec 模型档位 ✅(经 S-7 落地)
 
 当前使用 `PP-OCRv6_medium_rec`(~36.6MB)。ocr-rs 对每条检测行都要跑一次
 rec,medium 档在小字/多行场景下明显慢于 small 档。已作为设置项提供

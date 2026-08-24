@@ -14,7 +14,7 @@
 //! ```
 //!
 //! Secrets are excluded by default. When `includeSecrets` is on, keys are
-//! decrypted and written as **plaintext** — the user is warned in the UI.
+//! decrypted and written as **plaintext** - the user is warned in the UI.
 //! On import, plaintext keys are re-protected through the normal pipeline
 //! (`secret::protect`), so a file from another machine just works.
 
@@ -36,7 +36,7 @@ pub struct TransferVendor {
   pub name: String,
   #[serde(default)]
   pub base_url: String,
-  /// Plaintext API key — only present when the export included secrets.
+  /// Plaintext API key - only present when the export included secrets.
   #[serde(default)]
   pub api_key: Option<String>,
   /// Whether a key was configured at export time (even when not exported).
@@ -115,7 +115,7 @@ pub fn export_config(app: &AppHandle, path: &str, include_secrets: bool) -> Resu
   Ok(transfer.len())
 }
 
-/// Parse an export file. Validation is structural only — unknown fields are
+/// Parse an export file. Validation is structural only - unknown fields are
 /// ignored so future versions stay forward-compatible where possible.
 pub fn parse_import(path: &str) -> Result<ImportedConfig, String> {
   let text =

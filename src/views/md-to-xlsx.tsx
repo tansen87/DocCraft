@@ -436,7 +436,7 @@ export function MdToXlsxView() {
                               count: item.result.tableCount,
                               rows: item.result.totalRows,
                             })
-                          : "—"}
+                          : "-"}
                       </td>
                       <td className="px-3 py-2">
                         <StatusBadge item={item} />
