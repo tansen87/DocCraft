@@ -153,6 +153,14 @@ const en = {
   "settings.cacheOcrEngine": "Cache OCR engine",
   "settings.cacheOcrEngineDesc":
     "Keep PaddleOCR resident to skip 0.5-2s load per run; uses ~100-200 MB RAM, freed on disable",
+  "settings.ocrLowPrecision": "Low-precision inference",
+  "settings.ocrLowPrecisionDesc":
+    "Run local PaddleOCR in MNN f16 mode — ~30-50% faster on CPU with negligible accuracy loss",
+  "settings.ocrModelSize": "Recognition model",
+  "settings.ocrModelSizeDesc":
+    "Small runs roughly 2-3x faster with slightly lower accuracy; medium prioritizes accuracy",
+  "settings.ocrModelSize.small": "Small (faster)",
+  "settings.ocrModelSize.medium": "Medium (accurate)",
   "settings.ocrMode.forceLocal": "Force OCR (Local)",
   "settings.ocrMode.forceLocalDesc":
     "OCR every page using local PaddleOCR engine",
@@ -455,6 +463,14 @@ const zh: Record<TranslationKey, string> = {
   "settings.cacheOcrEngine": "缓存本地 OCR 引擎",
   "settings.cacheOcrEngineDesc":
     "PaddleOCR 引擎常驻内存,省去每次 0.5-2s 加载耗时,占用约 100-200 MB RAM,关闭后自动释放",
+  "settings.ocrLowPrecision": "低精度推理加速",
+  "settings.ocrLowPrecisionDesc":
+    "本地 PaddleOCR 使用 MNN f16 模式推理,CPU 上约快 30-50%,精度损失可忽略",
+  "settings.ocrModelSize": "识别模型",
+  "settings.ocrModelSizeDesc":
+    "small 模型速度约快 2-3 倍,精度略低;medium 为精度优先的默认档位",
+  "settings.ocrModelSize.small": "small(更快)",
+  "settings.ocrModelSize.medium": "medium(更准)",
   "settings.ocrMode.forceLocal": "强制OCR(本地)",
   "settings.ocrMode.forceLocalDesc":
     "对所有页面使用本地 PaddleOCR 引擎进行 OCR",

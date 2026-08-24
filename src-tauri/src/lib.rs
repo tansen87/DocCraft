@@ -215,19 +215,25 @@ async fn get_app_settings(app: tauri::AppHandle) -> Result<AppSettings, String> 
 /// hotkey, tray icon, OCR engine cache). Shared by the `set_app_settings`
 /// command and configuration import.
 fn apply_app_settings(app: &tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
-  let tray_enabled_before = core::settings::get_app_settings(app)?.enable_tray;
+  let before = core::settings::get_app_settings(app)?;
   core::settings::set_app_settings(app, settings)?;
   // Keep the global screenshot hotkey in sync (this also validates it — an
   // unparsable hotkey fails the save).
   core::snip::apply_hotkey(app)?;
   // Sync the tray icon with the new setting.
   let settings_now = core::settings::get_app_settings(app)?;
-  if settings_now.enable_tray != tray_enabled_before {
+  if settings_now.enable_tray != before.enable_tray {
     update_tray(app, settings_now.enable_tray);
   }
   // Engine cache turned off → release the resident model memory right away.
-  if !settings_now.cache_ocr_engine {
+  // Inference-parameter changes (precision / model tier) also invalidate the
+  // resident engines so the next use rebuilds them with the new settings
+  // (docs/design/00005_snip-local-ocr-latency.md S-1).
+  let engine_params_changed = settings_now.ocr_low_precision != before.ocr_low_precision
+    || settings_now.ocr_model_size != before.ocr_model_size;
+  if !settings_now.cache_ocr_engine || engine_params_changed {
     app.state::<core::ocr::OcrEngineCache>().clear();
+    app.state::<core::ocr::SnipEngineCache>().clear();
   }
   Ok(())
 }
@@ -458,6 +464,7 @@ pub fn run() {
     .manage(SnipStore::default())
     .manage(crate::core::snip::SnipHotkey::default())
     .manage(core::ocr::OcrEngineCache::default())
+    .manage(core::ocr::SnipEngineCache::default())
     .manage(TrayState::default())
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())

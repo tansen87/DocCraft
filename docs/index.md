@@ -422,9 +422,15 @@ cargo check --manifest-path src-tauri/Cargo.toml
   Further keys: `screenshotHotkey` (global hotkey accelerator, default `F8`,
   empty disables), `cacheOcrEngine` (default `true` — keep the ~66 MB local
   PaddleOCR engine resident instead of reloading per recognition, saving
-  ~0.5–2s each run at the cost of RAM), `textSeparator` (joins same-line OCR
+  ~0.5–2s each run at the cost of RAM),   `textSeparator` (joins same-line OCR
   blocks: `" "` / `","` / `"|"` / tab / `"^"`), and `enableTray` (default
-  `true`, system tray icon with close-to-tray behaviour).
+  `true`, system tray icon with close-to-tray behaviour). Local-engine
+  inference tuning: `ocrModelSize` (`"small"` / `"medium"` (default) —
+  which bundled PaddleOCR tier to load; small is ~2–3× faster) and
+  `ocrLowPrecision` (default `true` — MNN f16 mode, ~30–50% faster on
+  CPU); changing either rebuilds the resident engine(s). See
+  [design/00005_snip-local-ocr-latency.md](./design/00005_snip-local-ocr-latency.md)
+  for the screenshot-OCR latency work.
 
 Both live in the Tauri `app_config_dir` directory. No third-party store plugin
 is required. For privacy, only pages that need OCR (detected or empty

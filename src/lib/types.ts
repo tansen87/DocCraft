@@ -102,6 +102,16 @@ export interface AppSettings {
    * ~0.5–2s of model loading per local OCR run; ~100–200 MB of RAM).
    */
   cacheOcrEngine: boolean;
+  /**
+   * Low-precision (f16) MNN inference for the local PaddleOCR engine —
+   * ~30–50% faster on CPU with negligible accuracy loss (default true).
+   */
+  ocrLowPrecision?: boolean;
+  /**
+   * Which local PaddleOCR model tier to load (default "medium").
+   * "small" is roughly 2–3× faster with slightly lower accuracy.
+   */
+  ocrModelSize?: OcrModelSize;
   /** Separator between text blocks within a single OCR line. */
   textSeparator: string;
   /** Show a result popup after every screenshot recognition (default true). */
@@ -121,6 +131,9 @@ export type OcrMode =
   | "nonTextLocal"
   | "nonTextAi"
   | "disabled";
+
+/** Local PaddleOCR model tier (files bundled under resources/ppocr). */
+export type OcrModelSize = "small" | "medium";
 
 /** A single GitHub-Flavored Markdown table parsed by the backend. */
 export interface MdTable {
@@ -324,6 +337,14 @@ export interface OcrImageResult {
   pngBase64?: string;
   /** Saved screenshot copy path (screenshot pipeline only), enabling retry. */
   savedPath?: string;
+  /**
+   * Stage timings in ms (screenshot pipeline only, S-6 in
+   * docs/design/00005_snip-local-ocr-latency.md): region crop + thumbnail,
+   * OCR inference, and full-res PNG persist.
+   */
+  cropMs?: number;
+  inferMs?: number;
+  saveMs?: number;
 }
 
 /** One captured monitor snapshot offered to the snip overlay windows. */

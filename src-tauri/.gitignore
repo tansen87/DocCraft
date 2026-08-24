@@ -6,6 +6,9 @@
 # will have schema files for capabilities auto-completion
 /gen/schemas
 
-/resources/ppocr/PP-OCRv6_medium_det.mnn
-/resources/ppocr/PP-OCRv6_medium_rec.mnn
-/resources/ppocr/ppocr_keys_v6_medium.txt
+/resources/models/PP-OCRv6_medium_det.mnn
+/resources/models/PP-OCRv6_medium_rec.mnn
+/resources/models/ppocr_keys_v6_medium.txt
+/resources/models/ppocr_keys_v6_small.txt
+/resources/models/PP-OCRv6_small_det.mnn
+/resources/models/PP-OCRv6_small_rec.mnn

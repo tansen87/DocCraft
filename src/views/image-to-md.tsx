@@ -55,6 +55,7 @@ import {
 } from "@/lib/ipc";
 import type {
   ActivityProgress,
+  AppSettings,
   MonitorSnapshot,
   OcrImageResult,
   ShotRegion,
@@ -274,7 +275,7 @@ export function ImageToMdView() {
    * the item path, so retry / export behave exactly like an imported file.
    */
   const recognizeShot = useCallback(
-    async (region: ShotRegion) => {
+    async (region: ShotRegion, snipSettings?: AppSettings | null) => {
       const id = crypto.randomUUID();
       const now = new Date();
       const pad = (n: number) => String(n).padStart(2, "0");
@@ -308,8 +309,10 @@ export function ImageToMdView() {
         // Post-recognition extras, both on by default and configurable in
         // Settings → Screenshot: auto-copy the text and show a popup. They
         // run independently so a clipboard failure never blocks the popup
-        // (and an older backend missing the fields keeps defaults).
-        const settings = await getAppSettings().catch(() => null);
+        // (and an older backend missing the fields keeps defaults). The
+        // settings are prefetched while the overlay is still open (S-5).
+        const settings =
+          snipSettings ?? (await getAppSettings().catch(() => null));
         if ((settings?.snipAutoCopy ?? true) && result.markdown) {
           try {
             // Native clipboard write (no focus / user-gesture requirement —
@@ -389,11 +392,17 @@ export function ImageToMdView() {
           snippingRef.current = false;
         };
 
+        // Prefetch the post-recognition settings while the user is still
+        // selecting the region, so they are ready when OCR finishes (S-5).
+        const snipSettings = await getAppSettings().catch(() => null);
+
         const onSelected = async (region: ShotRegion) => {
           if (settled) return;
           settled = true;
-          await finish(false);
-          await recognizeShot(region);
+          // Pipeline (S-5): tear down the overlay UI concurrently with the
+          // OCR request instead of serializing the hide before it.
+          void finish(false);
+          await recognizeShot(region, snipSettings);
         };
         const onCancelled = async () => {
           if (settled) return;

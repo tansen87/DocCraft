@@ -270,8 +270,8 @@ fn screenshots_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
   Ok(dir)
 }
 
-/// Crop the selected region out of the cached snapshot, persist it as a PNG
-/// under the app data directory and run the configured OCR engine over it.
+/// Crop the selected region out of the cached snapshot, run the configured
+/// OCR engine over it **from memory** and persist the PNG copy afterwards.
 ///
 /// Consumes the snapshot for the given monitor; any other cached monitors are
 /// dropped afterwards by [`end_screenshot_session`] (invoked by the command
@@ -292,72 +292,88 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
 
   let start = Instant::now();
   let dir = screenshots_dir(app)?;
+  let stamp = SystemTime::now()
+    .duration_since(UNIX_EPOCH)
+    .map(|d| d.as_millis())
+    .unwrap_or_default();
+  let path = dir.join(format!("shot-{stamp}.png"));
 
-  // Crop + encode + persist off the async runtime, mirroring how file-based
-  // conversion keeps blocking work away from futures.
-  let (cropped_b64, saved_path) =
-    tauri::async_runtime::spawn_blocking(move || -> Result<(String, String), String> {
+  // Crop off the async runtime; also prepare the small IPC thumbnail here so
+  // the whole payload is ready without touching the disk.
+  let crop_start = Instant::now();
+  let (cropped, thumb_b64) =
+    tauri::async_runtime::spawn_blocking(move || -> Result<(RgbaImage, String), String> {
       let Some((x, y, w, h)) = clamp_region(&region, frame.width(), frame.height()) else {
         return Err("Selection area is too small".to_string());
       };
       let cropped = crop_imm(&frame, x, y, w, h).to_image();
-      let png = encode_fast_png(cropped.as_raw(), w, h)?;
-
-      let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or_default();
-      let path = dir.join(format!("shot-{stamp}.png"));
-      std::fs::write(&path, &png).map_err(|e| format!("Failed to save screenshot: {e}"))?;
-
       // The IPC payload only needs a list thumbnail — downsample to keep the
       // event small. Retry/export always re-read the full-resolution file.
       let thumb = thumbnail_rgba(&cropped);
-      let b64 = base64_encode(&encode_fast_png(
-        thumb.as_raw(),
-        thumb.width(),
-        thumb.height(),
-      )?);
-      Ok((b64, path.to_string_lossy().into_owned()))
+      let thumb_png = encode_fast_png(thumb.as_raw(), thumb.width(), thumb.height())?;
+      Ok((cropped, base64_encode(&thumb_png)))
     })
     .await
     .map_err(|e| format!("Screenshot task failed: {e}"))??;
 
-  let markdown = if mode.is_local() {
+  let crop_ms = crop_start.elapsed().as_millis() as u64;
+  let infer_start = Instant::now();
+
+  let (markdown, save_ms) = if mode.is_local() {
     let app = app.clone();
-    let saved_for_read = saved_path.clone();
+    let saved_path = path.clone();
     let sep = settings::get_app_settings(&app)?.text_separator;
-    // Shared/resident engine (per the cache_ocr_engine setting) — skips the
-    // ~0.5–2 s model load on every shot when caching is enabled.
-    let cache = { app.state::<crate::core::ocr::OcrEngineCache>() };
-    let engine = crate::core::ocr::acquire_local_ocr_engine(&app, &cache)?;
-    tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
-      // Re-read the persisted copy instead of keeping both copies alive.
-      let png =
-        std::fs::read(&saved_for_read).map_err(|e| format!("Failed to read screenshot: {e}"))?;
+    // Screenshot-dedicated engine (S-2): never queues behind batch OCR tasks.
+    // Acquired inside spawn_blocking so a cold model load cannot stall the
+    // async runtime (S-4).
+    tauri::async_runtime::spawn_blocking(move || -> Result<(String, u64), String> {
+      let engine = crate::core::ocr::acquire_snip_ocr_engine(&app)?;
+      // Feed the in-memory crop straight to the engine — no PNG encode →
+      // write → read → decode round-trip on the hot path (S-3).
+      let image = image::DynamicImage::ImageRgba8(cropped.clone());
       let text = {
         let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
-        eng.recognize_bytes(&png, &sep)?
+        eng.recognize_image(&image, &sep)?
       };
+      // Persist the full-resolution copy after recognition so retry / export
+      // behave exactly like an imported file.
+      let save_start = Instant::now();
+      let png = encode_fast_png(cropped.as_raw(), cropped.width(), cropped.height())?;
+      std::fs::write(&saved_path, &png).map_err(|e| format!("Failed to save screenshot: {e}"))?;
+      let save_ms = save_start.elapsed().as_millis() as u64;
       if text.trim().is_empty() {
         return Err("Local OCR returned no content".to_string());
       }
-      Ok(text.trim().to_string())
+      Ok((text.trim().to_string(), save_ms))
     })
     .await
     .map_err(|e| format!("Local OCR task failed: {e}"))??
   } else {
+    let saved_path = path.clone();
+    let save_start = Instant::now();
+    let png_b64 = tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+      let png = encode_fast_png(cropped.as_raw(), cropped.width(), cropped.height())?;
+      std::fs::write(&saved_path, &png).map_err(|e| format!("Failed to save screenshot: {e}"))?;
+      Ok(base64_encode(&png))
+    })
+    .await
+    .map_err(|e| format!("Screenshot task failed: {e}"))??;
     let provider = crate::core::ocr::resolve_remote_provider(app)?
       .ok_or_else(|| "No available OCR supplier configured".to_string())?;
-    crate::core::ocr::ai_recognize_image(&provider, &cropped_b64).await?
+    let markdown = crate::core::ocr::ai_recognize_image(&provider, &png_b64).await?;
+    (markdown, save_start.elapsed().as_millis() as u64)
   };
+  let infer_ms = infer_start.elapsed().as_millis() as u64 - save_ms;
 
   Ok(OcrImageResult {
     markdown,
     engine: (if mode.is_local() { "local" } else { "ai" }).to_string(),
     duration_ms: start.elapsed().as_millis() as u64,
-    png_base64: Some(cropped_b64),
-    saved_path: Some(saved_path),
+    png_base64: Some(thumb_b64),
+    saved_path: Some(path.to_string_lossy().into_owned()),
+    crop_ms: Some(crop_ms),
+    infer_ms: Some(infer_ms),
+    save_ms: Some(save_ms),
   })
 }
 

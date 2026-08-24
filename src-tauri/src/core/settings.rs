@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::{OnceLock, RwLock};
 
 use tauri::AppHandle;
 
@@ -97,25 +98,50 @@ pub fn api_key_for(app: &AppHandle, vendor_id: &str) -> Result<Option<String>, S
   )
 }
 
+/// Process-wide settings cache. `get_app_settings` is called several times per
+/// conversion / screenshot; reading the JSON file each time adds avoidable
+/// latency on hot paths (see docs/design/00005_snip-local-ocr-latency.md S-4).
+/// [`set_app_settings`] writes through, keeping cache and disk in sync.
+static SETTINGS_CACHE: OnceLock<RwLock<Option<AppSettings>>> = OnceLock::new();
+
+fn settings_cache() -> &'static RwLock<Option<AppSettings>> {
+  SETTINGS_CACHE.get_or_init(|| RwLock::new(None))
+}
+
 /// Load global app settings (falls back to defaults when missing/corrupt).
+/// Served from the in-process cache once loaded.
 pub fn get_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
+  if let Ok(guard) = settings_cache().read() {
+    if let Some(cached) = guard.as_ref() {
+      return Ok(cached.clone());
+    }
+  }
   let path = app_settings_path(app)?;
   let settings = std::fs::read_to_string(&path)
     .ok()
     .and_then(|text| serde_json::from_str::<AppSettings>(&text).ok())
     .unwrap_or_default();
-  Ok(clamp_settings(settings))
+  let clamped = clamp_settings(settings);
+  if let Ok(mut guard) = settings_cache().write() {
+    *guard = Some(clamped.clone());
+  }
+  Ok(clamped)
 }
 
 /// Persist global app settings, normalizing values within valid ranges.
+/// Also refreshes the in-process cache (write-through).
 pub fn set_app_settings(app: &AppHandle, settings: AppSettings) -> Result<(), String> {
   let path = app_settings_path(app)?;
   let dir = path
     .parent()
     .ok_or_else(|| "Invalid configuration directory".to_string())?;
   std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-  let json = serde_json::to_string_pretty(&clamp_settings(settings)).map_err(|e| e.to_string())?;
+  let clamped = clamp_settings(settings);
+  let json = serde_json::to_string_pretty(&clamped).map_err(|e| e.to_string())?;
   std::fs::write(&path, json).map_err(|e| e.to_string())?;
+  if let Ok(mut guard) = settings_cache().write() {
+    *guard = Some(clamped);
+  }
   Ok(())
 }
 

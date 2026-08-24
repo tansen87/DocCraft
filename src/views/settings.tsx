@@ -44,7 +44,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { OcrMode } from "@/lib/types";
+import type { OcrMode, OcrModelSize } from "@/lib/types";
 import {
   Tooltip,
   TooltipContent,
@@ -176,6 +176,8 @@ export function SettingsView() {
   const [excelTablesOnly, setExcelTablesOnly] = useState(true);
   const [screenshotHotkey, setScreenshotHotkey] = useState("");
   const [cacheOcrEngine, setCacheOcrEngine] = useState(true);
+  const [ocrLowPrecision, setOcrLowPrecision] = useState(true);
+  const [ocrModelSize, setOcrModelSize] = useState<OcrModelSize>("medium");
   const [textSeparator, setTextSeparator] = useState("|");
   const [enableTray, setEnableTray] = useState(true);
   const [snipResultPopup, setSnipResultPopup] = useState(true);
@@ -201,6 +203,8 @@ export function SettingsView() {
         setExcelTablesOnly(settings.excelTablesOnly);
         setScreenshotHotkey(settings.screenshotHotkey ?? "");
         setCacheOcrEngine(settings.cacheOcrEngine ?? true);
+        setOcrLowPrecision(settings.ocrLowPrecision ?? true);
+        setOcrModelSize(settings.ocrModelSize ?? "medium");
         setTextSeparator(settings.textSeparator);
         setEnableTray(settings.enableTray);
         setSnipResultPopup(settings.snipResultPopup ?? true);
@@ -251,6 +255,8 @@ export function SettingsView() {
       screenshotHotkey: screenshotHotkey.trim() || null,
       enableTray,
       cacheOcrEngine,
+      ocrLowPrecision,
+      ocrModelSize,
       textSeparator,
       snipResultPopup,
       snipAutoCopy,
@@ -436,6 +442,16 @@ export function SettingsView() {
                   cacheOcrEngine={cacheOcrEngine}
                   onCacheOcrEngineChange={(v) => {
                     setCacheOcrEngine(v);
+                    markDirty();
+                  }}
+                  ocrLowPrecision={ocrLowPrecision}
+                  onOcrLowPrecisionChange={(v) => {
+                    setOcrLowPrecision(v);
+                    markDirty();
+                  }}
+                  ocrModelSize={ocrModelSize}
+                  onOcrModelSizeChange={(v) => {
+                    setOcrModelSize(v);
                     markDirty();
                   }}
                 />
@@ -632,6 +648,10 @@ function OcrSettingsPanel({
   loading,
   cacheOcrEngine,
   onCacheOcrEngineChange,
+  ocrLowPrecision,
+  onOcrLowPrecisionChange,
+  ocrModelSize,
+  onOcrModelSizeChange,
 }: {
   vendors: VendorForm[];
   onChange: (updater: SetStateAction<VendorForm[]>) => void;
@@ -640,6 +660,10 @@ function OcrSettingsPanel({
   loading: boolean;
   cacheOcrEngine: boolean;
   onCacheOcrEngineChange: (v: boolean) => void;
+  ocrLowPrecision: boolean;
+  onOcrLowPrecisionChange: (v: boolean) => void;
+  ocrModelSize: OcrModelSize;
+  onOcrModelSizeChange: (v: OcrModelSize) => void;
 }) {
   const { t } = useI18n();
 
@@ -816,6 +840,38 @@ function OcrSettingsPanel({
           <Switch
             checked={cacheOcrEngine}
             onCheckedChange={onCacheOcrEngineChange}
+            disabled={loading}
+          />
+        </SettingRow>
+        <SettingRow
+          label={t("settings.ocrModelSize")}
+          description={t("settings.ocrModelSizeDesc")}
+        >
+          <Select
+            value={ocrModelSize}
+            onValueChange={(v) => onOcrModelSizeChange(v as OcrModelSize)}
+            disabled={loading}
+          >
+            <SelectTrigger className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="small">
+                {t("settings.ocrModelSize.small")}
+              </SelectItem>
+              <SelectItem value="medium">
+                {t("settings.ocrModelSize.medium")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </SettingRow>
+        <SettingRow
+          label={t("settings.ocrLowPrecision")}
+          description={t("settings.ocrLowPrecisionDesc")}
+        >
+          <Switch
+            checked={ocrLowPrecision}
+            onCheckedChange={onOcrLowPrecisionChange}
             disabled={loading}
           />
         </SettingRow>

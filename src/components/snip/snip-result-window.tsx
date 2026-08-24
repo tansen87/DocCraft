@@ -21,6 +21,77 @@ const WINDOW_LABEL = "snip-result";
 /** localStorage stash so a freshly created window has the content on first paint. */
 export const SNIP_RESULT_KEY = "doccraft-snip-result";
 
+/** localStorage stash of the last user-chosen window position (physical px). */
+const SNIP_RESULT_POS_KEY = "doccraft-snip-result-pos";
+
+/** Padding from the primary monitor edges for the default position. */
+const DEFAULT_EDGE_PADDING = 20;
+/** The default bottom-right spot sits this much higher than the very bottom. */
+const DEFAULT_LIFT_PX = 90;
+
+/**
+ * While set (ms timestamp), move events are treated as programmatic
+ * placement and not persisted as the user's chosen position.
+ */
+let suppressMoveSaveUntil = 0;
+
+function readSavedPos(): { x: number; y: number } | null {
+  try {
+    const raw = localStorage.getItem(SNIP_RESULT_POS_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as { x?: unknown; y?: unknown };
+    return typeof p?.x === "number" && typeof p?.y === "number"
+      ? { x: p.x, y: p.y }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Place the window at its last remembered position, falling back to a
+ * lifted bottom-right default when nothing has been saved yet. The saved
+ * position is clamped so the window always stays fully on the primary
+ * monitor (e.g. after a monitor was unplugged or resolution changed).
+ */
+async function placeAtRememberedOrDefault(win: WebviewWindow) {
+  try {
+    const size = await win.outerSize();
+    const monitor = await primaryMonitor();
+    const saved = readSavedPos();
+    if (saved && monitor) {
+      const x = Math.min(
+        Math.max(saved.x, 0),
+        Math.max(0, monitor.size.width - size.width),
+      );
+      const y = Math.min(
+        Math.max(saved.y, 0),
+        Math.max(0, monitor.size.height - size.height),
+      );
+      suppressMoveSaveUntil = Date.now() + 500;
+      await win.setPosition(new PhysicalPosition(Math.round(x), Math.round(y)));
+      return;
+    }
+    if (monitor) {
+      const x = Math.max(
+        0,
+        monitor.size.width - size.width - DEFAULT_EDGE_PADDING,
+      );
+      const y = Math.max(
+        0,
+        monitor.size.height -
+          size.height -
+          DEFAULT_EDGE_PADDING -
+          DEFAULT_LIFT_PX,
+      );
+      suppressMoveSaveUntil = Date.now() + 500;
+      await win.setPosition(new PhysicalPosition(x, y));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Open (or reuse) the standalone screenshot-result window and show `markdown`
  * in it. Called from the main window after a successful snip recognition.
@@ -37,27 +108,11 @@ export async function showSnipResultWindow(markdown: string): Promise<void> {
   const notify = () =>
     emitTo(WINDOW_LABEL, "snip:result", markdown).catch(() => {});
 
-  // Position the window at the bottom-right of the primary monitor.
-  async function moveToBottomRight(win: WebviewWindow) {
-    try {
-      const monitor = await primaryMonitor();
-      if (monitor) {
-        const size = await win.outerSize();
-        const padding = 20;
-        const x = Math.max(0, monitor.size.width - size.width - padding);
-        const y = Math.max(0, monitor.size.height - size.height - padding);
-        await win.setPosition(new PhysicalPosition(x, y));
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-
   const existing = await WebviewWindow.getByLabel(WINDOW_LABEL).catch(
     () => null,
   );
   if (existing) {
-    await moveToBottomRight(existing);
+    await placeAtRememberedOrDefault(existing);
     await notify();
     return;
   }
@@ -85,7 +140,7 @@ export async function showSnipResultWindow(markdown: string): Promise<void> {
     // Explicitly remove decorations and shadow so the window is truly frameless.
     await win.setDecorations(false).catch(() => {});
     await win.setShadow(false).catch(() => {});
-    await moveToBottomRight(win);
+    await placeAtRememberedOrDefault(win);
   } catch {
     // The window already exists (e.g. stale metadata after a reload) —
     // pushing the event is enough; it will reveal itself.
@@ -143,6 +198,39 @@ export function SnipResultWindow() {
     return () => {
       const el = document.getElementById("snip-result-bg");
       if (el) el.remove();
+    };
+  }, []);
+
+  // Remember the user-chosen window position: persist it (debounced) after
+  // every move, except while a programmatic placement is in flight. The next
+  // recognition restores the last position instead of the default spot.
+  useEffect(() => {
+    const win = getCurrentWebviewWindow();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let unlisten: (() => void) | null = null;
+    void win
+      .onMoved(() => {
+        if (Date.now() < suppressMoveSaveUntil) return;
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          void win
+            .outerPosition()
+            .then((p) =>
+              localStorage.setItem(
+                SNIP_RESULT_POS_KEY,
+                JSON.stringify({ x: p.x, y: p.y }),
+              ),
+            )
+            .catch(() => {});
+        }, 300);
+      })
+      .then((f) => {
+        unlisten = f;
+      })
+      .catch(() => {});
+    return () => {
+      clearTimeout(timer);
+      unlisten?.();
     };
   }, []);
 

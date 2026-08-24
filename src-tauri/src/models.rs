@@ -355,6 +355,32 @@ pub struct AppSettings {
   /// 0 = fully transparent, 100 = fully opaque.
   #[serde(default = "default_snip_result_opacity")]
   pub snip_result_opacity: u32,
+  /// Run the local PaddleOCR engine in MNN low-precision (f16) mode —
+  /// roughly 30–50% faster on CPU with negligible accuracy loss.
+  #[serde(default = "default_true")]
+  pub ocr_low_precision: bool,
+  /// Which PaddleOCR model tier the local engine loads.
+  #[serde(default)]
+  pub ocr_model_size: OcrModelSize,
+}
+
+/// Local PaddleOCR model tier. Small is roughly 2–3× faster with slightly
+/// lower accuracy; medium (the previous default bundle) prioritizes accuracy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OcrModelSize {
+  Small,
+  #[default]
+  Medium,
+}
+
+impl OcrModelSize {
+  pub fn as_str(&self) -> &'static str {
+    match self {
+      Self::Small => "small",
+      Self::Medium => "medium",
+    }
+  }
 }
 
 /// Controls when and how OCR is applied during conversion.
@@ -414,6 +440,16 @@ pub struct OcrImageResult {
   /// item behaves like a regular imported file for retry / export.
   #[serde(skip_serializing_if = "Option::is_none")]
   pub saved_path: Option<String>,
+  /// Stage timing: region crop (+ thumbnail encode), screenshot pipeline
+  /// only (docs/design/00005_snip-local-ocr-latency.md S-6).
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub crop_ms: Option<u64>,
+  /// Stage timing: OCR inference (local det+rec or remote AI round-trip).
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub infer_ms: Option<u64>,
+  /// Stage timing: full-resolution PNG encode + persist to disk.
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub save_ms: Option<u64>,
 }
 
 /// Request to extract a table from an image using drawn vertical lines.
@@ -510,6 +546,8 @@ impl Default for AppSettings {
       snip_result_popup: true,
       snip_auto_copy: true,
       snip_result_opacity: 60,
+      ocr_low_precision: true,
+      ocr_model_size: OcrModelSize::default(),
     }
   }
 }

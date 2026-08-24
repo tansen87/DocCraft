@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use ocr_rs::OcrEngine;
+use ocr_rs::{OcrEngine, OcrEngineConfig, PrecisionMode};
 use reqwest::Client;
 use tauri::AppHandle;
 use uuid::Uuid;
@@ -12,8 +12,8 @@ use crate::core::page_marker::page_marker;
 use crate::core::settings;
 use crate::core::{extract_cache, get_resources_dir};
 use crate::models::{
-  ConvertResult, DetectResult, HybridSessionInfo, LayoutDto, OcrImageResult, OcrMode, OcrVendor,
-  PdfTypeDto,
+  ConvertResult, DetectResult, HybridSessionInfo, LayoutDto, OcrImageResult, OcrMode, OcrModelSize,
+  OcrVendor, PdfTypeDto,
 };
 
 /// Prompt sent to the vision model for every OCR page.
@@ -25,9 +25,15 @@ pub struct LocalOcrEngine {
 }
 
 impl LocalOcrEngine {
-  /// Create a new local OCR engine with the provided model paths.
-  pub fn new(det_model: &str, rec_model: &str, keys_file: &str) -> Result<Self, String> {
-    let engine = OcrEngine::new(det_model, rec_model, keys_file, None)
+  /// Create a new local OCR engine with the provided model paths and the
+  /// given inference configuration (threads / precision / backend).
+  pub fn new_with_config(
+    det_model: &str,
+    rec_model: &str,
+    keys_file: &str,
+    config: OcrEngineConfig,
+  ) -> Result<Self, String> {
+    let engine = OcrEngine::new(det_model, rec_model, keys_file, Some(config))
       .map_err(|e| format!("Failed to initialize local OCR engine: {e}"))?;
     Ok(Self { engine })
   }
@@ -40,14 +46,23 @@ impl LocalOcrEngine {
   }
 
   /// Recognize text in an image from encoded bytes (PNG or JPEG) and return
-  /// the text. Block ordering matches [`Self::recognize_from_png`].
+  /// the text. Block ordering matches [`Self::recognize_image`].
   pub fn recognize_bytes(&self, image_data: &[u8], separator: &str) -> Result<String, String> {
     let image =
       image::load_from_memory(image_data).map_err(|e| format!("Failed to load image: {e}"))?;
+    self.recognize_image(&image, separator)
+  }
 
+  /// Recognize text in an already-decoded image. Lets in-memory pipelines
+  /// (e.g. screenshots) skip an encode → write → read → decode round-trip.
+  pub fn recognize_image(
+    &self,
+    image: &image::DynamicImage,
+    separator: &str,
+  ) -> Result<String, String> {
     let results = self
       .engine
-      .recognize(&image)
+      .recognize(image)
       .map_err(|e| format!("Local OCR recognition failed: {e}"))?;
 
     if results.is_empty() {
@@ -161,27 +176,70 @@ impl LocalOcrEngine {
 
 /// Helper to build the resource directory path for OCR models.
 fn ocr_resource_dir(_app: &AppHandle) -> Result<PathBuf, String> {
-  let base = get_resources_dir().join("ppocr");
+  let base = get_resources_dir().join("models");
   if base.exists() {
     return Ok(base);
   }
   Err(format!(
-    "OCR model directory not found. Please place models at:\n  {}",
+    "OCR model directory not found. Please place models at: {}",
     base.display(),
   ))
 }
 
-/// Create a local OCR engine from the bundled models.
+/// Build the MNN engine configuration from the current settings
+/// (docs/design/00005_snip-local-ocr-latency.md S-1):
+/// - thread count adapts to the machine instead of the crate's fixed default 4;
+/// - low-precision (f16) inference per the `ocr_low_precision` setting.
+fn engine_config_for(low_precision: bool) -> OcrEngineConfig {
+  let threads = std::thread::available_parallelism()
+    .map(|n| n.get() as i32)
+    .unwrap_or(4)
+    .clamp(1, 16);
+  let mut config = OcrEngineConfig::new().with_threads(threads);
+  if low_precision {
+    config = config.with_precision(PrecisionMode::Low);
+  }
+  config
+}
+
+/// Create a local OCR engine from the bundled models, tuned by the current
+/// app settings (model tier, thread count, precision).
 pub fn create_local_ocr_engine(app: &AppHandle) -> Result<LocalOcrEngine, String> {
   let dir = ocr_resource_dir(app)?;
-  let det = dir.join("PP-OCRv6_medium_det.mnn");
-  let rec = dir.join("PP-OCRv6_medium_rec.mnn");
-  let keys = dir.join("ppocr_keys_v6_medium.txt");
+  let (det_name, rec_name, keys_name) = match settings::get_app_settings(app)?.ocr_model_size {
+    OcrModelSize::Small => (
+      "PP-OCRv6_small_det.mnn",
+      "PP-OCRv6_small_rec.mnn",
+      "ppocr_keys_v6_small.txt",
+    ),
+    OcrModelSize::Medium => (
+      "PP-OCRv6_medium_det.mnn",
+      "PP-OCRv6_medium_rec.mnn",
+      "ppocr_keys_v6_medium.txt",
+    ),
+  };
+  let det = dir.join(det_name);
+  let rec = dir.join(rec_name);
+  let keys = dir.join(keys_name);
+  // Fail with a precise message instead of a bare OS "file not found" from
+  // deep inside MNN.
+  for file in [&det, &rec, &keys] {
+    if !file.exists() {
+      return Err(format!(
+        "OCR model file missing: {}\nPlease place the '{}' tier models in {}",
+        file.display(),
+        settings::get_app_settings(app)?.ocr_model_size.as_str(),
+        dir.display(),
+      ));
+    }
+  }
 
-  LocalOcrEngine::new(
+  let s = settings::get_app_settings(app)?;
+  LocalOcrEngine::new_with_config(
     &det.to_string_lossy(),
     &rec.to_string_lossy(),
     &keys.to_string_lossy(),
+    engine_config_for(s.ocr_low_precision),
   )
 }
 
@@ -206,7 +264,26 @@ impl OcrEngineCache {
   }
 }
 
-/// Acquire the local PaddleOCR engine for one blocking recognition.
+/// Acquire the local PaddleOCR engine for one blocking recognition from a
+/// specific cache cell. Shared by both engine caches below.
+fn acquire_from_cell(
+  app: &AppHandle,
+  cell: &Mutex<Option<Arc<Mutex<LocalOcrEngine>>>>,
+) -> Result<Arc<Mutex<LocalOcrEngine>>, String> {
+  if !settings::get_app_settings(app)?.cache_ocr_engine {
+    return Ok(Arc::new(Mutex::new(create_local_ocr_engine(app)?)));
+  }
+  let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
+  if let Some(engine) = guard.as_ref() {
+    return Ok(engine.clone());
+  }
+  let engine = Arc::new(Mutex::new(create_local_ocr_engine(app)?));
+  *guard = Some(engine.clone());
+  Ok(engine)
+}
+
+/// Acquire the shared local PaddleOCR engine used by batch paths
+/// (hybrid pages, image-to-md, draw-table).
 ///
 /// - Cache enabled: returns the resident engine, creating it on first use.
 /// - Cache disabled: builds a fresh engine that is dropped after the call.
@@ -216,16 +293,37 @@ pub fn acquire_local_ocr_engine(
   app: &AppHandle,
   cache: &OcrEngineCache,
 ) -> Result<Arc<Mutex<LocalOcrEngine>>, String> {
-  if !settings::get_app_settings(app)?.cache_ocr_engine {
-    return Ok(Arc::new(Mutex::new(create_local_ocr_engine(app)?)));
+  acquire_from_cell(app, &cache.0)
+}
+
+/// Managed cache of a **second** local PaddleOCR engine reserved for the
+/// interactive screenshot path (docs/design/00005_snip-local-ocr-latency.md
+/// S-2). Sharing one engine with the batch worker pool means a screenshot
+/// waits behind every in-flight batch recognition on the inner `Mutex`;
+/// a dedicated instance keeps snips latency-independent of batch work at the
+/// cost of ~66 MB extra RAM while `cache_ocr_engine` is enabled.
+pub struct SnipEngineCache(pub Mutex<Option<Arc<Mutex<LocalOcrEngine>>>>);
+
+impl Default for SnipEngineCache {
+  fn default() -> Self {
+    Self(Mutex::new(None))
   }
-  let mut guard = cache.0.lock().unwrap_or_else(|e| e.into_inner());
-  if let Some(engine) = guard.as_ref() {
-    return Ok(engine.clone());
+}
+
+impl SnipEngineCache {
+  /// Drop the cached engine (called when the setting is switched off or the
+  /// inference parameters change).
+  pub fn clear(&self) {
+    *self.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
   }
-  let engine = Arc::new(Mutex::new(create_local_ocr_engine(app)?));
-  *guard = Some(engine.clone());
-  Ok(engine)
+}
+
+/// Acquire the screenshot-dedicated local PaddleOCR engine.
+pub fn acquire_snip_ocr_engine(app: &AppHandle) -> Result<Arc<Mutex<LocalOcrEngine>>, String> {
+  // Access the managed state without hard-wiring tauri::Manager here.
+  use tauri::Manager;
+  let cache = app.state::<SnipEngineCache>();
+  acquire_from_cell(app, &cache.0)
 }
 
 /// Some vision models wrap their markdown answer in a fenced code block even
@@ -874,6 +972,9 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
     duration_ms: start.elapsed().as_millis() as u64,
     png_base64: None,
     saved_path: None,
+    crop_ms: None,
+    infer_ms: None,
+    save_ms: None,
   })
 }
 
