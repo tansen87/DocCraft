@@ -203,7 +203,7 @@ export function PdfPreview({ path, className, scrollToPage }: PdfPreviewProps) {
   return (
     <div
       className={cn(
-        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm",
+        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl glass-panel",
         className,
       )}
     >

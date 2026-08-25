@@ -18,7 +18,7 @@ export function AppHeader({ activeTab, onTabChange }: AppHeaderProps) {
   const tasks = useGlobalTasks();
 
   return (
-    <header className="sticky top-0 z-20 flex h-12 items-center gap-4 bg-background/80 px-4 backdrop-blur">
+    <header className="sticky top-0 z-20 flex h-12 items-center gap-4 border-b border-border/60 bg-background/[0.72] px-4 backdrop-blur-xl">
       <Tabs
         value={activeTab}
         onValueChange={(v) => onTabChange(v as WorkspaceTab)}

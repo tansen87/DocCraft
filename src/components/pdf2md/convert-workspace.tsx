@@ -340,7 +340,7 @@ export function ConvertWorkspace({
         <div className="flex min-h-0 flex-1 flex-col gap-3">
           <div
             ref={containerRef}
-            className="relative min-h-0 flex-1 overflow-hidden rounded-xl border bg-card shadow-sm"
+            className="relative min-h-0 flex-1 overflow-hidden rounded-xl glass-panel"
           >
             {pageSize && (
               <div

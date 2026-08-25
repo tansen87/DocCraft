@@ -44,6 +44,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { GlassPanel } from "@/components/ui/glass-panel";
 import type { OcrMode, OcrModelSize } from "@/lib/types";
 import {
   Tooltip,
@@ -545,7 +546,7 @@ export function SettingsView() {
 
         {dirty ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center">
-            <div className="pointer-events-auto flex animate-in fade-in-0 slide-in-from-bottom-2 items-center gap-3 rounded-full border bg-background/80 py-1.5 pl-4 pr-1.5 shadow-lg backdrop-blur-md">
+            <div className="pointer-events-auto flex animate-in fade-in-0 slide-in-from-bottom-2 items-center gap-3 rounded-full glass-panel glass-blur py-1.5 pl-4 pr-1.5">
               <span className="text-xs text-muted-foreground">
                 {t("settings.unsavedChanges")}
               </span>
@@ -554,6 +555,7 @@ export function SettingsView() {
                 disabled={saving || !loaded}
                 className="rounded-full"
                 size="sm"
+                variant="secondary"
               >
                 {saving ? <Loader2 className="animate-spin" /> : <Save />}
                 {t("settings.save")}
@@ -575,14 +577,14 @@ function Panel({
   className?: string;
 }) {
   return (
-    <div
+    <GlassPanel
       className={cn(
-        "divide-y divide-border/60 overflow-hidden rounded-2xl border bg-card shadow-xs",
+        "divide-y divide-border/60 overflow-hidden rounded-2xl",
         className,
       )}
     >
       {children}
-    </div>
+    </GlassPanel>
   );
 }
 
@@ -857,7 +859,7 @@ function OcrSettingsPanel({
 
       <div className="space-y-3">
         {loading ? (
-          <div className="flex items-center justify-center gap-2 rounded-2xl border bg-card py-10 text-sm text-muted-foreground">
+          <div className="flex items-center justify-center gap-2 rounded-2xl glass-panel py-10 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
             {t("settings.loadingConfig")}
           </div>
@@ -1023,7 +1025,8 @@ function SnipSettingsPanel({
               className="h-2 w-32 cursor-pointer appearance-none rounded-full bg-border accent-primary
                 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4
                 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full
-                [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-sm"
+                [&::-webkit-slider-thumb]:bg-[#6FCF97] [&::-webkit-slider-thumb]:shadow-sm
+                [&::-webkit-slider-thumb]:dark:bg-[#446351]"
             />
             <span className="w-8 text-right text-sm tabular-nums text-muted-foreground">
               {resultOpacity}%

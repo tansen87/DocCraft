@@ -335,7 +335,7 @@ export function MdToXlsxView() {
           />
         ) : null}
 
-        <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card px-3 py-2 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3 rounded-xl glass-panel px-3 py-2">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <ListPlus className="size-4" />
           </span>
@@ -377,7 +377,7 @@ export function MdToXlsxView() {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="min-h-0 flex-1 overflow-hidden rounded-xl glass-panel">
           <div className="flex h-full max-h-full flex-col">
             <div className="overflow-auto">
               <table className="w-full table-fixed text-sm">
@@ -522,7 +522,7 @@ export function MdToXlsxView() {
             hint={t("overlay.hintAddMore")}
           />
         ) : null}
-        <div className="flex items-center gap-2 rounded-xl border bg-card px-3 py-2 shadow-sm">
+        <div className="flex items-center gap-2 rounded-xl glass-panel px-3 py-2">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Table2 className="size-4" />
           </span>

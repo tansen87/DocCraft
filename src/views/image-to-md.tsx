@@ -786,7 +786,7 @@ export function ImageToMdView() {
       ) : null}
 
       {/* Summary / control bar */}
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card px-3 py-2 shadow-sm">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl glass-panel px-3 py-2">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <FileImage className="size-4" />
         </span>
@@ -881,7 +881,7 @@ export function ImageToMdView() {
         <div className="flex min-h-0 flex-col gap-3">
           <div
             className={cn(
-              "min-h-0 overflow-hidden rounded-xl border bg-card shadow-sm",
+              "min-h-0 overflow-hidden rounded-xl glass-panel",
               compare ? "flex-1" : "h-full",
             )}
           >

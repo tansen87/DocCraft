@@ -195,7 +195,7 @@ export function PreviewPane({
   return (
     <div
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm",
+        "flex h-full min-h-0 flex-col overflow-hidden rounded-xl glass-panel",
         className,
       )}
     >

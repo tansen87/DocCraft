@@ -39,7 +39,7 @@ export function ConvertToolbar({
   const { t } = useI18n();
 
   return (
-    <div className="flex items-center gap-3 rounded-xl border bg-card px-3 py-2 shadow-sm">
+    <div className="flex items-center gap-3 rounded-xl glass-panel px-3 py-2">
       <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
         <FileText className="size-4" />
       </span>
