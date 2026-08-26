@@ -1,7 +1,10 @@
 # DocCraft
 
+English | [简体中文](./README_ZH.md)
+
 A cross-platform **PDF → Markdown**, **Image → Markdown**, and **Markdown → Excel**
-desktop converter built with [Tauri 2](https://tauri.app), React, TypeScript,
+desktop converter with built-in **screenshot OCR**, built with
+[Tauri 2](https://tauri.app), React, TypeScript,
 [shadcn/ui](https://ui.shadcn.com) and
 [`pdf-inspector`](https://crates.io/crates/pdf-inspector) (Firecrawl's pure-Rust
 PDF classification / extraction engine). The UI is bilingual — English (default)
@@ -59,6 +62,16 @@ and Simplified Chinese — switchable at runtime.
   sent to the backend for column-based extraction (local PaddleOCR text blocks
   + column cutting, or AI vision with line hints, depending on the OCR mode).
 
+### Screenshot OCR
+- Press the global hotkey (default `F8`) or use the tray menu to start a screen
+  capture; a per-monitor overlay with magnifier lets you pick any screen region.
+- The selected region is recognized by the engine chosen by the current
+  **OCR mode**: local PaddleOCR runs on a dedicated engine instance that never
+  queues behind batch jobs, or it goes to remote AI vision.
+- Results appear in a glassmorphism popup window with pin-on-top,
+  copy-to-clipboard and close actions, optional auto-copy, adjustable opacity,
+  and the window position is remembered between sessions.
+
 ### Markdown → Excel
 - Drop or pick `.md` files; each is parsed for GitHub-Flavored Markdown tables.
 - Inline table preview with table/row counts, single or bulk export to `.xlsx`.
@@ -88,7 +101,8 @@ Prerequisites: Node ≥ 20, pnpm ≥ 10, Rust ≥ 1.85.
 
 ```bash
 pnpm install       # install frontend deps
-pnpm tauri dev     # run the desktop app (HMR + debug build)
+pnpm tauri dev     # run the desktop app
+pnpm tauri build   # package the project
 ```
 
 Useful checks:
@@ -103,7 +117,8 @@ cargo check --manifest-path src-tauri/Cargo.toml
 
 - `ocr-config.json` — per-vendor name, base URL, protected API key, models.
 - `app-settings.json` — `maxConcurrent`, `cacheExtractedText`, `excelTablesOnly`,
-  `ocrMode`, `screenshotHotkey`, `enableTray`, `textSeparator`.
+  `ocrMode`, `screenshotHotkey`, `snipResultPopup`, `snipAutoCopy`,
+  `snipResultOpacity`, `enableTray`, `textSeparator`.
 
 ## License
 

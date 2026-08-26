@@ -1,8 +1,10 @@
 # DocCraft
 
-DocCraft 是一款跨平台的桌面转换工具，支持 **PDF → Markdown**、**Image → Markdown** 以及 **Markdown → Excel**。本项目基于 [Tauri 2](https://tauri.app/)、React、TypeScript、[shadcn/ui](https://ui.shadcn.com/) 以及 [`pdf-inspector`](https://crates.io/crates/pdf-inspector)（Firecrawl 的纯 Rust PDF 分类/提取引擎）构建。界面支持双语——英语（默认）和简体中文，可在运行时切换。
+[English](./README.md) | 简体中文
 
-详细架构与数据流文档：[docs/index.md](./docs/index.md)
+DocCraft 是一款跨平台的桌面转换工具，支持 **PDF → Markdown**、**Image → Markdown**、**Markdown → Excel**，并内置**截图 OCR**。本项目基于 [Tauri 2](https://tauri.app/)、React、TypeScript、[shadcn/ui](https://ui.shadcn.com/) 以及 [`pdf-inspector`](https://crates.io/crates/pdf-inspector)（Firecrawl 的纯 Rust PDF 分类/提取引擎）构建。界面支持双语——英语（默认）和简体中文，可在运行时切换。
+
+> 详细架构与数据流文档：[docs/index.md](./docs/index.md)
 
 ## 截图
 
@@ -33,6 +35,12 @@ DocCraft 是一款跨平台的桌面转换工具，支持 **PDF → Markdown**�
 - **预览与导出**：结果以合并后的 GFM 文档形式预览，支持单张导出或合并为一个 `.md` 文件。
 - **图片画框提取**：导入的图片可在画框叠加层中打开，绘制垂直线后，图片及线条位置将发送至后端进行分列提取（根据 OCR 模式，使用本地 PaddleOCR 文本块分列切割，或带线条提示的 AI 视觉）。
 
+### 截图 OCR
+
+- 按下全局快捷键（默认 `F8`）或通过托盘菜单启动截图；每块显示器一个选区遮罩（带放大镜），可框选屏幕任意区域。
+- 选定区域由当前 **OCR 模式**对应的引擎识别：本地 PaddleOCR 使用截图专用引擎实例，不会排在批量任务之后排队等待；或发送至远程 AI 视觉。
+- 识别结果显示在毛玻璃效果的结果窗口中，支持置顶、复制到剪贴板和关闭；可选自动复制、可调透明度，并会记住窗口位置。
+
 ### Markdown → Excel
 
 - 拖放或选择 `.md` 文件；解析其中的 GitHub-Flavored Markdown 表格。
@@ -58,7 +66,8 @@ DocCraft 是一款跨平台的桌面转换工具，支持 **PDF → Markdown**�
 
 ```bash
 pnpm install       # 安装前端依赖
-pnpm tauri dev     # 运行桌面应用 (HMR + debug build)
+pnpm tauri dev     # 运行桌面应用
+pnpm tauri build   # 打包项目
 ```
 
 常用检查命令：
@@ -72,7 +81,7 @@ cargo check --manifest-path src-tauri/Cargo.toml  # Rust 代码检查
 ## 配置
 
 - `ocr-config.json`：每个供应商的名称、Base URL、受保护的 API Key、模型列表。
-- `app-settings.json`：`maxConcurrent`（最大并发数）、`cacheExtractedText`（缓存提取文本）、`excelTablesOnly`（Excel 仅导出表格）、`ocrMode`（OCR 模式）、`screenshotHotkey`（截图快捷键）、`enableTray`（启用托盘）、`textSeparator`（文本分隔符）。
+- `app-settings.json`：`maxConcurrent`（最大并发数）、`cacheExtractedText`（缓存提取文本）、`excelTablesOnly`（Excel 仅导出表格）、`ocrMode`（OCR 模式）、`screenshotHotkey`（截图快捷键）、`snipResultPopup`（截图结果弹窗）、`snipAutoCopy`（自动复制）、`snipResultOpacity`（结果窗透明度）、`enableTray`（启用托盘）、`textSeparator`（文本分隔符）。
 
 ## 许可证
 
