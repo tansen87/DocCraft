@@ -608,7 +608,7 @@ function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-4 py-3.5">
+    <div className="flex items-center justify-between gap-x-6 px-4 py-3.5">
       <div className="min-w-0 space-y-0.5">
         <Label htmlFor={htmlFor}>{label}</Label>
         {description ? (
@@ -617,7 +617,7 @@ function SettingRow({
           </p>
         ) : null}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="ml-auto shrink-0 pl-2">{children}</div>
     </div>
   );
 }
