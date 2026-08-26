@@ -394,7 +394,6 @@ export function SettingsView() {
               key={s.id}
               type="button"
               onClick={() => jumpTo(s.id)}
-              title={t(s.labelKey)}
               className={cn(
                 "flex items-center justify-center gap-3 rounded-xl px-0 py-2 text-left transition-colors duration-150 md:justify-start md:px-2.5",
                 active
@@ -1305,10 +1304,6 @@ function HotkeyInput({
               : t("settings.hotkeyPlaceholder")}
           </span>
         )}
-        <span className="flex-1" />
-        {recording ? (
-          <span className="size-2 shrink-0 animate-pulse rounded-full bg-primary" />
-        ) : null}
       </button>
       {!recording && value ? (
         <Button

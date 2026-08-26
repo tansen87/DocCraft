@@ -140,7 +140,7 @@ const en = {
   "settings.tray": "System Tray",
   "settings.trayDesc": "When enabled, show the system tray icon",
   "settings.hotkeyPlaceholder": "Click to record",
-  "settings.hotkeyRecording": "Press keys… Esc cancels · Backspace clears",
+  "settings.hotkeyRecording": "Press any keys",
   "tooltip.exportMerged":
     "Export the Markdown of every recognized image into one file",
   "tooltip.exportSingle": "Export every recognized image as its own .md file",
@@ -453,7 +453,7 @@ const zh: Record<TranslationKey, string> = {
   "settings.tray": "系统托盘",
   "settings.trayDesc": "开启时,显示系统托盘图标",
   "settings.hotkeyPlaceholder": "点击录入快捷键",
-  "settings.hotkeyRecording": "请按下组合键… Esc 取消 · 退格清除",
+  "settings.hotkeyRecording": "按下任意键",
   "tooltip.exportMerged": "将所有识别成功的图片导出为一个 Markdown 文件",
   "tooltip.exportSingle": "将每张识别成功的图片按原文件名分别导出为 .md 文件",
   "tooltip.drawTable": "在图片上划线提取表格",
