@@ -384,13 +384,21 @@ async fn extract_draw_table(
   draw_data: DrawTableRequest,
 ) -> Result<DrawTableResult, String> {
   tauri::async_runtime::spawn_blocking(move || {
-    let use_cache = core::settings::get_app_settings(&app)?.cache_extracted_text;
+    let settings = core::settings::get_app_settings(&app)?;
+    let use_cache = settings.cache_extracted_text;
+    let high_precision = settings.draw_table_high_precision;
     let (local, remote) = resolve_draw_ocr(&app, &draw_data)?;
     let engines = core::line_draw::DrawOcrEngines {
       local: local.as_ref(),
       remote: remote.as_ref(),
     };
-    core::line_draw::extract_tables_from_draw_lines(&path, &draw_data, use_cache, Some(&engines))
+    core::line_draw::extract_tables_from_draw_lines(
+      &path,
+      &draw_data,
+      use_cache,
+      high_precision,
+      Some(&engines),
+    )
   })
   .await
   .map_err(|e| e.to_string())?
@@ -405,7 +413,9 @@ async fn extract_draw_table_to_markdown(
   existing_markdown: Option<String>,
 ) -> Result<String, String> {
   tauri::async_runtime::spawn_blocking(move || {
-    let use_cache = core::settings::get_app_settings(&app)?.cache_extracted_text;
+    let settings = core::settings::get_app_settings(&app)?;
+    let use_cache = settings.cache_extracted_text;
+    let high_precision = settings.draw_table_high_precision;
     let (local, remote) = resolve_draw_ocr(&app, &draw_data)?;
     let engines = core::line_draw::DrawOcrEngines {
       local: local.as_ref(),
@@ -416,6 +426,7 @@ async fn extract_draw_table_to_markdown(
       &draw_data,
       existing_markdown.as_deref(),
       use_cache,
+      high_precision,
       Some(&engines),
     )
   })

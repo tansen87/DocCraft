@@ -297,7 +297,7 @@ export function MdToXlsxView() {
     return (
       <div
         ref={rootRef}
-        className="relative flex min-h-0 flex-1 flex-col gap-3"
+        className="relative flex min-h-0 flex-1 flex-col gap-1"
       >
         {dragging ? (
           <DragOverlay
@@ -326,7 +326,7 @@ export function MdToXlsxView() {
     return (
       <div
         ref={rootRef}
-        className="relative flex min-h-0 flex-1 flex-col gap-3"
+        className="relative flex min-h-0 flex-1 flex-col gap-1"
       >
         {dragging ? (
           <DragOverlay
@@ -514,7 +514,7 @@ export function MdToXlsxView() {
     return (
       <div
         ref={rootRef}
-        className="relative flex min-h-0 flex-1 flex-col gap-3"
+        className="relative flex min-h-0 flex-1 flex-col gap-1"
       >
         {dragging ? (
           <DragOverlay
@@ -582,7 +582,7 @@ export function MdToXlsxView() {
   }
 
   return (
-    <div ref={rootRef} className="relative flex min-h-0 flex-1 flex-col gap-3">
+    <div ref={rootRef} className="relative flex min-h-0 flex-1 flex-col gap-1">
       {dragging ? (
         <DragOverlay
           title={t("overlay.releaseToAdd")}

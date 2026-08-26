@@ -9,7 +9,7 @@ import {
   Camera,
   ChevronDown,
   Cpu,
-  Database,
+  PencilSparkles,
   Download,
   Eye,
   EyeOff,
@@ -82,7 +82,7 @@ type SettingsSection =
   | "snip"
   | "textSep"
   | "tray"
-  | "cache"
+  | "draw"
   | "excel"
   | "backup";
 
@@ -94,7 +94,7 @@ const SECTIONS: {
     | "snip.capture"
     | "settings.textSeparator"
     | "settings.tray"
-    | "settings.cache"
+    | "settings.drawTable"
     | "settings.excel"
     | "settings.backup";
   icon: typeof ScanText;
@@ -115,9 +115,9 @@ const SECTIONS: {
     icon: SeparatorHorizontal,
   },
   {
-    id: "cache",
-    labelKey: "settings.cache",
-    icon: Database,
+    id: "draw",
+    labelKey: "settings.drawTable",
+    icon: PencilSparkles,
   },
   {
     id: "excel",
@@ -174,6 +174,7 @@ export function SettingsView() {
   const [ocrMode, setOcrMode] = useState<OcrMode>("disabled");
   const [maxConcurrent, setMaxConcurrent] = useState(1);
   const [cacheExtracted, setCacheExtracted] = useState(true);
+  const [drawTableHighPrecision, setDrawTableHighPrecision] = useState(false);
   const [excelTablesOnly, setExcelTablesOnly] = useState(true);
   const [screenshotHotkey, setScreenshotHotkey] = useState("");
   const [ocrLowPrecision, setOcrLowPrecision] = useState(true);
@@ -200,6 +201,7 @@ export function SettingsView() {
         setOcrMode(settings.ocrMode);
         setMaxConcurrent(clampThread(settings.maxConcurrent));
         setCacheExtracted(settings.cacheExtractedText);
+        setDrawTableHighPrecision(settings.drawTableHighPrecision ?? false);
         setExcelTablesOnly(settings.excelTablesOnly);
         setScreenshotHotkey(settings.screenshotHotkey ?? "");
         setOcrLowPrecision(settings.ocrLowPrecision ?? true);
@@ -249,6 +251,7 @@ export function SettingsView() {
         Number.isFinite(maxConcurrent) ? maxConcurrent : 1,
       ),
       cacheExtractedText: cacheExtracted,
+      drawTableHighPrecision,
       excelTablesOnly,
       ocrMode,
       screenshotHotkey: screenshotHotkey.trim() || null,
@@ -486,12 +489,17 @@ export function SettingsView() {
                   disabled={loading}
                 />
               </section>
-              <section id="settings-cache" className="scroll-mt-3">
-                <SectionHeader title={t("settings.cache")} />
-                <CacheSettingsPanel
+              <section id="settings-drawTable" className="scroll-mt-3">
+                <SectionHeader title={t("settings.drawTable")} />
+                <DrawSettingsPanel
                   value={cacheExtracted}
                   onChange={(v) => {
                     setCacheExtracted(v);
+                    markDirty();
+                  }}
+                  highPrecision={drawTableHighPrecision}
+                  onHighPrecisionChange={(v) => {
+                    setDrawTableHighPrecision(v);
                     markDirty();
                   }}
                   disabled={loading}
@@ -1317,13 +1325,17 @@ function HotkeyInput({
   );
 }
 
-function CacheSettingsPanel({
+function DrawSettingsPanel({
   value,
   onChange,
+  highPrecision,
+  onHighPrecisionChange,
   disabled,
 }: {
   value: boolean;
   onChange: (v: boolean) => void;
+  highPrecision: boolean;
+  onHighPrecisionChange: (v: boolean) => void;
   disabled?: boolean;
 }) {
   const { t } = useI18n();
@@ -1337,6 +1349,16 @@ function CacheSettingsPanel({
         <Switch
           checked={value}
           onCheckedChange={onChange}
+          disabled={disabled}
+        />
+      </SettingRow>
+      <SettingRow
+        label={t("settings.drawTableHighPrecision")}
+        description={t("settings.drawTableHighPrecisionDesc")}
+      >
+        <Switch
+          checked={highPrecision}
+          onCheckedChange={onHighPrecisionChange}
           disabled={disabled}
         />
       </SettingRow>

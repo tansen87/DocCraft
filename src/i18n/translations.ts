@@ -125,10 +125,10 @@ const en = {
   "snip.close": "Close",
   "settings.snipResultPopup": "Show result popup",
   "settings.snipResultPopupDesc":
-    "Open a popup with the recognized text after every screenshot recognition",
+    "When enabled, open a popup with the recognized text",
   "settings.snipAutoCopy": "Auto-copy result",
   "settings.snipAutoCopyDesc":
-    "Copy the recognition result to the clipboard as soon as it is ready",
+    "When enabled, copy the recognition result to the clipboard",
   "settings.snipResultOpacity": "Glass opacity",
   "settings.snipResultOpacityDesc":
     "Background transparency of the result popup (0 = fully transparent, 100 = fully opaque)",
@@ -138,8 +138,7 @@ const en = {
   "settings.textSeparatorDesc":
     "Character used to join OCR blocks within a single line",
   "settings.tray": "System Tray",
-  "settings.trayDesc":
-    "Show the system tray icon for quick access to Open, Screenshot, and Exit.",
+  "settings.trayDesc": "When enabled, show the system tray icon",
   "settings.hotkeyPlaceholder": "Click to record",
   "settings.hotkeyRecording": "Press keys… Esc cancels · Backspace clears",
   "tooltip.exportMerged":
@@ -199,10 +198,14 @@ const en = {
   "settings.unsavedChanges": "Unsaved changes",
   "settings.threadsHint2":
     "Keeping the default value of 1 is recommended; each task uses extra network requests when converting OCR documents.",
-  "settings.cacheExtracted": "Cache extracted text (draw-table)",
+  "settings.cacheExtracted": "Cache extracted text",
   "settings.cacheExtractedDesc":
     "When enabled, store the decoded text of the current PDF in memory to accelerate PDF extraction",
-  "settings.cache": "Text Cache",
+  "settings.drawTableHighPrecision":
+    "High-precision draw-table extraction (scanned pages)",
+  "settings.drawTableHighPrecisionDesc":
+    "When enabled, renders scanned pages at a higher DPI (~288) and cuts recognized text by character width, so drawn lines match column boundaries more accurately. Slower and uses more memory.",
+  "settings.drawTable": "Draw Table",
   "settings.excel": "Excel Export",
   "settings.excelTablesOnly": "Only convert tables to Excel",
   "settings.excelTablesOnlyDesc":
@@ -437,9 +440,9 @@ const zh: Record<TranslationKey, string> = {
   "snip.unpin": "取消置顶",
   "snip.close": "关闭",
   "settings.snipResultPopup": "弹出识别窗口",
-  "settings.snipResultPopupDesc": "截图识别完成后,弹窗显示识别结果",
+  "settings.snipResultPopupDesc": "开启时,弹窗显示识别结果",
   "settings.snipAutoCopy": "复制识别结果",
-  "settings.snipAutoCopyDesc": "识别完成后,自动把结果复制到剪贴板",
+  "settings.snipAutoCopyDesc": "开始时,自动把结果复制到剪贴板",
   "settings.snipResultOpacity": "毛玻璃透明度",
   "settings.snipResultOpacityDesc":
     "结果窗口背景的透明度 (0 = 完全透明, 100 = 完全不透明)",
@@ -448,7 +451,7 @@ const zh: Record<TranslationKey, string> = {
   "settings.textSeparator": "文本连接符",
   "settings.textSeparatorDesc": "用于连接同一行内 OCR 文本块的字符",
   "settings.tray": "系统托盘",
-  "settings.trayDesc": "显示系统托盘图标,方便快速打开、截图和退出",
+  "settings.trayDesc": "开启时,显示系统托盘图标",
   "settings.hotkeyPlaceholder": "点击录入快捷键",
   "settings.hotkeyRecording": "请按下组合键… Esc 取消 · 退格清除",
   "tooltip.exportMerged": "将所有识别成功的图片导出为一个 Markdown 文件",
@@ -506,10 +509,13 @@ const zh: Record<TranslationKey, string> = {
   "settings.unsavedChanges": "有未保存的更改",
   "settings.threadsHint2":
     "建议保持默认值 1;转换含 OCR 的文档时,每个任务会额外占用网络请求.",
-  "settings.cacheExtracted": "缓存提取文本(划线表格)",
+  "settings.cacheExtracted": "缓存提取文本",
   "settings.cacheExtractedDesc":
     "开启时,将当前PDF解码后的文本驻留在内存中,加速PDF提取",
-  "settings.cache": "文本缓存",
+  "settings.drawTableHighPrecision": "高精度模式(扫描页)",
+  "settings.drawTableHighPrecisionDesc":
+    "开启时,以更高DPI(~288)渲染扫描页,并按字宽加权切分识别文本,使划线与列边界更吻合.速度更慢,内存占用更高",
+  "settings.drawTable": "划线表格",
   "settings.excel": "Excel 导出",
   "settings.excelTablesOnly": "仅将表格转换为 Excel",
   "settings.excelTablesOnlyDesc":
@@ -614,7 +620,7 @@ const zh: Record<TranslationKey, string> = {
   "update.checkFailed": "检查更新失败",
   "update.updateNow": "前往更新",
   "update.later": "稍后",
-  "update.notesEmpty": "暂无更新说明。",
+  "update.notesEmpty": "暂无更新说明",
 
   backToList: "返回列表",
 };

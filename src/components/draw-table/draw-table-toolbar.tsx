@@ -54,7 +54,7 @@ export function DrawTableToolbar({
 }: DrawTableToolbarProps) {
   const { t } = useI18n();
   return (
-    <div className="flex items-center gap-1.5 rounded-lg glass-panel px-2 py-1.5">
+    <div className="flex items-center gap-1 rounded-lg glass-panel px-2 py-1.5">
       {/* Instruction */}
       <span className="px-1 text-xs text-muted-foreground">
         {t("drawtable.instruction")}

@@ -750,7 +750,7 @@ export function ImageToMdView() {
 
   if (total === 0) {
     return (
-      <div className="relative flex min-h-0 flex-1 flex-col gap-3">
+      <div className="relative flex min-h-0 flex-1 flex-col gap-1">
         {dragging ? (
           <DragOverlay
             title={t("overlay.releaseToAdd")}
@@ -776,7 +776,7 @@ export function ImageToMdView() {
   return (
     <div
       ref={containerRef}
-      className="relative flex min-h-0 flex-1 flex-col gap-3"
+      className="relative flex min-h-0 flex-1 flex-col gap-1"
     >
       {dragging ? (
         <DragOverlay
@@ -876,9 +876,9 @@ export function ImageToMdView() {
       </div>
 
       {/* Image list | source image (when a single item is selected) | result */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-2">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-1 lg:grid-cols-2">
         {/* Left column: list on top, zoomable source image below. */}
-        <div className="flex min-h-0 flex-col gap-3">
+        <div className="flex min-h-0 flex-col gap-1">
           <div
             className={cn(
               "min-h-0 overflow-hidden rounded-xl glass-panel",

@@ -199,12 +199,12 @@ export function PreviewPane({
         className,
       )}
     >
-      <div className="flex items-center gap-2 border-b px-3 py-2">
-        <div className="min-w-0 flex-1">
+      <div className="flex items-center gap-2 border-b px-3 py-1.5">
+        <div className="min-w-0 flex-1 flex items-center gap-2">
           <p className="truncate text-sm font-medium">
             {t("preview.markdown")}
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="truncate text-xs text-muted-foreground">
             {t("preview.timeChars", {
               time: formatDuration(processingTimeMs),
               chars: markdown.length,

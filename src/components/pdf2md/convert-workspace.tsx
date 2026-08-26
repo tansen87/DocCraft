@@ -337,7 +337,7 @@ export function ConvertWorkspace({
 
       {drawMode ? (
         /* Draw Table Mode: full-width canvas overlay */
-        <div className="flex min-h-0 flex-1 flex-col gap-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-1">
           <div
             ref={containerRef}
             className="relative min-h-0 flex-1 overflow-hidden rounded-xl glass-panel"

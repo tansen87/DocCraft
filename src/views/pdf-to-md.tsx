@@ -419,7 +419,7 @@ export function BatchView() {
 
   if (view) {
     return (
-      <div className="relative flex min-h-0 flex-1 flex-col gap-3">
+      <div className="relative flex min-h-0 flex-1 flex-col gap-1">
         {dragging ? (
           <DragOverlay
             title={t("overlay.releaseToAdd")}
@@ -454,7 +454,7 @@ export function BatchView() {
 
   if (total > 1) {
     return (
-      <div className="relative flex min-h-0 flex-1 flex-col gap-3">
+      <div className="relative flex min-h-0 flex-1 flex-col gap-1">
         {dragging ? (
           <DragOverlay
             title={t("overlay.releaseToAdd")}
@@ -692,7 +692,7 @@ export function BatchView() {
   return (
     <div
       ref={containerRef}
-      className="relative flex min-h-0 flex-1 flex-col gap-3"
+      className="relative flex min-h-0 flex-1 flex-col gap-1"
     >
       {dragging ? (
         <DragOverlay

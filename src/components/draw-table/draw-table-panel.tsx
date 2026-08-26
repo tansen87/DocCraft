@@ -19,8 +19,10 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-/** Render DPI multiplier for OCR page images (~180 DPI). */
+/** Default render DPI multiplier for OCR page images (~180 DPI). */
 const OCR_RENDER_SCALE = 2.5;
+/** High-precision render DPI multiplier (~288 DPI). */
+const OCR_RENDER_SCALE_HQ = 4.0;
 /** Max pages rendered per OCR batch to bound peak IPC payload size. */
 const OCR_BATCH_SIZE = 6;
 
@@ -179,13 +181,13 @@ export function DrawTablePanel({
    * fallback. Each canvas is released as soon as its payload is captured.
    */
   const renderPageImages = useCallback(
-    async (pages: number[]): Promise<PageImagePayload[]> => {
+    async (pages: number[], renderScale: number): Promise<PageImagePayload[]> => {
       const doc = await getDoc();
       const out: PageImagePayload[] = [];
       for (const pageNum of pages) {
         const page = await doc.getPage(pageNum);
         try {
-          const viewport = page.getViewport({ scale: OCR_RENDER_SCALE });
+          const viewport = page.getViewport({ scale: renderScale });
           const canvas = document.createElement("canvas");
           canvas.width = Math.max(1, Math.floor(viewport.width));
           canvas.height = Math.max(1, Math.floor(viewport.height));
@@ -199,7 +201,7 @@ export function DrawTablePanel({
           out.push({
             page: pageNum,
             imagePng: comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl,
-            renderScale: OCR_RENDER_SCALE,
+            renderScale,
           });
           canvas.width = 0;
         } finally {
@@ -374,7 +376,10 @@ export function DrawTablePanel({
    * OCR only the empty ones in bounded batches.
    */
   const extractWithOcr = useCallback(
-    async (request: DrawTableRequest): Promise<DrawTableResult> => {
+    async (
+      request: DrawTableRequest,
+      renderScale: number,
+    ): Promise<DrawTableResult> => {
       const doc = await getDoc();
       request.totalPages = doc.numPages;
 
@@ -393,7 +398,7 @@ export function DrawTablePanel({
 
       if (targetPages.length <= OCR_BATCH_SIZE) {
         onProgress?.({ phase: "ocr", total: targetPages.length });
-        const images = await renderPageImages(targetPages);
+        const images = await renderPageImages(targetPages, renderScale);
         return extractDrawTable(pdfPath, { ...request, pageImages: images });
       }
 
@@ -412,7 +417,7 @@ export function DrawTablePanel({
           current: Math.min(i + OCR_BATCH_SIZE, ocrNeeded.length),
           total: ocrNeeded.length,
         });
-        const images = await renderPageImages(batch);
+        const images = await renderPageImages(batch, renderScale);
         const batchResult = await extractDrawTable(pdfPath, {
           ...request,
           onlyPages: batch,
@@ -460,8 +465,13 @@ export function DrawTablePanel({
         // extraction text-layer-only.
         const settings = await getAppSettings();
         const useOcr = settings.ocrMode !== "disabled" && (mayNeedOcr ?? true);
+        // High-precision mode renders OCR page images at a higher DPI; the
+        // backend pairs this with width-weighted character cutting.
+        const renderScale = settings.drawTableHighPrecision
+          ? OCR_RENDER_SCALE_HQ
+          : OCR_RENDER_SCALE;
         const result = useOcr
-          ? await extractWithOcr(request)
+          ? await extractWithOcr(request, renderScale)
           : await extractDrawTable(pdfPath, request);
 
         const md =
@@ -532,7 +542,7 @@ export function DrawTablePanel({
   }, [handleUndo, handleRedo, handleExtract, hasLines]);
 
   return (
-    <div className={cn("flex min-h-0 flex-1 flex-col gap-2", className)}>
+    <div className={cn("flex min-h-0 flex-1 flex-col gap-1", className)}>
       {/* Toolbar */}
       <DrawTableToolbar
         onUndo={handleUndo}
