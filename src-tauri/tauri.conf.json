@@ -13,6 +13,9 @@
     "windows": [
       {
         "title": "DocCraft",
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
         "width": 1080,
         "height": 720,
         "minWidth": 800,

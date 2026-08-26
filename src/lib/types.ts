@@ -125,6 +125,11 @@ export interface AppSettings {
    * 0 = fully transparent, 100 = fully opaque.
    */
   snipResultOpacity?: number;
+  /**
+   * Glassmorphism background opacity for the main window (0–100, default 100).
+   * 0 = fully transparent, 100 = fully opaque.
+   */
+  mainWindowOpacity?: number;
 }
 
 export type OcrMode =

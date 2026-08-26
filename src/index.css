@@ -53,11 +53,25 @@
   --glass-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 30px rgb(0 0 0 / 0.06);
   --glass-shadow-hover:
     0 1px 2px rgb(0 0 0 / 0.04), 0 14px 40px rgb(0 0 0 / 0.1);
+  /* semantic status tokens */
+  --success: oklch(0.65 0.19 155);
+  --success-foreground: oklch(0.985 0 0);
+  --success-muted: oklch(0.65 0.19 155 / 10%);
+  --warning: oklch(0.75 0.18 75);
+  --warning-foreground: oklch(0.985 0 0);
+  --warning-muted: oklch(0.75 0.18 75 / 10%);
+  --info: oklch(0.65 0.15 245);
+  --info-foreground: oklch(0.985 0 0);
+  --info-muted: oklch(0.65 0.15 245 / 10%);
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  background: transparent;
+}
+html, body, #root {
+  background: transparent;
 }
 
 @theme inline {
@@ -94,6 +108,15 @@ body {
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-muted: var(--success-muted);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-muted: var(--warning-muted);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-muted: var(--info-muted);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -142,6 +165,16 @@ body {
   --glass-shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 10px 32px rgb(0 0 0 / 0.4);
   --glass-shadow-hover:
     0 1px 2px rgb(0 0 0 / 0.5), 0 18px 44px rgb(0 0 0 / 0.5);
+  /* semantic status tokens (dark) */
+  --success: oklch(0.75 0.19 155);
+  --success-foreground: oklch(0.2 0 0);
+  --success-muted: oklch(0.75 0.19 155 / 10%);
+  --warning: oklch(0.82 0.18 75);
+  --warning-foreground: oklch(0.2 0 0);
+  --warning-muted: oklch(0.82 0.18 75 / 10%);
+  --info: oklch(0.75 0.15 245);
+  --info-foreground: oklch(0.2 0 0);
+  --info-muted: oklch(0.75 0.15 245 / 10%);
 }
 
 @layer base {
@@ -149,7 +182,7 @@ body {
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
   }
   html {
     @apply font-sans;

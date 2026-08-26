@@ -132,6 +132,9 @@ const en = {
   "settings.snipResultOpacity": "Glass opacity",
   "settings.snipResultOpacityDesc":
     "Background transparency of the result popup (0 = fully transparent, 100 = fully opaque)",
+  "settings.mainWindowOpacity": "Window opacity",
+  "settings.mainWindowOpacityDesc":
+    "Background transparency of the main window (0 = fully transparent, 100 = fully opaque)",
   "settings.screenshotHotkey": "Screenshot hotkey",
   "settings.screenshotHotkeyHint": "Global key that opens region capture",
   "settings.textSeparator": "Text separator",
@@ -446,6 +449,9 @@ const zh: Record<TranslationKey, string> = {
   "settings.snipResultOpacity": "毛玻璃透明度",
   "settings.snipResultOpacityDesc":
     "结果窗口背景的透明度 (0 = 完全透明, 100 = 完全不透明)",
+  "settings.mainWindowOpacity": "窗口透明度",
+  "settings.mainWindowOpacityDesc":
+    "主窗口背景的透明度 (0 = 完全透明, 100 = 完全不透明)",
   "settings.screenshotHotkey": "截图识别快捷键",
   "settings.screenshotHotkeyHint": "全局触发截图识别的按键",
   "settings.textSeparator": "文本连接符",

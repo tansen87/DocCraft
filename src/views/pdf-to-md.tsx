@@ -3,8 +3,6 @@ import { join } from "@tauri-apps/api/path";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   ArrowLeft,
-  Check,
-  Clock,
   Download,
   FileText,
   ListPlus,
@@ -25,13 +23,13 @@ import {
   convertWithOcr,
   CancelledError,
 } from "@/components/pdf2md/render-pdf-pages";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   convertPdf,
   detectPdf,
@@ -54,53 +52,6 @@ interface BatchItem {
   status: BatchStatus;
   error?: string;
   result?: ConvertResult | null;
-}
-
-function StatusBadge({
-  status,
-  error,
-}: {
-  status: BatchStatus;
-  error?: string;
-}) {
-  const { t } = useI18n();
-  if (status === "converting") {
-    return (
-      <Badge className="border-sky-500/30 bg-sky-500/10 text-sky-600 dark:border-sky-500/40 dark:text-sky-400">
-        <Loader2 className="size-3 animate-spin" />
-        {t("status.converting")}
-      </Badge>
-    );
-  }
-  if (status === "done") {
-    return (
-      <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:border-emerald-500/40 dark:text-emerald-400">
-        <Check className="size-3" />
-        {t("status.done")}
-      </Badge>
-    );
-  }
-  if (status === "error") {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge variant="destructive">
-            <X className="size-3" />
-            {t("status.failed")}
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent className="whitespace-pre-wrap break-words">
-          {error}
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
-  return (
-    <Badge variant="outline" className="text-muted-foreground">
-      <Clock className="size-3" />
-      {t("status.queued")}
-    </Badge>
-  );
 }
 
 export function BatchView() {
@@ -471,9 +422,7 @@ export function BatchView() {
             <p
               className={cn(
                 "text-xs",
-                convertingCount > 0
-                  ? "text-sky-600 dark:text-sky-400"
-                  : "text-muted-foreground",
+                convertingCount > 0 ? "text-info" : "text-muted-foreground",
               )}
             >
               {convertingCount > 0
@@ -584,7 +533,7 @@ export function BatchView() {
                                   className={cn(
                                     "flex size-6 shrink-0 items-center justify-center rounded-md",
                                     item.status === "done"
-                                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                      ? "bg-success-muted text-success"
                                       : "bg-muted text-muted-foreground",
                                   )}
                                 >

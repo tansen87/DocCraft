@@ -13,22 +13,20 @@ export const pdfTypeMeta: Record<
 > = {
   TextBased: {
     badgeClass:
-      "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:border-emerald-500/40 dark:text-emerald-400",
+      "border-success/30 bg-success-muted text-success dark:border-success/40",
     icon: FileText,
   },
   Mixed: {
     badgeClass:
-      "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:border-amber-500/40 dark:text-amber-400",
+      "border-warning/30 bg-warning-muted text-warning dark:border-warning/40",
     icon: Layers,
   },
   Scanned: {
-    badgeClass:
-      "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:border-sky-500/40 dark:text-sky-400",
+    badgeClass: "border-info/30 bg-info-muted text-info dark:border-info/40",
     icon: ScanSearch,
   },
   ImageBased: {
-    badgeClass:
-      "border-sky-500/30 bg-sky-500/10 text-sky-600 dark:border-sky-500/40 dark:text-sky-400",
+    badgeClass: "border-info/30 bg-info-muted text-info dark:border-info/40",
     icon: FileQuestion,
   },
 };

@@ -6,9 +6,7 @@ import { join } from "@tauri-apps/api/path";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
-  Check,
   CircleAlert,
-  Clock,
   Download,
   FileImage,
   ListPlus,
@@ -29,7 +27,6 @@ import { useFileDrop } from "@/components/pdf2md/use-pdf-drop";
 import { ImageTableOverlay } from "@/components/image-table/image-table-overlay";
 import { ImagePreviewPane } from "@/components/img2md/image-preview-pane";
 import { showSnipResultWindow } from "@/components/snip/snip-result-window";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -49,6 +46,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { setViewTask } from "@/lib/global-task";
 import { useI18n } from "@/i18n";
 import { ensureMaxConcurrent } from "@/lib/concurrency";
@@ -82,53 +80,6 @@ interface ImageItem {
   result?: OcrImageResult;
   /** Inline thumbnail (data URL) for screenshot items without a real file yet. */
   thumbUrl?: string;
-}
-
-function ItemStatusBadge({
-  status,
-  error,
-}: {
-  status: ImageStatus;
-  error?: string;
-}) {
-  const { t } = useI18n();
-  if (status === "converting") {
-    return (
-      <Badge className="border-sky-500/30 bg-sky-500/10 text-sky-600 dark:border-sky-500/40 dark:text-sky-400">
-        <Loader2 className="size-3 animate-spin" />
-        {t("status.converting")}
-      </Badge>
-    );
-  }
-  if (status === "done") {
-    return (
-      <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:border-emerald-500/40 dark:text-emerald-400">
-        <Check className="size-3" />
-        {t("status.done")}
-      </Badge>
-    );
-  }
-  if (status === "error") {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge variant="destructive">
-            <X className="size-3" />
-            {t("status.failed")}
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent className="whitespace-pre-wrap break-words">
-          {error}
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
-  return (
-    <Badge variant="outline" className="text-muted-foreground">
-      <Clock className="size-3" />
-      {t("status.queued")}
-    </Badge>
-  );
 }
 
 export function ImageToMdView() {
@@ -932,7 +883,7 @@ export function ImageToMdView() {
                         ? formatDuration(item.result.durationMs)
                         : ""}
                     </span>
-                    <ItemStatusBadge status={item.status} error={item.error} />
+                    <StatusBadge status={item.status} error={item.error} />
                     <div className="flex shrink-0 items-center gap-1">
                       {item.path ? (
                         <Tooltip>

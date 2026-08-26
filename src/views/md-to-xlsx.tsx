@@ -4,7 +4,6 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   ArrowLeft,
   Check,
-  Clock,
   Download,
   FileText,
   ListPlus,
@@ -19,13 +18,13 @@ import { DragOverlay } from "@/components/pdf2md/drag-overlay";
 import { DropZone } from "@/components/pdf2md/drop-zone";
 import { useFileDrop } from "@/components/pdf2md/use-pdf-drop";
 import { TablePreview } from "@/components/md2xlsx/table-preview";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   analyzeMarkdown,
   exportMarkdownTables,
@@ -46,47 +45,6 @@ interface MdItem {
   status: MdItemStatus;
   error?: string;
   result?: MdAnalyzeResult | null;
-}
-
-function StatusBadge({ item }: { item: MdItem }) {
-  const { t } = useI18n();
-  if (item.status === "analyzing") {
-    return (
-      <Badge className="border-sky-500/30 bg-sky-500/10 text-sky-600 dark:border-sky-500/40 dark:text-sky-400">
-        <Loader2 className="size-3 animate-spin" />
-        {t("status.analyzing")}
-      </Badge>
-    );
-  }
-  if (item.status === "ready") {
-    return (
-      <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:border-emerald-500/40 dark:text-emerald-400">
-        <Check className="size-3" />
-        {t("status.ready")}
-      </Badge>
-    );
-  }
-  if (item.status === "error") {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Badge variant="destructive">
-            <X className="size-3" />
-            {t("status.failed")}
-          </Badge>
-        </TooltipTrigger>
-        <TooltipContent className="whitespace-pre-wrap break-words">
-          {item.error}
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
-  return (
-    <Badge variant="outline" className="text-muted-foreground">
-      <Clock className="size-3" />
-      {t("status.queued")}
-    </Badge>
-  );
 }
 
 export function MdToXlsxView() {
@@ -419,7 +377,7 @@ export function MdToXlsxView() {
                             className={cn(
                               "flex size-6 shrink-0 items-center justify-center rounded-md",
                               item.status === "ready"
-                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                ? "bg-success-muted text-success"
                                 : "bg-muted text-muted-foreground",
                             )}
                           >
@@ -439,7 +397,7 @@ export function MdToXlsxView() {
                           : "-"}
                       </td>
                       <td className="px-3 py-2">
-                        <StatusBadge item={item} />
+                        <StatusBadge status={item.status} error={item.error} />
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-end gap-1">
@@ -538,7 +496,7 @@ export function MdToXlsxView() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <StatusBadge item={item} />
+            <StatusBadge status={item.status} error={item.error} />
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

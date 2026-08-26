@@ -62,18 +62,18 @@ const LEVEL_META: Record<
 > = {
   info: {
     icon: Info,
-    className: "text-sky-600 dark:text-sky-400",
-    dotClass: "bg-sky-500",
+    className: "text-info",
+    dotClass: "bg-info",
   },
   warning: {
     icon: AlertTriangle,
-    className: "text-amber-600 dark:text-amber-400",
-    dotClass: "bg-amber-500",
+    className: "text-warning",
+    dotClass: "bg-warning",
   },
   error: {
     icon: XCircle,
-    className: "text-red-600 dark:text-red-400",
-    dotClass: "bg-red-500",
+    className: "text-destructive",
+    dotClass: "bg-destructive",
   },
 };
 
@@ -362,11 +362,7 @@ export function StatusBar({
         <Stat
           label={t("status.ocrNeed")}
           className={cn(
-            needsOcr > 0
-              ? "text-amber-600 dark:text-amber-400"
-              : result
-                ? "text-emerald-600 dark:text-emerald-400"
-                : undefined,
+            needsOcr > 0 ? "text-warning" : result ? "text-success" : undefined,
           )}
         >
           {loading ? (

@@ -350,6 +350,10 @@ pub struct AppSettings {
   /// 0 = fully transparent, 100 = fully opaque.
   #[serde(default = "default_snip_result_opacity")]
   pub snip_result_opacity: u32,
+  /// Glassmorphism background opacity for the main window (0–100).
+  /// 0 = fully transparent, 100 = fully opaque.
+  #[serde(default = "default_main_window_opacity")]
+  pub main_window_opacity: u32,
   /// Run the local PaddleOCR engine in MNN low-precision (f16) mode -
   /// roughly 30–50% faster on CPU with negligible accuracy loss.
   #[serde(default = "default_true")]
@@ -536,6 +540,10 @@ fn default_snip_result_opacity() -> u32 {
   60
 }
 
+fn default_main_window_opacity() -> u32 {
+  100
+}
+
 impl Default for AppSettings {
   fn default() -> Self {
     Self {
@@ -549,6 +557,7 @@ impl Default for AppSettings {
       snip_result_popup: true,
       snip_auto_copy: true,
       snip_result_opacity: 60,
+      main_window_opacity: 100,
       ocr_low_precision: true,
       ocr_model_size: OcrModelSize::default(),
       draw_table_high_precision: true,

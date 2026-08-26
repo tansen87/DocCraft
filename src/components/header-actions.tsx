@@ -88,7 +88,7 @@ export function HeaderActions() {
             <Button
               variant="outline"
               size="sm"
-              className="h-7 gap-1.5 rounded-full border-amber-500/40 px-2.5 text-xs text-amber-600 dark:text-amber-400"
+              className="h-7 gap-1.5 rounded-full border-warning/40 px-2.5 text-xs text-warning"
               onClick={() => setDialogOpen(true)}
             >
               <ArrowUpCircle className="size-3.5" />

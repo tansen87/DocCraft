@@ -148,5 +148,6 @@ pub fn set_app_settings(app: &AppHandle, settings: AppSettings) -> Result<(), St
 fn clamp_settings(mut settings: AppSettings) -> AppSettings {
   settings.max_concurrent = settings.max_concurrent.clamp(1, MAX_CONCURRENT_LIMIT);
   settings.snip_result_opacity = settings.snip_result_opacity.clamp(0, 100);
+  settings.main_window_opacity = settings.main_window_opacity.clamp(0, 100);
   settings
 }

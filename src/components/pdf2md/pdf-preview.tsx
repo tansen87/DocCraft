@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as pdfjs from "pdfjs-dist";
-import { FileText, Loader2 } from "lucide-react";
+import { FileText } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -228,9 +229,10 @@ export function PdfPreview({ path, className, scrollToPage }: PdfPreviewProps) {
             className="flex flex-col items-center gap-3 bg-muted/40 p-3"
           >
             {status === "loading" && (
-              <div className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
-                <Loader2 className="size-5 animate-spin" />
-                <span className="text-xs">{t("preview.rendering")}</span>
+              <div className="flex flex-col items-center gap-4 py-16">
+                <Skeleton className="h-[280px] w-[200px] rounded-md" />
+                <Skeleton className="h-[280px] w-[200px] rounded-md" />
+                <Skeleton className="h-[280px] w-[200px] rounded-md" />
               </div>
             )}
             {status === "error" && (

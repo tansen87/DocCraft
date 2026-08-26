@@ -36,6 +36,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -184,6 +185,7 @@ export function SettingsView() {
   const [snipResultPopup, setSnipResultPopup] = useState(true);
   const [snipAutoCopy, setSnipAutoCopy] = useState(true);
   const [snipResultOpacity, setSnipResultOpacity] = useState(60);
+  const [mainWindowOpacity, setMainWindowOpacity] = useState(100);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -211,6 +213,7 @@ export function SettingsView() {
         setSnipResultPopup(settings.snipResultPopup ?? true);
         setSnipAutoCopy(settings.snipAutoCopy ?? true);
         setSnipResultOpacity(settings.snipResultOpacity ?? 60);
+        setMainWindowOpacity(settings.mainWindowOpacity ?? 100);
         setLoaded(true);
       })
       .catch((e) =>
@@ -262,6 +265,7 @@ export function SettingsView() {
       snipResultPopup,
       snipAutoCopy,
       snipResultOpacity,
+      mainWindowOpacity,
     };
     try {
       await Promise.all([
@@ -472,6 +476,11 @@ export function SettingsView() {
                   resultOpacity={snipResultOpacity}
                   onResultOpacityChange={(v) => {
                     setSnipResultOpacity(v);
+                    markDirty();
+                  }}
+                  mainOpacity={mainWindowOpacity}
+                  onMainOpacityChange={(v) => {
+                    setMainWindowOpacity(v);
                     markDirty();
                   }}
                   disabled={loading}
@@ -864,44 +873,66 @@ function OcrSettingsPanel({
         </SettingRow>
       </Panel>
 
-      <div className="space-y-3">
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 rounded-2xl glass-panel py-10 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            {t("settings.loadingConfig")}
-          </div>
-        ) : vendors.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card px-6 py-10 text-center">
-            <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-              <KeyRound className="size-6" />
-            </span>
-            <div className="space-y-1">
-              <p className="text-sm font-medium">{t("settings.noVendors")}</p>
-              <p className="text-xs text-muted-foreground">
-                {t("settings.noVendorsDesc")}
-              </p>
+      {loading ? (
+        <div className="space-y-3">
+          <Panel>
+            <Skeleton className="h-14 w-full" />
+          </Panel>
+
+          <Panel>
+            <Skeleton className="h-14 w-full" />
+            <Skeleton className="h-14 w-full" />
+          </Panel>
+
+          <div className="space-y-3">
+            <div className="rounded-2xl glass-panel p-4">
+              <Skeleton className="mb-3 h-10 w-full" />
+              <Skeleton className="mb-2 h-3 w-3/4" />
+              <Skeleton className="h-3 w-1/2" />
             </div>
-            <Button variant="secondary" size="sm" onClick={addVendor}>
-              <Plus />
-              {t("settings.addVendor")}
-            </Button>
+            <div className="rounded-2xl glass-panel p-4">
+              <Skeleton className="mb-3 h-10 w-full" />
+              <Skeleton className="mb-2 h-3 w-3/4" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
+            <div className="rounded-2xl glass-panel p-4">
+              <Skeleton className="mb-3 h-10 w-full" />
+              <Skeleton className="mb-2 h-3 w-3/4" />
+              <Skeleton className="h-3 w-1/2" />
+            </div>
           </div>
-        ) : (
-          vendors.map((v) => (
-            <VendorCard
-              key={v.id}
-              vendor={v}
-              onPatch={(patch) => updateVendor(v.id, patch)}
-              onRemove={() => removeVendor(v.id)}
-              onAddModel={() => addModel(v.id)}
-              onUpdateModel={(m, name) => updateModel(v.id, m, name)}
-              onSetDefaultModel={(m) => setDefaultModel(v.id, m)}
-              onRemoveModel={(m) => removeModel(v.id, m)}
-              onToggleKey={() => toggleShowKey(v)}
-            />
-          ))
-        )}
-      </div>
+        </div>
+      ) : vendors.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card px-6 py-10 text-center">
+          <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+            <KeyRound className="size-6" />
+          </span>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">{t("settings.noVendors")}</p>
+            <p className="text-xs text-muted-foreground">
+              {t("settings.noVendorsDesc")}
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={addVendor}>
+            <Plus />
+            {t("settings.addVendor")}
+          </Button>
+        </div>
+      ) : (
+        vendors.map((v) => (
+          <VendorCard
+            key={v.id}
+            vendor={v}
+            onPatch={(patch) => updateVendor(v.id, patch)}
+            onRemove={() => removeVendor(v.id)}
+            onAddModel={() => addModel(v.id)}
+            onUpdateModel={(m, name) => updateModel(v.id, m, name)}
+            onSetDefaultModel={(m) => setDefaultModel(v.id, m)}
+            onRemoveModel={(m) => removeModel(v.id, m)}
+            onToggleKey={() => toggleShowKey(v)}
+          />
+        ))
+      )}
 
       {vendors.length > 0 ? (
         <div className="flex items-center">
@@ -973,6 +1004,8 @@ function SnipSettingsPanel({
   onAutoCopyChange,
   resultOpacity,
   onResultOpacityChange,
+  mainOpacity,
+  onMainOpacityChange,
   disabled,
 }: {
   value: string;
@@ -983,6 +1016,8 @@ function SnipSettingsPanel({
   onAutoCopyChange: (v: boolean) => void;
   resultOpacity: number;
   onResultOpacityChange: (v: number) => void;
+  mainOpacity: number;
+  onMainOpacityChange: (v: number) => void;
   disabled?: boolean;
 }) {
   const { t } = useI18n();
@@ -1037,6 +1072,30 @@ function SnipSettingsPanel({
             />
             <span className="w-8 text-right text-sm tabular-nums text-muted-foreground">
               {resultOpacity}%
+            </span>
+          </div>
+        </SettingRow>
+        <SettingRow
+          label={t("settings.mainWindowOpacity")}
+          description={t("settings.mainWindowOpacityDesc")}
+        >
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={mainOpacity}
+              onChange={(e) => onMainOpacityChange(Number(e.target.value))}
+              disabled={disabled}
+              className="h-2 w-32 cursor-pointer appearance-none rounded-full bg-border accent-primary
+                [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4
+                [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full
+                [&::-webkit-slider-thumb]:bg-[#6FCF97] [&::-webkit-slider-thumb]:shadow-sm
+                [&::-webkit-slider-thumb]:dark:bg-[#446351]"
+            />
+            <span className="w-8 text-right text-sm tabular-nums text-muted-foreground">
+              {mainOpacity}%
             </span>
           </div>
         </SettingRow>
@@ -1539,7 +1598,7 @@ function VendorCard({
           </span>
         ) : null}
         {v.apiKeySet && !v.clearApiKey ? (
-          <span className="flex shrink-0 items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+          <span className="flex shrink-0 items-center gap-1 rounded-md bg-success-muted px-1.5 py-0.5 text-[11px] font-medium text-success">
             <ShieldCheck className="size-3" />
             {t("settings.keySaved")}
           </span>
@@ -1614,7 +1673,7 @@ function VendorCard({
                         onClick={() => onSetDefaultModel(m.id)}
                         className={
                           m.default
-                            ? "text-amber-500 hover:text-amber-500"
+                            ? "text-warning hover:text-warning"
                             : "text-muted-foreground"
                         }
                       >

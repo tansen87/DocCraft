@@ -297,8 +297,12 @@ export function SnipResultWindow() {
     const unlisten = listen("snip:settings-changed", () => {
       reloadOpacity();
     });
+    // Fallback: poll settings every 2 s in case the event is missed
+    // (e.g. the window was not yet open when settings were saved).
+    const timer = setInterval(reloadOpacity, 2000);
     return () => {
       void unlisten.then((f) => f());
+      clearInterval(timer);
     };
   }, []);
 
