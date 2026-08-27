@@ -255,28 +255,6 @@ fn group_by_text_lines(elements: &[TextElement]) -> Vec<Vec<&TextElement>> {
   lines
 }
 
-/// Extract the text content from a single cell region.
-fn extract_cell_text(elements: &[TextElement], region: &DrawTableRegion) -> String {
-  let filtered = filter_text_by_region(elements, region);
-  if filtered.is_empty() {
-    return String::new();
-  }
-
-  let lines = group_by_text_lines(&filtered);
-  let cell_texts: Vec<String> = lines
-    .iter()
-    .map(|line| {
-      line
-        .iter()
-        .map(|e| e.text.trim())
-        .collect::<Vec<&str>>()
-        .join(" ")
-    })
-    .collect();
-
-  cell_texts.join("\n")
-}
-
 /// Relative advance width of a character for center estimation, expressed in
 /// half-width cells. CJK ideographs, Hangul, Kana and full-width forms are
 /// double-width; everything else (ASCII digits, Latin letters, spaces,
@@ -422,25 +400,36 @@ fn extract_table_from_vertical_lines(
 // ─── Legacy extraction functions (kept for backward compatibility) ────────
 
 /// Build a list of row boundaries from horizontal lines.
-/// Returns sorted y values with implicit top (0) and bottom (page_height) boundaries.
+/// Returns sorted **descending** y values with implicit top (page_height) and
+/// bottom (0) boundaries - PDF's y axis points up, so this enumerates bands
+/// from the top of the page downwards.
 fn build_row_boundaries(horizontal_lines: &[f64], page_height: f64) -> Vec<f64> {
   let mut boundaries: Vec<f64> = horizontal_lines.to_vec();
-  boundaries.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+  boundaries.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
   boundaries.dedup();
-  // Add implicit boundaries
-  let mut result = vec![0.0];
+  let mut result = vec![page_height];
   result.extend(boundaries);
-  result.push(page_height);
+  result.push(0.0);
   result
 }
 
 /// Extract table from a grid defined by both horizontal and vertical lines.
+///
+/// Row bands come from the drawn horizontal lines (topmost band is the
+/// header). Every element is assigned to exactly ONE band by its **vertical
+/// center** - not by rectangle overlap - so an element whose box straddles a
+/// band boundary can never leak into a neighbouring row (this mirrors the
+/// image-table grid path in `snip.rs`). Inside a band, elements are grouped
+/// into visual text lines, each line is cut into columns with the precise
+/// per-character cutter, and the per-column cells merge so the GFM row count
+/// matches the band count even when a cell wraps over several lines.
 fn extract_table_from_grid(
   elements: &[TextElement],
   horizontal_lines: &[f64],
   vertical_lines: &[f64],
   page_width: f64,
   page_height: f64,
+  high_precision: bool,
 ) -> MdTable {
   let row_bounds = build_row_boundaries(horizontal_lines, page_height);
   let col_bounds = build_col_boundaries(vertical_lines, page_width);
@@ -456,39 +445,88 @@ fn extract_table_from_grid(
     };
   }
 
-  // First row is the header
-  let mut columns = Vec::with_capacity(ncols);
-  for col in 0..ncols {
-    let region = DrawTableRegion {
-      x: col_bounds[col],
-      y: row_bounds[0],
-      width: col_bounds[col + 1] - col_bounds[col],
-      height: row_bounds[1] - row_bounds[0],
-    };
-    columns.push(extract_cell_text(elements, &region));
+  // Bucket every element into exactly one band by its vertical center.
+  // Band i is [row_bounds[i+1], row_bounds[i]) since bounds are descending.
+  let mut banded: Vec<Vec<&TextElement>> = vec![Vec::new(); nrows];
+  for e in elements {
+    let center = e.y + e.font_size / 2.0;
+    for (i, pair) in row_bounds.windows(2).enumerate() {
+      if center >= pair[1] && center < pair[0] {
+        banded[i].push(e);
+        break;
+      }
+    }
   }
 
-  // Data rows
-  let mut rows = Vec::with_capacity(nrows.saturating_sub(1));
-  for row in 1..nrows {
-    let mut row_cells = Vec::with_capacity(ncols);
-    for col in 0..ncols {
-      let region = DrawTableRegion {
-        x: col_bounds[col],
-        y: row_bounds[row],
-        width: col_bounds[col + 1] - col_bounds[col],
-        height: row_bounds[row + 1] - row_bounds[row],
-      };
-      row_cells.push(extract_cell_text(elements, &region));
+  // Build one GFM row per band.
+  let mut row_outputs: Vec<Vec<String>> = Vec::with_capacity(nrows);
+  for band in &banded {
+    if band.is_empty() {
+      row_outputs.push(vec![String::new(); ncols]);
+      continue;
     }
-    rows.push(row_cells);
+    let mut merged: Vec<Vec<String>> = vec![Vec::new(); ncols];
+    for line in group_text_line_refs(band) {
+      for (col, cell) in (0..ncols)
+        .map(|col| {
+          extract_line_segment(&line, col_bounds[col], col_bounds[col + 1], high_precision)
+        })
+        .enumerate()
+      {
+        if !cell.is_empty() {
+          merged[col].push(cell);
+        }
+      }
+    }
+    row_outputs.push(merged.into_iter().map(|parts| parts.join(" ")).collect());
   }
+
+  // Topmost band is the header, the rest are data rows.
+  let columns = row_outputs[0].clone();
+  let rows = if row_outputs.len() > 1 {
+    row_outputs[1..].to_vec()
+  } else {
+    Vec::new()
+  };
 
   MdTable {
     columns,
     rows,
     page: None,
   }
+}
+
+/// Group a set of text elements (by reference) into visual text lines, top to
+/// bottom, x ascending within a line - the reference-flavoured sibling of
+/// [`group_by_text_lines`] used for band-local grouping.
+fn group_text_line_refs<'a>(items: &[&'a TextElement]) -> Vec<Vec<&'a TextElement>> {
+  if items.is_empty() {
+    return Vec::new();
+  }
+  let mut sorted: Vec<&TextElement> = items.to_vec();
+  sorted.sort_by(|a, b| {
+    b.y.partial_cmp(&a.y)
+      .unwrap_or(std::cmp::Ordering::Equal)
+      .then_with(|| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal))
+  });
+
+  let mut lines: Vec<Vec<&TextElement>> = Vec::new();
+  let mut cur = vec![sorted[0]];
+  let mut cur_y = sorted[0].y;
+  for e in &sorted[1..] {
+    let threshold = (e.font_size * 0.4).max(3.0);
+    if (e.y - cur_y).abs() < threshold {
+      cur.push(*e);
+    } else {
+      cur.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
+      lines.push(std::mem::take(&mut cur));
+      cur.push(*e);
+      cur_y = e.y;
+    }
+  }
+  cur.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
+  lines.push(cur);
+  lines
 }
 
 /// Extract table from a rectangular region by auto-detecting row/column structure.
@@ -890,6 +928,7 @@ pub fn extract_tables_from_draw_lines(
           &page_draw.vertical_lines,
           page_width,
           page_height,
+          high_precision,
         );
         if !table.columns.is_empty() {
           tables.push(table);
@@ -1099,55 +1138,6 @@ mod tests {
     // Second line at y=50
     assert_eq!(lines[1].len(), 1);
     assert_eq!(lines[1][0].text, "C");
-  }
-
-  #[test]
-  fn test_extract_cell_text_single_line() {
-    let elements = vec![
-      TextElement {
-        text: "Hello".to_string(),
-        x: 10.0,
-        y: 100.0,
-        width: 30.0,
-        font_size: 12.0,
-      },
-      TextElement {
-        text: "World".to_string(),
-        x: 50.0,
-        y: 100.0,
-        width: 30.0,
-        font_size: 12.0,
-      },
-    ];
-
-    let region = DrawTableRegion {
-      x: 0.0,
-      y: 80.0,
-      width: 200.0,
-      height: 40.0,
-    };
-    let text = extract_cell_text(&elements, &region);
-    assert_eq!(text, "Hello World");
-  }
-
-  #[test]
-  fn test_extract_cell_text_empty_region() {
-    let elements = vec![TextElement {
-      text: "A".to_string(),
-      x: 10.0,
-      y: 100.0,
-      width: 10.0,
-      font_size: 12.0,
-    }];
-
-    let region = DrawTableRegion {
-      x: 200.0,
-      y: 200.0,
-      width: 100.0,
-      height: 100.0,
-    };
-    let text = extract_cell_text(&elements, &region);
-    assert_eq!(text, "");
   }
 
   #[test]
@@ -1399,6 +1389,100 @@ mod tests {
       ("姓名 128", "年龄"),
       "uniform advance should mis-cut this mixed-width row"
     );
+  }
+
+  #[test]
+  fn test_extract_table_from_grid_top_band_is_header() {
+    // Elements laid out on a page of height 150: header text near the top
+    // (y=120), data rows below (y=70, y=40). One horizontal boundary at y=100.
+    let elements = vec![
+      TextElement {
+        text: "姓名".to_string(),
+        x: 10.0,
+        y: 120.0,
+        width: 24.0,
+        font_size: 12.0,
+      },
+      TextElement {
+        text: "年龄".to_string(),
+        x: 60.0,
+        y: 120.0,
+        width: 24.0,
+        font_size: 12.0,
+      },
+      TextElement {
+        text: "张三".to_string(),
+        x: 10.0,
+        y: 70.0,
+        width: 24.0,
+        font_size: 12.0,
+      },
+      TextElement {
+        text: "28".to_string(),
+        x: 60.0,
+        y: 70.0,
+        width: 16.0,
+        font_size: 12.0,
+      },
+    ];
+
+    // Column boundary between the two columns; row boundary at y=100 splits
+    // the header band from the data band.
+    let table = extract_table_from_grid(&elements, &[100.0], &[45.0], 100.0, 150.0, false);
+    assert_eq!(table.columns, vec!["姓名", "年龄"]);
+    assert_eq!(table.rows.len(), 1);
+    assert_eq!(table.rows[0], vec!["张三", "28"]);
+  }
+
+  #[test]
+  fn test_extract_table_from_grid_center_bucket_prevents_band_leak() {
+    // The third element's rectangle (y=96..110) overlaps BOTH bands around
+    // the y=100 boundary, but its center (103) lies in the header band - so
+    // it must appear ONLY in the header, never duplicated in the data row.
+    let elements = vec![
+      TextElement {
+        text: "表头".to_string(),
+        x: 10.0,
+        y: 120.0,
+        width: 24.0,
+        font_size: 12.0,
+      },
+      TextElement {
+        text: "H2".to_string(),
+        x: 60.0,
+        y: 120.0,
+        width: 16.0,
+        font_size: 12.0,
+      },
+      TextElement {
+        text: "跨带".to_string(),
+        x: 10.0,
+        y: 96.0,
+        width: 24.0,
+        font_size: 14.0, // center 103 -> header band
+      },
+      TextElement {
+        text: "数据".to_string(),
+        x: 10.0,
+        y: 60.0,
+        width: 24.0,
+        font_size: 12.0, // center 66 -> data band
+      },
+      TextElement {
+        text: "D2".to_string(),
+        x: 60.0,
+        y: 60.0,
+        width: 16.0,
+        font_size: 12.0,
+      },
+    ];
+
+    let table = extract_table_from_grid(&elements, &[100.0], &[45.0], 100.0, 150.0, false);
+    // Header merges the two stacked lines of its band; the leaking element
+    // never reaches the data row.
+    assert_eq!(table.columns, vec!["表头 跨带", "H2"]);
+    assert_eq!(table.rows.len(), 1);
+    assert_eq!(table.rows[0], vec!["数据", "D2"]);
   }
 
   #[test]

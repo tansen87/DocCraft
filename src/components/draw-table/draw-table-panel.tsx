@@ -72,9 +72,15 @@ interface DrawTablePanelProps {
 
 interface PageDrawState {
   verticalLines: DrawLine[];
+  horizontalLines: DrawLine[];
 }
 
 type HistoryEntry = PageDrawState;
+
+const EMPTY_DRAW_STATE: PageDrawState = {
+  verticalLines: [],
+  horizontalLines: [],
+};
 
 /** Render extracted tables as GFM markdown, prefixed with `<!-- Page N -->` markers. */
 function buildTablesMarkdown(
@@ -150,8 +156,10 @@ export function DrawTablePanel({
 }: DrawTablePanelProps) {
   const { t } = useI18n();
   const [drawState, setDrawState] = useState<PageDrawState>(() => ({
-    verticalLines: [],
+    ...EMPTY_DRAW_STATE,
   }));
+  /** Which direction a click on the canvas creates. */
+  const [mode, setMode] = useState<"vertical" | "horizontal">("vertical");
 
   const pageCanvasRef = useRef<HTMLCanvasElement>(null);
   // Cache the loaded PDF document so page switches reuse the parsed doc
@@ -181,7 +189,10 @@ export function DrawTablePanel({
    * fallback. Each canvas is released as soon as its payload is captured.
    */
   const renderPageImages = useCallback(
-    async (pages: number[], renderScale: number): Promise<PageImagePayload[]> => {
+    async (
+      pages: number[],
+      renderScale: number,
+    ): Promise<PageImagePayload[]> => {
       const doc = await getDoc();
       const out: PageImagePayload[] = [];
       for (const pageNum of pages) {
@@ -236,11 +247,8 @@ export function DrawTablePanel({
       setHistory([saved]);
       setHistoryIndex(0);
     } else {
-      const empty: PageDrawState = {
-        verticalLines: [],
-      };
-      setDrawState(empty);
-      setHistory([empty]);
+      setDrawState({ ...EMPTY_DRAW_STATE });
+      setHistory([{ ...EMPTY_DRAW_STATE }]);
       setHistoryIndex(0);
     }
   }, [currentPage]);
@@ -256,7 +264,8 @@ export function DrawTablePanel({
     [history, historyIndex],
   );
 
-  const hasLines = drawState.verticalLines.length > 0;
+  const hasLines =
+    drawState.verticalLines.length > 0 || drawState.horizontalLines.length > 0;
 
   // Render the current page into the overlay's background canvas. The canvas is
   // anchored to the top-left of the same box that hosts CanvasOverlay, so the
@@ -313,9 +322,13 @@ export function DrawTablePanel({
 
   const handleLineAdd = useCallback(
     (line: DrawLine) => {
-      const newState = {
-        verticalLines: [...drawState.verticalLines, line],
-      };
+      const newState =
+        line.type === "vertical"
+          ? { ...drawState, verticalLines: [...drawState.verticalLines, line] }
+          : {
+              ...drawState,
+              horizontalLines: [...drawState.horizontalLines, line],
+            };
       setDrawState(newState);
       pushHistory(newState);
     },
@@ -326,6 +339,7 @@ export function DrawTablePanel({
     (id: string) => {
       const newState = {
         verticalLines: drawState.verticalLines.filter((l) => l.id !== id),
+        horizontalLines: drawState.horizontalLines.filter((l) => l.id !== id),
       };
       setDrawState(newState);
       pushHistory(newState);
@@ -336,8 +350,10 @@ export function DrawTablePanel({
   const handleLineUpdate = useCallback(
     (id: string, canvasValue: number, pdfValue: number) => {
       setDrawState((prev) => ({
-        ...prev,
         verticalLines: prev.verticalLines.map((l) =>
+          l.id === id ? { ...l, canvasValue, pdfValue } : l,
+        ),
+        horizontalLines: prev.horizontalLines.map((l) =>
           l.id === id ? { ...l, canvasValue, pdfValue } : l,
         ),
       }));
@@ -362,11 +378,8 @@ export function DrawTablePanel({
   }, [history, historyIndex]);
 
   const handleClear = useCallback(() => {
-    const empty: PageDrawState = {
-      verticalLines: [],
-    };
-    setDrawState(empty);
-    pushHistory(empty);
+    setDrawState({ ...EMPTY_DRAW_STATE });
+    pushHistory({ ...EMPTY_DRAW_STATE });
   }, [pushHistory]);
 
   /**
@@ -442,7 +455,7 @@ export function DrawTablePanel({
       for (const [page, state] of pageStatesRef.current) {
         const pageData: PageDrawTable = {
           page,
-          horizontalLines: [],
+          horizontalLines: state.horizontalLines.map((l) => l.pdfValue),
           verticalLines: state.verticalLines.map((l) => l.pdfValue),
           pageX,
           pageY,
@@ -550,6 +563,8 @@ export function DrawTablePanel({
         canUndo={historyIndex > 0}
         canRedo={historyIndex < history.length - 1}
         onClear={handleClear}
+        mode={mode}
+        onModeChange={setMode}
         onExtract={handleExtract}
         onExtractFirst5={handleExtractFirst5}
         extracting={extracting}
@@ -573,7 +588,9 @@ export function DrawTablePanel({
           />
           <CanvasOverlay
             scale={scale}
+            mode={mode}
             verticalLines={drawState.verticalLines}
+            horizontalLines={drawState.horizontalLines}
             onLineAdd={handleLineAdd}
             onLineRemove={handleLineRemove}
             onLineUpdate={handleLineUpdate}

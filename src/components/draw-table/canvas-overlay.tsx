@@ -1,13 +1,17 @@
 import { useCallback, useRef, useState } from "react";
 
-import type { DrawLine } from "@/lib/types";
+import type { DrawLine, DrawMode } from "@/lib/types";
 
 interface CanvasOverlayProps {
   /** Current rendering scale (CSS pixels per PDF point) */
   scale: number;
-  /** Vertical lines on this page */
+  /** What a click creates / which direction the coordinates refer to. */
+  mode: Extract<DrawMode, "horizontal" | "vertical">;
+  /** Vertical (column separator) lines on this page */
   verticalLines: DrawLine[];
-  /** Called when a new vertical line is added */
+  /** Horizontal (row boundary) lines on this page */
+  horizontalLines: DrawLine[];
+  /** Called when a new line is added */
   onLineAdd: (line: DrawLine) => void;
   /** Called when a line is removed */
   onLineRemove: (id: string) => void;
@@ -19,9 +23,14 @@ interface CanvasOverlayProps {
   height: number;
 }
 
+const VERTICAL_COLOR = "#ef4444"; // red - column separators
+const HORIZONTAL_COLOR = "#3b82f6"; // blue - row boundaries
+
 export function CanvasOverlay({
   scale,
+  mode,
   verticalLines,
+  horizontalLines,
   onLineAdd,
   onLineRemove,
   onLineUpdate,
@@ -51,18 +60,27 @@ export function CanvasOverlay({
       const canvasX = e.clientX - rect.left;
       const canvasY = e.clientY - rect.top;
 
-      // Always add a vertical line on click
-      const { pdfX } = canvasToPdf(canvasX, canvasY);
-      const line: DrawLine = {
-        id: crypto.randomUUID(),
-        type: "vertical",
-        pdfValue: pdfX,
-        canvasValue: canvasX,
-        color: "#ef4444", // red
-      };
-      onLineAdd(line);
+      if (mode === "vertical") {
+        const { pdfX } = canvasToPdf(canvasX, canvasY);
+        onLineAdd({
+          id: crypto.randomUUID(),
+          type: "vertical",
+          pdfValue: pdfX,
+          canvasValue: canvasX,
+          color: VERTICAL_COLOR,
+        });
+      } else {
+        const { pdfY } = canvasToPdf(canvasX, canvasY);
+        onLineAdd({
+          id: crypto.randomUUID(),
+          type: "horizontal",
+          pdfValue: pdfY,
+          canvasValue: canvasY,
+          color: HORIZONTAL_COLOR,
+        });
+      }
     },
-    [canvasToPdf, onLineAdd],
+    [mode, canvasToPdf, onLineAdd],
   );
 
   const handleMouseMove = useCallback(
@@ -79,10 +97,16 @@ export function CanvasOverlay({
         if (vLine) {
           const { pdfX } = canvasToPdf(canvasX, canvasY);
           onLineUpdate(dragging, canvasX, pdfX);
+          return;
+        }
+        const hLine = horizontalLines.find((l) => l.id === dragging);
+        if (hLine) {
+          const { pdfY } = canvasToPdf(canvasX, canvasY);
+          onLineUpdate(dragging, canvasY, pdfY);
         }
       }
     },
-    [dragging, verticalLines, canvasToPdf, onLineUpdate],
+    [dragging, verticalLines, horizontalLines, canvasToPdf, onLineUpdate],
   );
 
   const handleMouseUp = useCallback(() => {
@@ -128,7 +152,7 @@ export function CanvasOverlay({
         className="fill-foreground/[0.02]"
       />
 
-      {/* Vertical lines */}
+      {/* Vertical lines (column separators) */}
       {verticalLines.map((line) => {
         const x = line.canvasValue;
         return (
@@ -157,6 +181,39 @@ export function CanvasOverlay({
               strokeWidth={10}
             />
             <circle cx={x} cy={8} r={4} fill={line.color} />
+          </g>
+        );
+      })}
+
+      {/* Horizontal lines (row boundaries) */}
+      {horizontalLines.map((line) => {
+        const y = line.canvasValue;
+        return (
+          <g
+            key={line.id}
+            onMouseDown={(e) => handleLineMouseDown(e, line.id)}
+            onDoubleClick={(e) => handleLineDoubleClick(e, line.id)}
+            style={{ cursor: "grab" }}
+          >
+            <line
+              x1={0}
+              y1={y}
+              x2={width}
+              y2={y}
+              stroke={line.color}
+              strokeWidth={2}
+              strokeDasharray="6,3"
+            />
+            {/* Wider invisible hit area for easier clicking */}
+            <line
+              x1={0}
+              y1={y - 5}
+              x2={width}
+              y2={y - 5}
+              stroke="transparent"
+              strokeWidth={10}
+            />
+            <circle cx={width - 8} cy={y} r={4} fill={line.color} />
           </g>
         );
       })}

@@ -1,12 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import {
+  Loader2,
+  MoveHorizontal,
+  MoveVertical,
+  Trash2,
+  X,
+} from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { ocrImageTable } from "@/lib/ipc";
 import type { ImageTableResult } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 interface ImageTableOverlayProps {
   imagePath: string;
@@ -14,10 +26,20 @@ interface ImageTableOverlayProps {
   onResult: (result: ImageTableResult) => void;
 }
 
+const VERTICAL_COLOR = "rgba(239, 68, 68, 0.85)"; // red - column separators
+const HORIZONTAL_COLOR = "rgba(59, 130, 246, 0.85)"; // blue - row boundaries
+
+interface DrawnLine {
+  /** Percent (0-100) along the line's own axis. */
+  pct: number;
+  vertical: boolean;
+}
+
 /**
  * Full-screen overlay that shows an image and lets the user draw vertical
- * lines on it to define table column boundaries.  On confirm the image +
- * line positions are sent to the backend for OCR + column cutting.
+ * column separators AND horizontal row boundaries on it to define the table
+ * grid. On confirm the image + line percentages are sent to the backend for
+ * OCR + cutting.
  */
 export function ImageTableOverlay({
   imagePath,
@@ -27,12 +49,11 @@ export function ImageTableOverlay({
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
-  const [lines, setLines] = useState<number[]>([]);
+  const [mode, setMode] = useState<"vertical" | "horizontal">("vertical");
+  const [lines, setLines] = useState<DrawnLine[]>([]);
   const [dragging, setDragging] = useState<{
     index: number;
-    startX: number;
-    offsetX: number;
+    axis: "x" | "y";
   } | null>(null);
   const [loading, setLoading] = useState(false);
   const [imgSize, setImgSize] = useState<{
@@ -54,31 +75,37 @@ export function ImageTableOverlay({
       maxH / img.naturalHeight,
       1,
     );
-    const displayW = img.naturalWidth * scale;
-    const displayH = img.naturalHeight * scale;
     setImgSize({
       naturalW: img.naturalWidth,
       naturalH: img.naturalHeight,
-      displayW,
-      displayH,
+      displayW: img.naturalWidth * scale,
+      displayH: img.naturalHeight * scale,
     });
   }, []);
 
   const addLine = useCallback(
-    (clientX: number) => {
+    (clientX: number, clientY: number) => {
       if (!imgSize) return;
       const imgEl = imgRef.current;
       if (!imgEl) return;
       const rect = imgEl.getBoundingClientRect();
-      const pct = ((clientX - rect.left) / imgSize.displayW) * 100;
-      const clamped = Math.max(0, Math.min(100, pct));
-      setLines((prev) => {
-        const next = [...prev, clamped];
-        next.sort((a, b) => a - b);
-        return next;
-      });
+      // Append to the shared list - lines of the other direction must be
+      // kept so vertical + horizontal separators can be combined freely.
+      if (mode === "vertical") {
+        const pct = ((clientX - rect.left) / imgSize.displayW) * 100;
+        setLines((prev) => [
+          ...prev,
+          { pct: Math.max(0, Math.min(100, pct)), vertical: true },
+        ]);
+      } else {
+        const pct = ((clientY - rect.top) / imgSize.displayH) * 100;
+        setLines((prev) => [
+          ...prev,
+          { pct: Math.max(0, Math.min(100, pct)), vertical: false },
+        ]);
+      }
     },
-    [imgSize],
+    [imgSize, mode],
   );
 
   const removeLine = useCallback((index: number) => {
@@ -89,10 +116,10 @@ export function ImageTableOverlay({
     (e: React.PointerEvent) => {
       if (loading) return;
       // Check if the click is on a line drag handle (handled by the line's
-      // own pointer events).  Otherwise add a new line.
+      // own pointer events). Otherwise add a new line.
       const target = e.target as HTMLElement;
       if (target.closest("[data-line-handle]")) return;
-      addLine(e.clientX);
+      addLine(e.clientX, e.clientY);
     },
     [addLine, loading],
   );
@@ -103,13 +130,13 @@ export function ImageTableOverlay({
       e.preventDefault();
       e.stopPropagation();
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      const line = lines[index];
       setDragging({
         index,
-        startX: e.clientX,
-        offsetX: 0,
+        axis: line?.vertical ? "x" : "y",
       });
     },
-    [loading],
+    [loading, lines],
   );
 
   const handlePointerMove = useCallback(
@@ -118,11 +145,21 @@ export function ImageTableOverlay({
       const imgEl = imgRef.current;
       if (!imgEl) return;
       const rect = imgEl.getBoundingClientRect();
-      const pct = ((e.clientX - rect.left) / imgSize.displayW) * 100;
-      const clamped = Math.max(0, Math.min(100, pct));
+      let clamped: number;
+      if (dragging.axis === "x") {
+        clamped = Math.max(
+          0,
+          Math.min(100, ((e.clientX - rect.left) / imgSize.displayW) * 100),
+        );
+      } else {
+        clamped = Math.max(
+          0,
+          Math.min(100, ((e.clientY - rect.top) / imgSize.displayH) * 100),
+        );
+      }
       setLines((prev) => {
         const next = [...prev];
-        next[dragging.index] = clamped;
+        next[dragging.index] = { ...next[dragging.index], pct: clamped };
         return next;
       });
     },
@@ -146,6 +183,8 @@ export function ImageTableOverlay({
     [removeLine],
   );
 
+  const horizontalCount = lines.filter((l) => !l.vertical).length;
+
   const handleConfirm = useCallback(async () => {
     if (lines.length === 0) {
       toast.error(t("imgTable.needLine"));
@@ -155,7 +194,16 @@ export function ImageTableOverlay({
     try {
       const result = await ocrImageTable({
         imagePath,
-        verticalLines: lines,
+        verticalLines: lines.filter((l) => l.vertical).map((l) => l.pct),
+        // Only attach horizontal hints when actually drawn so the backend's
+        // legacy auto-row-detection stays untouched otherwise.
+        ...(horizontalCount > 0
+          ? {
+              horizontalLines: lines
+                .filter((l) => !l.vertical)
+                .map((l) => l.pct),
+            }
+          : {}),
       });
       onResult(result);
       onClose();
@@ -164,7 +212,7 @@ export function ImageTableOverlay({
     } finally {
       setLoading(false);
     }
-  }, [lines, imagePath, onResult, onClose]);
+  }, [lines, horizontalCount, imagePath, onResult, onClose]);
 
   // Keyboard shortcut: Enter to confirm, Esc to cancel.
   useEffect(() => {
@@ -190,6 +238,57 @@ export function ImageTableOverlay({
           {t("drawtable.instruction")}
         </span>
         <div className="flex items-center gap-2">
+          {/* Line-direction toggle: column separators vs row boundaries.
+              Active state uses `secondary` with the theme foreground so the
+              icon stays readable in light mode; inactive ghost buttons sit
+              on the dark backdrop and need light icons. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={mode === "vertical" ? "secondary" : "ghost"}
+                size="icon-sm"
+                onClick={() => setMode("vertical")}
+                className={cn(
+                  mode !== "vertical" && "text-white/70 hover:text-white",
+                )}
+              >
+                <MoveVertical />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t("drawtable.verticalMode")}</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={mode === "horizontal" ? "secondary" : "ghost"}
+                size="icon-sm"
+                onClick={() => setMode("horizontal")}
+                className={cn(
+                  mode !== "horizontal" && "text-white/70 hover:text-white",
+                )}
+              >
+                <MoveHorizontal />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t("drawtable.horizontalMode")}</TooltipContent>
+          </Tooltip>
+
+          {/* Clear every drawn line */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                disabled={lines.length === 0 || loading}
+                onClick={() => setLines([])}
+                className="text-white/70 hover:text-white disabled:text-white/30"
+              >
+                <Trash2 />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t("drawtable.clearAll")}</TooltipContent>
+          </Tooltip>
+
           <Button
             variant="secondary"
             size="sm"
@@ -239,13 +338,16 @@ export function ImageTableOverlay({
               onLoad={onImageLoad}
             />
             <svg
-              ref={svgRef}
-              className="pointer-events-none absolute left-0 top-0"
               width={imgSize.displayW}
               height={imgSize.displayH}
+              className="pointer-events-none absolute left-0 top-0"
             >
-              {lines.map((pct, i) => {
-                const x = (pct / 100) * imgSize.displayW;
+              {lines.map((line, i) => {
+                const pos =
+                  (line.pct / 100) *
+                  (line.vertical ? imgSize.displayW : imgSize.displayH);
+                const color = line.vertical ? VERTICAL_COLOR : HORIZONTAL_COLOR;
+                const cursor = line.vertical ? "ew-resize" : "ns-resize";
                 return (
                   <g
                     key={i}
@@ -254,33 +356,63 @@ export function ImageTableOverlay({
                     className="pointer-events-auto"
                     onPointerDown={(e) => handleLinePointerDown(i, e)}
                   >
-                    <line
-                      x1={x}
-                      y1={0}
-                      x2={x}
-                      y2={imgSize.displayH}
-                      stroke="rgba(239, 68, 68, 0.85)"
-                      strokeWidth={2}
-                      strokeDasharray="6 3"
-                    />
-                    {/* Invisible wider hit area for dragging */}
-                    <line
-                      x1={x}
-                      y1={0}
-                      x2={x}
-                      y2={imgSize.displayH}
-                      stroke="transparent"
-                      strokeWidth={14}
-                      style={{ cursor: "ew-resize" }}
-                    />
-                    {/* Drag handle dot */}
-                    <circle
-                      cx={x}
-                      cy={imgSize.displayH / 2}
-                      r={5}
-                      fill="rgba(239, 68, 68, 0.85)"
-                      style={{ cursor: "ew-resize" }}
-                    />
+                    {line.vertical ? (
+                      <>
+                        <line
+                          x1={pos}
+                          y1={0}
+                          x2={pos}
+                          y2={imgSize.displayH}
+                          stroke={color}
+                          strokeWidth={2}
+                          strokeDasharray="6 3"
+                        />
+                        <line
+                          x1={pos}
+                          y1={0}
+                          x2={pos}
+                          y2={imgSize.displayH}
+                          stroke="transparent"
+                          strokeWidth={14}
+                          style={{ cursor }}
+                        />
+                        <circle
+                          cx={pos}
+                          cy={8}
+                          r={5}
+                          fill={color}
+                          style={{ cursor }}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <line
+                          x1={0}
+                          y1={pos}
+                          x2={imgSize.displayW}
+                          y2={pos}
+                          stroke={color}
+                          strokeWidth={2}
+                          strokeDasharray="6 3"
+                        />
+                        <line
+                          x1={0}
+                          y1={pos}
+                          x2={imgSize.displayW}
+                          y2={pos}
+                          stroke="transparent"
+                          strokeWidth={14}
+                          style={{ cursor }}
+                        />
+                        <circle
+                          cx={imgSize.displayW - 8}
+                          cy={pos}
+                          r={5}
+                          fill={color}
+                          style={{ cursor }}
+                        />
+                      </>
+                    )}
                   </g>
                 );
               })}

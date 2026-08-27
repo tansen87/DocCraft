@@ -378,11 +378,17 @@ export interface ShotRegion {
   height: number;
 }
 
-/** Request to extract a table from an image using drawn vertical lines. */
+/** Request to extract a table from an image using drawn lines. */
 export interface ImageTableRequest {
   imagePath: string;
   /** Vertical line positions as percentages of the image width (0-100). */
   verticalLines: number[];
+  /**
+   * Horizontal line positions as percentages of the image height (0-100).
+   * When present and non-empty, rows are cut at these boundaries instead of
+   * being auto-grouped from OCR block positions.
+   */
+  horizontalLines?: number[];
 }
 
 /** Result of extracting a table from an image with drawn lines. */

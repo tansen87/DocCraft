@@ -152,7 +152,8 @@ const en = {
   "settings.ocr": "OCR Service",
   "action.openFolder": "Open folder",
   "imgTable.extractFailed": "Table extraction failed",
-  "imgTable.needLine": "Draw at least one vertical line first",
+  "imgTable.needLine": "Draw at least one separator line first",
+
   "settings.threads": "Concurrency",
   "settings.ocrEnabled": "OCR Mode",
   "settings.ocrLowPrecision": "Low-precision inference",
@@ -283,16 +284,18 @@ const en = {
   "tablepreview.empty": "No tables detected",
 
   "drawtable.instruction":
-    "Click to add a vertical line · double-click to delete · drag to adjust",
+    "Click to add a line · double-click to delete · drag to adjust",
+  "drawtable.verticalMode": "Draw column separators (vertical lines)",
+  "drawtable.horizontalMode": "Draw row boundaries (horizontal lines)",
   "drawtable.undo": "Undo (Ctrl+Z)",
   "drawtable.redo": "Redo (Ctrl+Y)",
-  "drawtable.clearAll": "Clear all vertical lines",
+  "drawtable.clearAll": "Clear all lines",
   "drawtable.prevPage": "Previous page",
   "drawtable.nextPage": "Next page",
   "drawtable.extracting": "Extracting…",
   "drawtable.extract": "Extract table",
   "drawtable.extractFirst5": "Extract first 5 pages",
-  "drawtable.extractingFirst5": "Extracting first 5 pages…",
+  "drawtable.extractingFirst5": "Extracting first 5 pages",
 
   "markdown.drawTableComment": "<!-- table extracted by drawing -->",
 
@@ -467,7 +470,8 @@ const zh: Record<TranslationKey, string> = {
   "settings.ocr": "OCR 服务",
   "action.openFolder": "打开文件夹",
   "imgTable.extractFailed": "表格提取失败",
-  "imgTable.needLine": "请先画出至少一条竖线",
+  "imgTable.needLine": "请先画出至少一条分隔线",
+
   "settings.threads": "并发线程",
   "settings.ocrEnabled": "OCR 模式",
   "settings.ocrLowPrecision": "低精度推理加速",
@@ -592,16 +596,18 @@ const zh: Record<TranslationKey, string> = {
   "tablepreview.loadMore": "滚动加载更多行",
   "tablepreview.empty": "未检测到表格",
 
-  "drawtable.instruction": "点击添加竖线 · 双击删除 · 拖拽调整位置",
+  "drawtable.instruction": "选择方向后点击添加线条 · 双击删除 · 拖拽调整位置",
+  "drawtable.verticalMode": "画列分隔线(竖线)",
+  "drawtable.horizontalMode": "画行边界线(横线)",
   "drawtable.undo": "撤销 (Ctrl+Z)",
   "drawtable.redo": "重做 (Ctrl+Y)",
-  "drawtable.clearAll": "清空所有竖线",
+  "drawtable.clearAll": "清空所有线条",
   "drawtable.prevPage": "上一页",
   "drawtable.nextPage": "下一页",
   "drawtable.extracting": "提取中…",
   "drawtable.extract": "提取表格",
-  "drawtable.extractFirst5": "提取前 5 页",
-  "drawtable.extractingFirst5": "正在提取前 5 页…",
+  "drawtable.extractFirst5": "提取前5页",
+  "drawtable.extractingFirst5": "正在提取前5页",
 
   "markdown.drawTableComment": "<!-- 划线提取表格 -->",
 

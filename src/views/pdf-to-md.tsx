@@ -484,7 +484,7 @@ export function BatchView() {
               ) : (
                 <Download />
               )}
-               {t("batch.exportAll")}
+              {t("batch.exportAll")}
             </Button>
           </div>
         </GlassPanel>

@@ -4,6 +4,8 @@ import {
   Grid2X2,
   Grid3X3,
   Loader2,
+  MoveHorizontal,
+  MoveVertical,
   RotateCcw,
   Trash2,
 } from "lucide-react";
@@ -23,6 +25,10 @@ interface DrawTableToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   onClear: () => void;
+  /** Which line direction a click on the canvas creates. */
+  mode: "vertical" | "horizontal";
+  /** Switch the drawing direction. */
+  onModeChange: (mode: "vertical" | "horizontal") => void;
   onExtract: () => void;
   onExtractFirst5: () => void;
   /** Which extraction is currently running (`null` when idle). */
@@ -44,6 +50,8 @@ export function DrawTableToolbar({
   canUndo,
   canRedo,
   onClear,
+  mode,
+  onModeChange,
   onExtract,
   onExtractFirst5,
   extracting,
@@ -60,6 +68,36 @@ export function DrawTableToolbar({
       <span className="px-1 text-xs text-muted-foreground">
         {t("drawtable.instruction")}
       </span>
+
+      <div className="mx-1 h-5 w-px bg-border" />
+
+      {/* Line-direction toggle: column separators vs row boundaries */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant={mode === "vertical" ? "secondary" : "ghost"}
+            size="icon-sm"
+            className="size-7"
+            onClick={() => onModeChange("vertical")}
+          >
+            <MoveVertical className="size-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{t("drawtable.verticalMode")}</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant={mode === "horizontal" ? "secondary" : "ghost"}
+            size="icon-sm"
+            className="size-7"
+            onClick={() => onModeChange("horizontal")}
+          >
+            <MoveHorizontal className="size-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{t("drawtable.horizontalMode")}</TooltipContent>
+      </Tooltip>
 
       <div className="mx-1 h-5 w-px bg-border" />
 

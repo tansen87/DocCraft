@@ -467,6 +467,12 @@ pub async fn ocr_image_table(
         .iter()
         .map(|p| *p * img_width / 100.0)
         .collect();
+      let horizontal_px: Vec<f64> = request
+        .horizontal_lines
+        .unwrap_or_default()
+        .iter()
+        .map(|p| *p * img_height / 100.0)
+        .collect();
       let sep = settings::get_app_settings(&app)?.text_separator;
       // Shared/resident engine.
       let cache = app.state::<crate::core::ocr::OcrEngineCache>();
@@ -481,6 +487,7 @@ pub async fn ocr_image_table(
         Ok(extract_table_from_ocr_blocks(
           &recognition,
           &vertical_px,
+          &horizontal_px,
           img_width,
           img_height,
           &sep,
@@ -502,8 +509,18 @@ pub async fn ocr_image_table(
     let png_bytes =
       std::fs::read(&request.image_path).map_err(|e| format!("Failed to read image: {e}"))?;
     let png_b64 = base64_encode(&png_bytes);
+    // The AI vision path already understands drawn horizontal separators
+    // (same hints the PDF draw-table flow sends).
+    let horizontal_pcts = request.horizontal_lines.unwrap_or_default();
 
-    let markdown = ai_recognize_table(&provider, 0, &png_b64, &request.vertical_lines, &[]).await?;
+    let markdown = ai_recognize_table(
+      &provider,
+      0,
+      &png_b64,
+      &request.vertical_lines,
+      &horizontal_pcts,
+    )
+    .await?;
 
     Ok(ImageTableResult {
       markdown,
@@ -513,14 +530,16 @@ pub async fn ocr_image_table(
   }
 }
 
-/// Build a GFM table from OCR text blocks by grouping them into lines and
-/// cutting columns at the given vertical pixel positions.  The first line
-/// becomes the header.
+/// Build a GFM table from OCR text blocks by cutting columns at the given
+/// vertical pixel positions. Rows come either from user-drawn horizontal
+/// lines (`horizontal_px` non-empty: each band is one row, topmost band =
+/// header) or - when absent - are auto-grouped from OCR block positions.
 fn extract_table_from_ocr_blocks(
   recognition: &crate::core::ocr::OcrRecognition,
   vertical_px: &[f64],
+  horizontal_px: &[f64],
   img_width: f64,
-  _img_height: f64,
+  img_height: f64,
   separator: &str,
 ) -> String {
   // Column boundaries: 0 + user lines + image width.
@@ -549,57 +568,76 @@ fn extract_table_from_ocr_blocks(
     return String::new();
   }
 
-  // Group into text lines.
-  let mut lines: Vec<Vec<&crate::core::ocr::OcrBlock>> = Vec::new();
-  let mut cur_line = vec![blocks[0]];
-  let mut cur_y = blocks[0].top;
-  for block in &blocks[1..] {
-    let threshold = (block.height * 0.4).max(3.0);
-    if (block.top - cur_y).abs() < threshold {
-      cur_line.push(block);
-    } else {
-      cur_line.sort_by(|a, b| {
-        a.left
-          .partial_cmp(&b.left)
-          .unwrap_or(std::cmp::Ordering::Equal)
-      });
-      lines.push(cur_line);
-      cur_line = vec![*block];
-      cur_y = block.top;
-    }
-  }
-  if !cur_line.is_empty() {
-    cur_line.sort_by(|a, b| {
-      a.left
-        .partial_cmp(&b.left)
-        .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    lines.push(cur_line);
-  }
-  if lines.is_empty() {
-    return String::new();
-  }
+  // Cut one sorted group of blocks into table columns.
+  let cut_line_by_columns = |line: &[&crate::core::ocr::OcrBlock]| -> Vec<String> {
+    (0..ncols)
+      .map(|col| {
+        let left = col_bounds[col];
+        let right = col_bounds[col + 1];
+        line
+          .iter()
+          .filter(|b| {
+            let center = b.left + b.width / 2.0;
+            center >= left - 1e-3 && center < right + 1e-3
+          })
+          .map(|b| b.text.as_str())
+          .collect::<Vec<_>>()
+          .join(separator)
+      })
+      .collect()
+  };
 
-  // Extract cells per line per column.
-  let mut data_rows: Vec<Vec<String>> = Vec::new();
-  for line in &lines {
-    let mut row = Vec::with_capacity(ncols);
-    for col in 0..ncols {
-      let left = col_bounds[col];
-      let right = col_bounds[col + 1];
-      let cell: String = line
-        .iter()
-        .filter(|b| {
-          let center = b.left + b.width / 2.0;
-          center >= left - 1e-3 && center < right + 1e-3
-        })
-        .map(|b| b.text.as_str())
-        .collect::<Vec<_>>()
-        .join(separator);
-      row.push(cell.trim().to_string());
+  let data_rows: Vec<Vec<String>> = if horizontal_px.is_empty() {
+    // Legacy auto-detection: group into visual text lines; each becomes one
+    // row and the first is the header.
+    group_blocks_into_lines(&blocks)
+      .iter()
+      .map(|line| cut_line_by_columns(line))
+      .collect()
+  } else {
+    // Grid mode: the drawn horizontal lines define row bands. Every band
+    // emits exactly one row (empty bands become blank cells); inside a band,
+    // several stacked text lines merge cell-wise with spaces so the GFM row
+    // structure stays intact.
+    let mut bounds: Vec<f64> = vec![0.0];
+    bounds.extend(horizontal_px.iter().copied());
+    bounds.push(img_height);
+    bounds.retain(|v| *v >= 0.0 && *v <= img_height);
+    bounds.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    bounds.dedup();
+    if bounds.len() < 2 {
+      return String::new();
     }
-    data_rows.push(row);
-  }
+
+    let mut rows = Vec::with_capacity(bounds.len() - 1);
+    for pair in bounds.windows(2) {
+      let (band_top, band_bottom) = (pair[0], pair[1]);
+      let in_band: Vec<&crate::core::ocr::OcrBlock> = blocks
+        .iter()
+        .copied()
+        .filter(|b| {
+          let center = b.top + b.height / 2.0;
+          center >= band_top && center < band_bottom
+        })
+        .collect();
+      if in_band.is_empty() {
+        rows.push(vec![String::new(); ncols]);
+        continue;
+      }
+      let text_lines = group_blocks_into_lines(&in_band);
+      let ncols_total = ncols;
+      let mut merged = vec![Vec::<String>::new(); ncols_total];
+      for line in &text_lines {
+        for (col, cell) in cut_line_by_columns(line).into_iter().enumerate() {
+          if !cell.is_empty() {
+            merged[col].push(cell);
+          }
+        }
+      }
+      rows.push(merged.into_iter().map(|parts| parts.join(" ")).collect());
+    }
+    rows
+  };
 
   if data_rows.is_empty() {
     return String::new();
@@ -635,6 +673,43 @@ fn extract_table_from_ocr_blocks(
   out
 }
 
+/// Group OCR blocks into visual text lines using the same conservative
+/// y-overlap threshold as the rest of the pipeline.
+fn group_blocks_into_lines<'a>(
+  blocks: &[&'a crate::core::ocr::OcrBlock],
+) -> Vec<Vec<&'a crate::core::ocr::OcrBlock>> {
+  let mut lines: Vec<Vec<&crate::core::ocr::OcrBlock>> = Vec::new();
+  if blocks.is_empty() {
+    return lines;
+  }
+  let mut cur_line = vec![blocks[0]];
+  let mut cur_y = blocks[0].top;
+  for block in &blocks[1..] {
+    let threshold = (block.height * 0.4).max(3.0);
+    if (block.top - cur_y).abs() < threshold {
+      cur_line.push(block);
+    } else {
+      cur_line.sort_by(|a, b| {
+        a.left
+          .partial_cmp(&b.left)
+          .unwrap_or(std::cmp::Ordering::Equal)
+      });
+      lines.push(cur_line);
+      cur_line = vec![*block];
+      cur_y = block.top;
+    }
+  }
+  if !cur_line.is_empty() {
+    cur_line.sort_by(|a, b| {
+      a.left
+        .partial_cmp(&b.left)
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    lines.push(cur_line);
+  }
+  lines
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -647,6 +722,53 @@ mod tests {
       width: w,
       height: h,
     }
+  }
+
+  fn block(text: &str, left: f64, top: f64, width: f64, height: f64) -> crate::core::ocr::OcrBlock {
+    crate::core::ocr::OcrBlock {
+      text: text.to_string(),
+      left,
+      top,
+      width,
+      height,
+    }
+  }
+
+  #[test]
+  fn ocr_blocks_without_horizontal_lines_auto_group_rows() {
+    let recognition = crate::core::ocr::OcrRecognition {
+      blocks: vec![
+        block("姓名", 10.0, 10.0, 20.0, 10.0),
+        block("年龄", 60.0, 10.0, 20.0, 10.0),
+        block("张三", 10.0, 50.0, 20.0, 10.0),
+        block("28", 60.0, 50.0, 20.0, 10.0),
+      ],
+      height_px: 100,
+    };
+    let md = extract_table_from_ocr_blocks(&recognition, &[50.0], &[], 100.0, 100.0, " ");
+    assert!(md.contains("| 姓名 | 年龄 |"));
+    assert!(md.contains("| 张三 | 28 |"));
+  }
+
+  #[test]
+  fn ocr_blocks_grid_mode_cuts_rows_at_horizontal_lines() {
+    let recognition = crate::core::ocr::OcrRecognition {
+      blocks: vec![
+        block("姓名", 10.0, 10.0, 20.0, 10.0),
+        block("年龄", 60.0, 10.0, 20.0, 10.0),
+        // Two stacked blocks inside one band merge into one cell.
+        block("张三", 10.0, 50.0, 20.0, 10.0),
+        block("张三 2", 10.0, 62.0, 20.0, 10.0),
+        block("28", 60.0, 55.0, 20.0, 10.0),
+      ],
+      height_px: 100,
+    };
+    let md = extract_table_from_ocr_blocks(&recognition, &[50.0], &[30.0], 100.0, 100.0, " ");
+    // Topmost band is the header; the lower band merges stacked blocks.
+    let mut lines = md.lines().filter(|l| l.starts_with('|'));
+    assert_eq!(lines.next().unwrap(), "| 姓名 | 年龄 |");
+    assert!(lines.next().unwrap().starts_with("| -")); // GFM delimiter row
+    assert_eq!(lines.next().unwrap(), "| 张三 张三 2 | 28 |");
   }
 
   #[test]

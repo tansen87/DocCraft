@@ -337,3 +337,11 @@ html, body, #root {
     border-color: var(--glass-border);
   }
 }
+
+/* IMG→MD 图片列表:Radix ScrollArea 的 viewport 会把内容包进 display:table
+   的容器(宽度随内容撑开),导致超长文件名把行内右侧控件挤出可视区。
+   强制该列表的包裹层为 block,让行宽恒等于面板宽,文件名 flex-1/truncate
+   (即"面板总宽 - 右侧固定宽"的浏览器动态计算)稳定生效。仅作用于本列表。 */
+.img-list-scroll [data-radix-scroll-area-viewport] > div {
+  display: block !important;
+}

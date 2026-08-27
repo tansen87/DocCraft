@@ -460,7 +460,7 @@ pub struct OcrImageResult {
   pub save_ms: Option<u64>,
 }
 
-/// Request to extract a table from an image using drawn vertical lines.
+/// Request to extract a table from an image using drawn lines.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageTableRequest {
@@ -468,6 +468,12 @@ pub struct ImageTableRequest {
   pub image_path: String,
   /// Vertical line positions as percentages of the image width (0-100).
   pub vertical_lines: Vec<f64>,
+  /// Horizontal line positions as percentages of the image height (0-100).
+  /// When present and non-empty, rows are cut at these boundaries instead of
+  /// being auto-grouped from OCR block positions; the topmost band is the
+  /// header. Absent / empty keeps the legacy auto-detection behavior.
+  #[serde(default)]
+  pub horizontal_lines: Option<Vec<f64>>,
 }
 
 /// Result of extracting a table from an image with drawn lines.

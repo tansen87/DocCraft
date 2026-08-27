@@ -70,6 +70,20 @@ import { GlassPanel } from "@/components/ui/glass-panel";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg"];
 
+/**
+ * Long filenames would widen the ScrollArea's table-layout wrapper and push
+ * the right-side controls out of view, so cap them up front (keeping head and
+ * tail, which carry the most information). The full name stays in the row's
+ * `title` attribute.
+ */
+function displayName(name: string): string {
+  const MAX = 46;
+  if (name.length <= MAX) return name;
+  const head = Math.ceil((MAX - 1) * 0.65);
+  const tail = MAX - 1 - head;
+  return `${name.slice(0, head)}…${name.slice(name.length - tail)}`;
+}
+
 type ImageStatus = "queued" | "converting" | "done" | "error";
 
 interface ImageItem {
@@ -831,13 +845,18 @@ export function ImageToMdView() {
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-1 lg:grid-cols-2">
         {/* Left column: list on top, zoomable source image below. */}
         <div className="flex min-h-0 flex-col gap-1">
-            <GlassPanel
-              className={cn(
-                "min-h-0 overflow-hidden rounded-xl",
-                compare ? "flex-1" : "h-full",
-              )}
-            >
-            <ScrollArea className="h-full">
+          <GlassPanel
+            className={cn(
+              "min-h-0 overflow-hidden rounded-xl",
+              compare ? "flex-1" : "h-full",
+            )}
+          >
+            {/* `img-list-scroll` + the scoped rule in index.css override the
+                Radix ScrollArea viewport's display:table content wrapper so
+                rows stay exactly as wide as the panel - the filename then
+                gets "panel width minus fixed right side" via flex-1/truncate
+                and the right-side controls are never squeezed. */}
+            <ScrollArea className="img-list-scroll h-full">
               <div className="p-2">
                 {items.map((item, index) => (
                   <div
@@ -876,15 +895,23 @@ export function ImageToMdView() {
                         <FileImage className="size-4 text-muted-foreground" />
                       </span>
                     )}
-                    <span className="min-w-0 flex-1 truncate text-sm">
-                      {item.name}
+                    {/* The filename is the only flexible element: it is
+                        length-capped (ellipsised) so the right-side badge +
+                        buttons are always rendered in full. */}
+                    <span
+                      className="min-w-0 flex-1 truncate text-sm"
+                      title={item.name}
+                    >
+                      {displayName(item.name)}
                     </span>
                     <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                       {item.result
                         ? formatDuration(item.result.durationMs)
                         : ""}
                     </span>
-                    <StatusBadge status={item.status} error={item.error} />
+                    <span className="shrink-0">
+                      <StatusBadge status={item.status} error={item.error} />
+                    </span>
                     <div className="flex shrink-0 items-center gap-1">
                       {item.path ? (
                         <Tooltip>
@@ -1038,13 +1065,16 @@ export function ImageToMdView() {
           onResult={(result) => {
             // Add the extracted table markdown as a new item result,
             // carrying over the real engine + duration from the backend.
+            // Named `draw_<source>` so the item stays traceable back to its
+            // source image at a glance; the filename column truncates long
+            // names so the right-side controls are never squeezed.
             const id = crypto.randomUUID();
             mutate((prev) => [
               ...prev,
               {
                 id,
                 path: drawTablePath,
-                name: `Table_from_${drawTablePath.split(/[/\\]/).pop() ?? "image"}`,
+                name: `draw_${drawTablePath.split(/[/\\]/).pop() ?? "image"}`,
                 status: "done",
                 result: {
                   markdown: result.markdown,
