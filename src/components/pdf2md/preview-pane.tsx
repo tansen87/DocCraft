@@ -18,6 +18,7 @@ import {
 import { useI18n } from "@/i18n";
 import { formatDuration } from "@/lib/format-duration";
 import { cn } from "@/lib/utils";
+import { GlassPanel } from "@/components/ui/glass-panel";
 
 /** Marker that delimits PDF pages (`<!-- Page N -->`) or images (`<!-- Image N -->`). */
 const PAGE_MARKER_RE =
@@ -193,9 +194,9 @@ export function PreviewPane({
   }
 
   return (
-    <div
+    <GlassPanel
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden rounded-xl glass-panel",
+        "flex h-full min-h-0 flex-col overflow-hidden rounded-xl",
         className,
       )}
     >
@@ -332,6 +333,6 @@ export function PreviewPane({
           </article>
         </ScrollArea>
       )}
-    </div>
+    </GlassPanel>
   );
 }

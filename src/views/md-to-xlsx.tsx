@@ -35,6 +35,7 @@ import { setViewTask } from "@/lib/global-task";
 import { useI18n } from "@/i18n";
 import type { MdAnalyzeResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { GlassPanel } from "@/components/ui/glass-panel";
 
 type MdItemStatus = "queued" | "analyzing" | "ready" | "error";
 
@@ -293,7 +294,7 @@ export function MdToXlsxView() {
           />
         ) : null}
 
-        <div className="flex flex-wrap items-center gap-3 rounded-xl glass-panel px-3 py-2">
+        <GlassPanel className="flex flex-wrap items-center gap-3 rounded-xl px-3 py-2">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <ListPlus className="size-4" />
           </span>
@@ -333,9 +334,9 @@ export function MdToXlsxView() {
               {t("batch.exportAll")}
             </Button>
           </div>
-        </div>
+        </GlassPanel>
 
-        <div className="min-h-0 flex-1 overflow-hidden rounded-xl glass-panel">
+        <GlassPanel className="min-h-0 flex-1 overflow-hidden rounded-xl">
           <div className="flex h-full max-h-full flex-col">
             <div className="overflow-auto">
               <table className="w-full table-fixed text-sm">
@@ -462,7 +463,7 @@ export function MdToXlsxView() {
               </table>
             </div>
           </div>
-        </div>
+        </GlassPanel>
       </div>
     );
   }
@@ -480,7 +481,7 @@ export function MdToXlsxView() {
             hint={t("overlay.hintAddMore")}
           />
         ) : null}
-        <div className="flex items-center gap-2 rounded-xl glass-panel px-3 py-2">
+        <GlassPanel className="flex items-center gap-2 rounded-xl px-3 py-2">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Table2 className="size-4" />
           </span>
@@ -528,7 +529,7 @@ export function MdToXlsxView() {
               {t("tooltip.exportExcel")}
             </Button>
           </div>
-        </div>
+        </GlassPanel>
         <TablePreview
           tableCount={item.result?.tableCount ?? 0}
           totalRows={item.result?.totalRows ?? 0}

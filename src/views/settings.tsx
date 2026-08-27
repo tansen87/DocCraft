@@ -477,11 +477,21 @@ export function SettingsView() {
                   onResultOpacityChange={(v) => {
                     setSnipResultOpacity(v);
                     markDirty();
+                    // Live preview: send value directly to snip result window.
+                    emitTo("snip-result", "snip:settings-changed", {
+                      opacity: v,
+                    }).catch(() => {});
                   }}
                   mainOpacity={mainWindowOpacity}
                   onMainOpacityChange={(v) => {
                     setMainWindowOpacity(v);
                     markDirty();
+                    // Live preview: update main window background without saving.
+                    window.dispatchEvent(
+                      new CustomEvent("doccraft:opacity-preview", {
+                        detail: { mainWindow: v },
+                      }),
+                    );
                   }}
                   disabled={loading}
                 />
@@ -562,7 +572,7 @@ export function SettingsView() {
 
         {dirty ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center">
-            <div className="pointer-events-auto flex animate-in fade-in-0 slide-in-from-bottom-2 items-center gap-3 rounded-full glass-panel glass-blur py-1.5 pl-4 pr-1.5">
+            <GlassPanel className="pointer-events-auto flex animate-in fade-in-0 slide-in-from-bottom-2 items-center gap-3 rounded-full glass-blur py-1.5 pl-4 pr-1.5">
               <span className="text-xs text-muted-foreground">
                 {t("settings.unsavedChanges")}
               </span>
@@ -576,7 +586,7 @@ export function SettingsView() {
                 {saving ? <Loader2 className="animate-spin" /> : <Save />}
                 {t("settings.save")}
               </Button>
-            </div>
+            </GlassPanel>
           </div>
         ) : null}
       </div>
@@ -885,21 +895,21 @@ function OcrSettingsPanel({
           </Panel>
 
           <div className="space-y-3">
-            <div className="rounded-2xl glass-panel p-4">
+            <GlassPanel className="rounded-2xl p-4">
               <Skeleton className="mb-3 h-10 w-full" />
               <Skeleton className="mb-2 h-3 w-3/4" />
               <Skeleton className="h-3 w-1/2" />
-            </div>
-            <div className="rounded-2xl glass-panel p-4">
+            </GlassPanel>
+            <GlassPanel className="rounded-2xl p-4">
               <Skeleton className="mb-3 h-10 w-full" />
               <Skeleton className="mb-2 h-3 w-3/4" />
               <Skeleton className="h-3 w-1/2" />
-            </div>
-            <div className="rounded-2xl glass-panel p-4">
+            </GlassPanel>
+            <GlassPanel className="rounded-2xl p-4">
               <Skeleton className="mb-3 h-10 w-full" />
               <Skeleton className="mb-2 h-3 w-3/4" />
               <Skeleton className="h-3 w-1/2" />
-            </div>
+            </GlassPanel>
           </div>
         </div>
       ) : vendors.length === 0 ? (

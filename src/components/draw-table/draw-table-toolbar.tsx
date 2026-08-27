@@ -15,6 +15,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
+import { GlassPanel } from "@/components/ui/glass-panel";
 
 interface DrawTableToolbarProps {
   onUndo: () => void;
@@ -54,7 +55,7 @@ export function DrawTableToolbar({
 }: DrawTableToolbarProps) {
   const { t } = useI18n();
   return (
-    <div className="flex items-center gap-1 rounded-lg glass-panel px-2 py-1.5">
+    <GlassPanel className="flex items-center gap-1 rounded-lg px-2 py-1.5">
       {/* Instruction */}
       <span className="px-1 text-xs text-muted-foreground">
         {t("drawtable.instruction")}
@@ -181,6 +182,6 @@ export function DrawTableToolbar({
           ? t("drawtable.extracting")
           : t("drawtable.extract")}
       </Button>
-    </div>
+    </GlassPanel>
   );
 }

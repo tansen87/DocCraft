@@ -8,6 +8,7 @@ import { HeaderActions } from "@/components/header-actions";
 import { WindowControls } from "@/components/layout/window-controls";
 import { useI18n } from "@/i18n";
 import { useGlobalTasks } from "@/lib/global-task";
+import { useGlassOpacity } from "@/lib/glass-opacity";
 
 export type WorkspaceTab = "pdftomd" | "imgtomd" | "mdtoexcel" | "settings";
 
@@ -18,6 +19,7 @@ interface AppHeaderProps {
 
 export function AppHeader({ activeTab, onTabChange }: AppHeaderProps) {
   const { t } = useI18n();
+  const opacity = useGlassOpacity();
   const tasks = useGlobalTasks();
   const dragRef = useRef<{ x: number; y: number; dragging: boolean } | null>(
     null,
@@ -54,7 +56,10 @@ export function AppHeader({ activeTab, onTabChange }: AppHeaderProps) {
   }, []);
 
   return (
-    <header className="sticky top-0 z-20 flex h-12 items-center gap-2 border-b border-border/30 bg-white/[0.05] px-2 backdrop-blur-2xl transition-colors hover:bg-green-500/15">
+    <header
+      className="sticky top-0 z-20 glass-panel glass-blur flex h-12 items-center gap-2 border-b border-border/30 px-2 transition-colors hover:bg-green-500/15"
+      style={{ "--glass-bg-opacity": opacity / 100 } as React.CSSProperties}
+    >
       <Tabs
         value={activeTab}
         onValueChange={(v) => onTabChange(v as WorkspaceTab)}

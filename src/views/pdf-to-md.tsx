@@ -42,6 +42,7 @@ import { setViewTask } from "@/lib/global-task";
 import { useI18n } from "@/i18n";
 import type { ConvertResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { GlassPanel } from "@/components/ui/glass-panel";
 
 type BatchStatus = "queued" | "converting" | "done" | "error";
 
@@ -413,7 +414,7 @@ export function BatchView() {
           />
         ) : null}
 
-        <div className="flex flex-wrap items-center gap-3 rounded-xl glass-panel px-3 py-2">
+        <GlassPanel className="flex flex-wrap items-center gap-3 rounded-xl px-3 py-2">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <FileText className="size-4" />
           </span>
@@ -483,12 +484,12 @@ export function BatchView() {
               ) : (
                 <Download />
               )}
-              {t("batch.exportAll")}
+               {t("batch.exportAll")}
             </Button>
           </div>
-        </div>
+        </GlassPanel>
 
-        <div className="min-h-0 flex-1 overflow-hidden rounded-xl glass-panel">
+        <GlassPanel className="min-h-0 flex-1 overflow-hidden rounded-xl">
           <div className="flex h-full max-h-full flex-col">
             <div className="overflow-auto">
               <table className="w-full table-fixed text-sm">
@@ -633,7 +634,7 @@ export function BatchView() {
               </table>
             </div>
           </div>
-        </div>
+        </GlassPanel>
       </div>
     );
   }

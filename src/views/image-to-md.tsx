@@ -66,6 +66,7 @@ import type {
   ShotRegion,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { GlassPanel } from "@/components/ui/glass-panel";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg"];
 
@@ -737,7 +738,7 @@ export function ImageToMdView() {
       ) : null}
 
       {/* Summary / control bar */}
-      <div className="flex flex-wrap items-center gap-3 rounded-xl glass-panel px-3 py-2">
+      <GlassPanel className="flex flex-wrap items-center gap-3 rounded-xl px-3 py-2">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <FileImage className="size-4" />
         </span>
@@ -824,18 +825,18 @@ export function ImageToMdView() {
             <TooltipContent>{t("tooltip.exportSingle")}</TooltipContent>
           </Tooltip>
         </div>
-      </div>
+      </GlassPanel>
 
       {/* Image list | source image (when a single item is selected) | result */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-1 lg:grid-cols-2">
         {/* Left column: list on top, zoomable source image below. */}
         <div className="flex min-h-0 flex-col gap-1">
-          <div
-            className={cn(
-              "min-h-0 overflow-hidden rounded-xl glass-panel",
-              compare ? "flex-1" : "h-full",
-            )}
-          >
+            <GlassPanel
+              className={cn(
+                "min-h-0 overflow-hidden rounded-xl",
+                compare ? "flex-1" : "h-full",
+              )}
+            >
             <ScrollArea className="h-full">
               <div className="p-2">
                 {items.map((item, index) => (
@@ -956,7 +957,7 @@ export function ImageToMdView() {
                 ))}
               </div>
             </ScrollArea>
-          </div>
+          </GlassPanel>
 
           {compare ? (
             <ImagePreviewPane

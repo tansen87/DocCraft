@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { GlassPanel } from "@/components/ui/glass-panel";
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 8;
@@ -126,10 +127,10 @@ export function ImagePreviewPane({
   const displaySrc = src ?? fallbackSrc;
 
   return (
-    <div
+    <GlassPanel
       ref={rootRef}
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden rounded-xl glass-panel",
+        "flex h-full min-h-0 flex-col overflow-hidden rounded-xl",
         className,
       )}
     >
@@ -198,6 +199,6 @@ export function ImagePreviewPane({
           )}
         </div>
       </ScrollArea>
-    </div>
+    </GlassPanel>
   );
 }

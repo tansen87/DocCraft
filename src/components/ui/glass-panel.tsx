@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
+import { useGlassOpacity } from "@/lib/glass-opacity";
 
 function GlassPanel({
   className,
@@ -11,6 +12,8 @@ function GlassPanel({
   hover?: boolean;
   blur?: boolean;
 }) {
+  const opacity = useGlassOpacity();
+
   return (
     <div
       data-slot="glass-panel"
@@ -20,6 +23,7 @@ function GlassPanel({
         hover && "glass-hover",
         className,
       )}
+      style={{ "--glass-bg-opacity": opacity / 100 } as React.CSSProperties}
       {...props}
     />
   );

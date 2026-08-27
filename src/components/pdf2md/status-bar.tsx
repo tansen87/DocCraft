@@ -31,6 +31,7 @@ import type {
   StatusNotice,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { GlassPanel } from "@/components/ui/glass-panel";
 
 function Stat({
   label,
@@ -324,7 +325,7 @@ export function StatusBar({
     : null;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 rounded-lg glass-panel px-3 py-1">
+    <GlassPanel className="flex flex-wrap items-center gap-x-4 rounded-lg px-3 py-1">
       {hidePdfStats ? null : (
         <>
           <Stat label={t("status.pdfType")}>
@@ -503,6 +504,6 @@ export function StatusBar({
           </PopoverContent>
         </Popover>
       </div>
-    </div>
+    </GlassPanel>
   );
 }

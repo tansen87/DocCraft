@@ -14,6 +14,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { GlassPanel } from "@/components/ui/glass-panel";
 
 interface ConvertToolbarProps {
   name: string;
@@ -39,7 +40,7 @@ export function ConvertToolbar({
   const { t } = useI18n();
 
   return (
-    <div className="flex items-center gap-3 rounded-xl glass-panel px-3 py-2">
+    <GlassPanel className="flex items-center gap-3 rounded-xl px-3 py-2">
       <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
         <FileText className="size-4" />
       </span>
@@ -94,6 +95,6 @@ export function ConvertToolbar({
         {converting ? <Loader2 className="animate-spin" /> : <WandSparkles />}
         {t("toolbar.extractToMarkdown")}
       </Button>
-    </div>
+    </GlassPanel>
   );
 }

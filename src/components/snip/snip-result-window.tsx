@@ -206,7 +206,9 @@ export function SnipResultWindow() {
   // Load the glassmorphism opacity setting.
   useEffect(() => {
     getAppSettings()
-      .then((s) => setGlassOpacity(s.snipResultOpacity ?? 60))
+      .then((s) => {
+        setGlassOpacity(s.snipResultOpacity ?? 60);
+      })
       .catch(() => {});
   }, []);
 
@@ -267,10 +269,12 @@ export function SnipResultWindow() {
       .catch(() => {});
   }
 
-  /** Reload glass opacity from backend settings. */
+  /** Reload glass opacity and blur from backend settings. */
   function reloadOpacity() {
     getAppSettings()
-      .then((s) => setGlassOpacity(s.snipResultOpacity ?? 60))
+      .then((s) => {
+        setGlassOpacity(s.snipResultOpacity ?? 60);
+      })
       .catch(() => {});
   }
 
@@ -294,9 +298,18 @@ export function SnipResultWindow() {
 
   // Real-time opacity update when settings are saved in the main window.
   useEffect(() => {
-    const unlisten = listen("snip:settings-changed", () => {
-      reloadOpacity();
-    });
+    const unlisten = listen<{ opacity?: number }>(
+      "snip:settings-changed",
+      (e) => {
+        if (typeof e.payload?.opacity === "number") {
+          // Live preview: use the value sent directly from the slider.
+          setGlassOpacity(e.payload.opacity);
+        } else {
+          // Saved: reload from backend.
+          reloadOpacity();
+        }
+      },
+    );
     // Fallback: poll settings every 2 s in case the event is missed
     // (e.g. the window was not yet open when settings were saved).
     const timer = setInterval(reloadOpacity, 2000);
@@ -353,6 +366,7 @@ export function SnipResultWindow() {
         className="relative flex h-full w-full flex-col text-foreground backdrop-blur-2xl"
         style={{
           backgroundColor: `color-mix(in srgb, var(--background) ${glassOpacity}%, transparent)`,
+          backdropFilter: "blur(24px)",
         }}
       >
         <div

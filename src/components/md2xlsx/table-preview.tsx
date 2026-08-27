@@ -4,6 +4,7 @@ import { Table2 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { GlassPanel } from "@/components/ui/glass-panel";
 
 /** Rows mounted per table on first render (keeps the initial DOM small). */
 const INITIAL_ROWS = 50;
@@ -115,9 +116,9 @@ export function TablePreview({
   }, [handleIntersect]);
 
   return (
-    <div
+    <GlassPanel
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden rounded-xl glass-panel",
+        "flex h-full min-h-0 flex-col overflow-hidden rounded-xl",
         className,
       )}
     >
@@ -212,6 +213,6 @@ export function TablePreview({
           )}
         </div>
       </ScrollArea>
-    </div>
+    </GlassPanel>
   );
 }

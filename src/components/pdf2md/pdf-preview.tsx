@@ -8,6 +8,7 @@ import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { GlassPanel } from "@/components/ui/glass-panel";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 
@@ -202,9 +203,9 @@ export function PdfPreview({ path, className, scrollToPage }: PdfPreviewProps) {
   }, [scrollToPage, status]);
 
   return (
-    <div
+    <GlassPanel
       className={cn(
-        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl glass-panel",
+        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl",
         className,
       )}
     >
@@ -264,6 +265,6 @@ export function PdfPreview({ path, className, scrollToPage }: PdfPreviewProps) {
           </div>
         </ScrollArea>
       </div>
-    </div>
+    </GlassPanel>
   );
 }

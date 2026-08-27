@@ -46,9 +46,10 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-  /* liquid-glass surface tokens (方案 C:map Glass 语言到现有栈) */
-  --glass-top: oklch(1 0 0 / 0.98);
-  --glass-bottom: oklch(0.985 0 0 / 0.92);
+
+  /* liquid-glass surface tokens */
+  --glass-top: oklch(1 0 0);
+  --glass-bottom: oklch(0.985 0 0);
   --glass-border: oklch(0 0 0 / 0.06);
   --glass-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 30px rgb(0 0 0 / 0.06);
   --glass-shadow-hover:
@@ -159,8 +160,12 @@ html, body, #root {
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
   /* liquid-glass surface tokens (dark) */
-  --glass-top: oklch(0.25 0 0 / 0.9);
-  --glass-bottom: oklch(0.2 0 0 / 0.86);
+  --glass-top: oklch(0.25 0 0);
+  --glass-bottom: oklch(0.2 0 0);
+  --glass-border: rgb(255 255 255 / 0.08);
+  --glass-shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 10px 32px rgb(0 0 0 / 0.4);
+  --glass-shadow-hover:
+    0 1px 2px rgb(0 0 0 / 0.5), 0 18px 44px rgb(0 0 0 / 0.5);
   --glass-border: rgb(255 255 255 / 0.08);
   --glass-shadow: 0 1px 2px rgb(0 0 0 / 0.5), 0 10px 32px rgb(0 0 0 / 0.4);
   --glass-shadow-hover:
@@ -300,12 +305,19 @@ html, body, #root {
   .glass-panel {
     position: relative;
     border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+  .glass-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
     background-image: linear-gradient(
       to bottom,
-      var(--glass-top),
-      var(--glass-bottom)
+      color-mix(in srgb, var(--background) var(--glass-bg-opacity), transparent),
+      color-mix(in srgb, var(--background) calc(var(--glass-bg-opacity) * 0.92), transparent)
     );
-    box-shadow: var(--glass-shadow);
+    z-index: -1;
   }
 
   .glass-blur {

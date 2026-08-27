@@ -24,6 +24,7 @@ import type {
   StatusNotice,
 } from "@/lib/types";
 import * as pdfjs from "pdfjs-dist";
+import { GlassPanel } from "@/components/ui/glass-panel";
 
 interface ConvertWorkspaceProps {
   filePath: string;
@@ -338,9 +339,9 @@ export function ConvertWorkspace({
       {drawMode ? (
         /* Draw Table Mode: full-width canvas overlay */
         <div className="flex min-h-0 flex-1 flex-col gap-1">
-          <div
+          <GlassPanel
             ref={containerRef}
-            className="relative min-h-0 flex-1 overflow-hidden rounded-xl glass-panel"
+            className="relative min-h-0 flex-1 overflow-hidden rounded-xl"
           >
             {pageSize && (
               <div
@@ -373,7 +374,7 @@ export function ConvertWorkspace({
                 />
               </div>
             )}
-          </div>
+          </GlassPanel>
 
           {mergedMarkdown ? (
             <div className="shrink-0 max-h-[40vh]">
