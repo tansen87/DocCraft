@@ -130,6 +130,16 @@ export interface AppSettings {
    * 0 = fully transparent, 100 = fully opaque.
    */
   mainWindowOpacity?: number;
+  /**
+   * Custom prompt for the remote AI document-OCR path (PDF pages, images,
+   * screenshots). Empty string falls back to the built-in default prompt.
+   */
+  aiOcrPrompt?: string;
+  /**
+   * Custom prompt for the remote AI draw-table path (image / PDF line-draw
+   * extraction). Empty string falls back to the built-in default prompt.
+   */
+  drawTablePrompt?: string;
 }
 
 export type OcrMode =

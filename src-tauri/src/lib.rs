@@ -388,9 +388,11 @@ async fn extract_draw_table(
     let use_cache = settings.cache_extracted_text;
     let high_precision = settings.draw_table_high_precision;
     let (local, remote) = resolve_draw_ocr(&app, &draw_data)?;
+    let remote_prompt = core::ocr::effective_draw_table_prompt(&app)?;
     let engines = core::line_draw::DrawOcrEngines {
       local: local.as_ref(),
       remote: remote.as_ref(),
+      remote_prompt: &remote_prompt,
     };
     core::line_draw::extract_tables_from_draw_lines(
       &path,
@@ -417,9 +419,11 @@ async fn extract_draw_table_to_markdown(
     let use_cache = settings.cache_extracted_text;
     let high_precision = settings.draw_table_high_precision;
     let (local, remote) = resolve_draw_ocr(&app, &draw_data)?;
+    let remote_prompt = core::ocr::effective_draw_table_prompt(&app)?;
     let engines = core::line_draw::DrawOcrEngines {
       local: local.as_ref(),
       remote: remote.as_ref(),
+      remote_prompt: &remote_prompt,
     };
     core::line_draw::extract_tables_and_merge(
       &path,

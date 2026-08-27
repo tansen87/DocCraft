@@ -20,6 +20,10 @@ use crate::models::{
 pub struct DrawOcrEngines<'a> {
   pub local: Option<&'a LocalOcrEngine>,
   pub remote: Option<&'a RemoteOcrProvider>,
+  /// Base prompt for the remote AI vision table path, resolved from settings
+  /// (the empty string falls back to the built-in default). Only meaningful
+  /// when `remote` is `Some`.
+  pub remote_prompt: &'a str,
 }
 
 /// A text element extracted from a PDF page with its position.
@@ -137,6 +141,7 @@ fn line_percentages(lines_pts: &[f64], render_scale: f64, dimension_px: u32) -> 
 /// this path bypasses the geometric column-cutting pipeline entirely.
 fn ai_tables_for_page(
   provider: &RemoteOcrProvider,
+  prompt: &str,
   payload: &PageImagePayload,
   page_draw: &PageDrawTable,
 ) -> Result<Vec<MdTable>, String> {
@@ -169,6 +174,7 @@ fn ai_tables_for_page(
     &payload.image_png,
     &vertical_pcts,
     &horizontal_pcts,
+    prompt,
   ))?;
 
   Ok(
@@ -505,7 +511,8 @@ fn group_text_line_refs<'a>(items: &[&'a TextElement]) -> Vec<Vec<&'a TextElemen
   }
   let mut sorted: Vec<&TextElement> = items.to_vec();
   sorted.sort_by(|a, b| {
-    b.y.partial_cmp(&a.y)
+    b.y
+      .partial_cmp(&a.y)
       .unwrap_or(std::cmp::Ordering::Equal)
       .then_with(|| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal))
   });
@@ -846,7 +853,7 @@ pub fn extract_tables_from_draw_lines(
           // Remote AI vision: parse the model's markdown answer directly.
           if elements.is_empty() {
             if let Some(provider) = engines.remote {
-              match ai_tables_for_page(provider, img, page_draw) {
+              match ai_tables_for_page(provider, engines.remote_prompt, img, page_draw) {
                 Ok(ai_tables) => {
                   for table in ai_tables {
                     tables.push(table);

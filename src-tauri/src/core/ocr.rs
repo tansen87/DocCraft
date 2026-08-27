@@ -19,6 +19,20 @@ use crate::models::{
 /// Prompt sent to the vision model for every OCR page.
 const OCR_PROMPT: &str = "你是一个专业的OCR引擎.请完整识别这张PDF页面图片中的内容,并转换为规范的Markdown输出: 保留标题层级(#、##)、段落、列表、表格(使用GFM表格语法)等结构.只输出识别后的Markdown内容,不要使用任何代码块或代码围栏包裹,不要添加任何解释或前言.";
 
+/// Resolve the effective AI document-OCR prompt: the user's custom prompt
+/// from settings when non-empty, otherwise the built-in [`OCR_PROMPT`].
+pub fn effective_ai_ocr_prompt(app: &AppHandle) -> Result<String, String> {
+  let custom = settings::get_app_settings(app)?
+    .ai_ocr_prompt
+    .trim()
+    .to_string();
+  Ok(if custom.is_empty() {
+    OCR_PROMPT.to_string()
+  } else {
+    custom
+  })
+}
+
 /// Local OCR engine wrapper for PaddleOCR via ocr-rs.
 pub struct LocalOcrEngine {
   engine: OcrEngine,
@@ -390,6 +404,20 @@ pub struct RemoteOcrProvider {
 /// user-drawn separator positions and answer with a bare GFM table.
 const DRAW_TABLE_PROMPT: &str = "你是一个专业的表格识别引擎.这张PDF页面图片中的表格带有用户标注的列分隔线.请严格按照下方给出的分隔线位置把页面内容切分成列,识别表格的所有行(第一行为表头),输出为规范的GFM(GitHub Flavored Markdown)表格.只输出Markdown表格本身,不要输出任何解释、前言或代码块围栏.";
 
+/// Resolve the effective draw-table AI prompt: the user's custom prompt from
+/// settings when non-empty, otherwise the built-in [`DRAW_TABLE_PROMPT`].
+pub fn effective_draw_table_prompt(app: &AppHandle) -> Result<String, String> {
+  let custom = settings::get_app_settings(app)?
+    .draw_table_prompt
+    .trim()
+    .to_string();
+  Ok(if custom.is_empty() {
+    DRAW_TABLE_PROMPT.to_string()
+  } else {
+    custom
+  })
+}
+
 /// Shared HTTP client for every remote OCR call. `reqwest::Client` is an
 /// cheaply-cloneable handle whose clones share one connection pool, so
 /// repeated recognitions reuse live connections / TLS sessions instead of
@@ -444,15 +472,19 @@ fn describe_positions(label: &str, pcts: &[f64]) -> String {
 }
 
 /// Send one rendered page to the remote vision provider and ask it to extract
-/// the table cut by the drawn separator lines. Returns bare GFM markdown.
+/// the table cut by the drawn separator lines. `base_prompt` is the resolved
+/// AI instruction (customized in settings or the built-in default); the drawn
+/// separator positions are appended so the model can cut the page accurately.
+/// Returns bare GFM markdown.
 pub async fn ai_recognize_table(
   provider: &RemoteOcrProvider,
   page: u32,
   image_png: &str,
   vertical_pcts: &[f64],
   horizontal_pcts: &[f64],
+  base_prompt: &str,
 ) -> Result<String, String> {
-  let mut prompt = DRAW_TABLE_PROMPT.to_string();
+  let mut prompt = base_prompt.to_string();
   prompt.push_str(&describe_positions(
     "竖线位置(相对图片宽度的百分比)",
     vertical_pcts,
@@ -543,10 +575,11 @@ async fn ocr_page(
 }
 
 /// Send one already-base64-encoded PNG through the resolved remote vision
-/// provider with the standard document-OCR prompt (screenshot pipeline).
+/// provider with the AI document-OCR prompt (screenshot pipeline).
 pub async fn ai_recognize_image(
   provider: &RemoteOcrProvider,
   image_base64: &str,
+  prompt: &str,
 ) -> Result<String, String> {
   ocr_page(
     &provider.client,
@@ -554,7 +587,7 @@ pub async fn ai_recognize_image(
     &provider.model_id,
     &provider.api_key,
     0,
-    OCR_PROMPT,
+    prompt,
     "image/png",
     image_base64,
   )
@@ -787,7 +820,7 @@ pub async fn ocr_page_in_session(
       &model_id,
       &api_key,
       page,
-      OCR_PROMPT,
+      &effective_ai_ocr_prompt(app)?,
       "image/png",
       image_png,
     )
@@ -959,7 +992,7 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
       &provider.model_id,
       &provider.api_key,
       0,
-      OCR_PROMPT,
+      &effective_ai_ocr_prompt(app)?,
       mime,
       &encoded,
     )

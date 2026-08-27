@@ -360,7 +360,8 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
     .map_err(|e| format!("Screenshot task failed: {e}"))??;
     let provider = crate::core::ocr::resolve_remote_provider(app)?
       .ok_or_else(|| "No available OCR supplier configured".to_string())?;
-    let markdown = crate::core::ocr::ai_recognize_image(&provider, &png_b64).await?;
+    let prompt = crate::core::ocr::effective_ai_ocr_prompt(app)?;
+    let markdown = crate::core::ocr::ai_recognize_image(&provider, &png_b64, &prompt).await?;
     (markdown, save_start.elapsed().as_millis() as u64)
   };
   let infer_ms = infer_start.elapsed().as_millis() as u64 - save_ms;
@@ -512,6 +513,7 @@ pub async fn ocr_image_table(
     // The AI vision path already understands drawn horizontal separators
     // (same hints the PDF draw-table flow sends).
     let horizontal_pcts = request.horizontal_lines.unwrap_or_default();
+    let draw_prompt = crate::core::ocr::effective_draw_table_prompt(app)?;
 
     let markdown = ai_recognize_table(
       &provider,
@@ -519,6 +521,7 @@ pub async fn ocr_image_table(
       &png_b64,
       &request.vertical_lines,
       &horizontal_pcts,
+      &draw_prompt,
     )
     .await?;
 

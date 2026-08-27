@@ -177,6 +177,17 @@ const en = {
     "OCR only non-text pages using remote AI vision providers",
   "settings.ocrMode.disabled": "Disabled",
   "settings.ocrMode.disabledDesc": "Skip OCR entirely",
+  "settings.aiOcrPrompt": "AI document OCR prompt",
+  "settings.aiOcrPromptDesc":
+    "Custom instructions sent to the AI vision model for PDF pages, images and screenshots. Leave empty to use the built-in default",
+  "settings.aiOcrPromptPlaceholder":
+    "e.g. Do not merge tables that span across pages",
+  "settings.drawTablePrompt": "AI draw-table prompt",
+  "settings.drawTablePromptDesc":
+    "Custom instructions for the AI vision model when extracting tables from drawn lines. Leave empty to use the built-in default",
+  "settings.drawTablePromptPlaceholder":
+    "e.g. Keep the footnotes beside the table",
+  "settings.customPrompt": "Custom",
   "settings.loadingConfig": "Loading configuration…",
   "settings.noVendors": "No vendors configured yet",
   "settings.noVendorsDesc":
@@ -494,6 +505,15 @@ const zh: Record<TranslationKey, string> = {
     "仅对非文本页面使用远程 AI 视觉模型进行 OCR",
   "settings.ocrMode.disabled": "不使用 OCR",
   "settings.ocrMode.disabledDesc": "完全跳过 OCR",
+  "settings.aiOcrPrompt": "AI 文档 OCR 提示词",
+  "settings.aiOcrPromptDesc":
+    "发送给 AI 视觉模型用于 PDF 页面/图片/截图 OCR 的自定义指令.留空使用内置默认提示词",
+  "settings.aiOcrPromptPlaceholder": "例如:不要合并跨页的表格",
+  "settings.drawTablePrompt": "AI 划线表格提示词",
+  "settings.drawTablePromptDesc":
+    "划线提取表格时发送给 AI 视觉模型的自定义指令.留空使用内置默认提示词",
+  "settings.drawTablePromptPlaceholder": "例如:保留表格旁的脚注",
+  "settings.customPrompt": "自定义",
   "settings.loadingConfig": "正在加载配置…",
   "settings.noVendors": "还没有配置供应商",
   "settings.noVendorsDesc":

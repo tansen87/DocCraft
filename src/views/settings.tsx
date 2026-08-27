@@ -37,6 +37,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -181,6 +182,8 @@ export function SettingsView() {
   const [ocrLowPrecision, setOcrLowPrecision] = useState(true);
   const [ocrModelSize, setOcrModelSize] = useState<OcrModelSize>("small");
   const [textSeparator, setTextSeparator] = useState("|");
+  const [aiOcrPrompt, setAiOcrPrompt] = useState("");
+  const [drawTablePrompt, setDrawTablePrompt] = useState("");
   const [enableTray, setEnableTray] = useState(true);
   const [snipResultPopup, setSnipResultPopup] = useState(true);
   const [snipAutoCopy, setSnipAutoCopy] = useState(true);
@@ -209,6 +212,8 @@ export function SettingsView() {
         setOcrLowPrecision(settings.ocrLowPrecision ?? true);
         setOcrModelSize(settings.ocrModelSize ?? "small");
         setTextSeparator(settings.textSeparator);
+        setAiOcrPrompt(settings.aiOcrPrompt ?? "");
+        setDrawTablePrompt(settings.drawTablePrompt ?? "");
         setEnableTray(settings.enableTray);
         setSnipResultPopup(settings.snipResultPopup ?? true);
         setSnipAutoCopy(settings.snipAutoCopy ?? true);
@@ -262,6 +267,8 @@ export function SettingsView() {
       ocrLowPrecision,
       ocrModelSize,
       textSeparator,
+      aiOcrPrompt,
+      drawTablePrompt,
       snipResultPopup,
       snipAutoCopy,
       snipResultOpacity,
@@ -451,6 +458,16 @@ export function SettingsView() {
                   ocrModelSize={ocrModelSize}
                   onOcrModelSizeChange={(v) => {
                     setOcrModelSize(v);
+                    markDirty();
+                  }}
+                  aiOcrPrompt={aiOcrPrompt}
+                  onAiOcrPromptChange={(v) => {
+                    setAiOcrPrompt(v);
+                    markDirty();
+                  }}
+                  drawTablePrompt={drawTablePrompt}
+                  onDrawTablePromptChange={(v) => {
+                    setDrawTablePrompt(v);
                     markDirty();
                   }}
                 />
@@ -670,6 +687,10 @@ function OcrSettingsPanel({
   onOcrLowPrecisionChange,
   ocrModelSize,
   onOcrModelSizeChange,
+  aiOcrPrompt,
+  onAiOcrPromptChange,
+  drawTablePrompt,
+  onDrawTablePromptChange,
 }: {
   vendors: VendorForm[];
   onChange: (updater: SetStateAction<VendorForm[]>) => void;
@@ -680,6 +701,10 @@ function OcrSettingsPanel({
   onOcrLowPrecisionChange: (v: boolean) => void;
   ocrModelSize: OcrModelSize;
   onOcrModelSizeChange: (v: OcrModelSize) => void;
+  aiOcrPrompt: string;
+  onAiOcrPromptChange: (v: string) => void;
+  drawTablePrompt: string;
+  onDrawTablePromptChange: (v: string) => void;
 }) {
   const { t } = useI18n();
 
@@ -883,6 +908,27 @@ function OcrSettingsPanel({
         </SettingRow>
       </Panel>
 
+      {/* Custom prompts for the remote AI vision paths (empty = built-in
+          default). Both are collapsible so the OCR page stays tidy. */}
+      <Panel>
+        <PromptTextarea
+          title={t("settings.aiOcrPrompt")}
+          description={t("settings.aiOcrPromptDesc")}
+          value={aiOcrPrompt}
+          onChange={onAiOcrPromptChange}
+          placeholder={t("settings.aiOcrPromptPlaceholder")}
+          disabled={loading}
+        />
+        <PromptTextarea
+          title={t("settings.drawTablePrompt")}
+          description={t("settings.drawTablePromptDesc")}
+          value={drawTablePrompt}
+          onChange={onDrawTablePromptChange}
+          placeholder={t("settings.drawTablePromptPlaceholder")}
+          disabled={loading}
+        />
+      </Panel>
+
       {loading ? (
         <div className="space-y-3">
           <Panel>
@@ -953,6 +999,67 @@ function OcrSettingsPanel({
         </div>
       ) : null}
     </>
+  );
+}
+
+/**
+ * Collapsible setting row backed by a textarea. Collapsed by default so the
+ * long custom prompts do not dominate the OCR settings page.
+ */
+function PromptTextarea({
+  title,
+  description,
+  value,
+  onChange,
+  placeholder,
+  disabled,
+}: {
+  title: string;
+  description: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  disabled?: boolean;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="px-4 py-3.5">
+      <button
+        type="button"
+        onClick={() => !disabled && setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-start gap-2 text-left transition-colors"
+      >
+        <ChevronDown
+          className={cn(
+            "mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform duration-200",
+            open && "rotate-180",
+          )}
+        />
+        <span className="min-w-0 flex-1 space-y-0.5">
+          <Label className="cursor-pointer">{title}</Label>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {description}
+          </p>
+        </span>
+        {value.trim().length > 0 ? (
+          <span className="mt-0.5 shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+            {t("settings.customPrompt")}
+          </span>
+        ) : null}
+      </button>
+      {open ? (
+        <Textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          disabled={disabled}
+          className="mt-2"
+          rows={4}
+        />
+      ) : null}
+    </div>
   );
 }
 

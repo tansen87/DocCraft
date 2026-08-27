@@ -367,6 +367,14 @@ pub struct AppSettings {
   /// accurate column boundaries at the cost of speed and memory.
   #[serde(default = "default_true")]
   pub draw_table_high_precision: bool,
+  /// Custom prompt for the remote AI document-OCR path (PDF pages, images,
+  /// screenshots). Empty string falls back to the built-in default prompt.
+  #[serde(default)]
+  pub ai_ocr_prompt: String,
+  /// Custom prompt for the remote AI draw-table path (image / PDF line-draw
+  /// extraction). Empty string falls back to the built-in default prompt.
+  #[serde(default)]
+  pub draw_table_prompt: String,
 }
 
 /// Local PaddleOCR model tier. Tiny is the fastest with the lowest accuracy,
@@ -567,6 +575,8 @@ impl Default for AppSettings {
       ocr_low_precision: true,
       ocr_model_size: OcrModelSize::default(),
       draw_table_high_precision: true,
+      ai_ocr_prompt: String::new(),
+      draw_table_prompt: String::new(),
     }
   }
 }

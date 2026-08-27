@@ -1,6 +1,6 @@
 # 功能扩展提案清单(Feature Expansion Proposals)
 
-状态:待评审(P0:仅 2.3 已落地,2.1/2.2/2.4 已移除)
+状态:待评审(2.3 与 3.1 已落地,2.1/2.2/2.4 已移除)
 关联:[../index.md](../index.md)(项目结构与现状)、[00001_snip-performance.md](./00001_snip-performance.md)、[00005_snip-local-ocr-latency.md](./00005_snip-local-ocr-latency.md)(snip 性能硬约束)、[00007_ui-modernization.md](./00007_ui-modernization.md)(UI 待办)
 
 ---
@@ -17,9 +17,9 @@
 
 ---
 
-## 2. P0 — 高收益低成本(建议第一批)
+## 2. P0 — 高收益低成本
 
-### 2.1 draw-table 横向行分隔线
+### 2.1 draw-table 横向行分隔线 ✅
 
 现状:`draw-table-panel.tsx` / `canvas-overlay.tsx` 只有 `verticalLines` 一套数据;发给后端时 `horizontalLines: []` 为固定空数组。复杂页面(多行表头、行合并)仅靠竖线无法纠正行列划分。后端 `grid_rebuild.rs` 已具备"Grid/region 重建"基础设施,只是没有输入。
 
@@ -35,13 +35,15 @@
 
 ## 3. P1 — 体验与可靠性补强
 
-### 3.1 AI 视觉 Prompt 自定义
+### 3.1 AI 视觉 Prompt 自定义 ✅
 
 现状:`src-tauri/src/core/ocr.rs:20` 的 `OCR_PROMPT` 与 `:391` 的 `DRAW_TABLE_PROMPT` 为编译期常量,页面版式特殊(章节批注、脚注密集)时用户无法干预识别风格。
 
 方案:`AppSettings` 增加 `aiOcrPrompt` / `drawTablePrompt`(空 = 默认常量),HTTP 请求组装时替换;设置页 OCR 服务区加两个可折叠文本域;随 `export_config` / `import_config` 自然迁移。
 
 验收:填入自定义模板(如"不要合并跨页表格")后 forceAi 结果确实变化;清空字段恢复内置默认文案。
+
+落地:`AppSettings` 新增 `ai_ocr_prompt` / `draw_table_prompt`(`#[serde(default)]` 空串兜底);`ocr.rs` 新增 `effective_ai_ocr_prompt` / `effective_draw_table_prompt`,接入 hybrid session / image-to-md / 截图 / draw-table(AI 分支)全部远程调用点;设置页 OCR 服务区新增两个可折叠文本域(`PromptTextarea`);导出导入沿用 `appSettings` 序列化天然迁移。
 
 ### 3.2 页码范围转换
 
