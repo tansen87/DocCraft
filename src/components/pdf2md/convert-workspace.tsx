@@ -10,6 +10,13 @@ import { convertWithOcr } from "./render-pdf-pages";
 import { StatusBar } from "./status-bar";
 import { DrawTablePanel } from "@/components/draw-table/draw-table-panel";
 import { useI18n } from "@/i18n";
+import { Link2 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import {
   convertPdf,
   detectPdf,
@@ -112,6 +119,14 @@ export function ConvertWorkspace({
     seq: number;
   } | null>(null);
   const jumpSeqRef = useRef(0);
+  /** Page-link mode: clicking a page on either side jumps the other pane. */
+  const [syncEnabled, setSyncEnabled] = useState(false);
+  /** Page jump request for the Markdown preview (PDF page clicked back). */
+  const [markdownJumpPage, setMarkdownJumpPage] = useState<{
+    page: number;
+    seq: number;
+  } | null>(null);
+  const markdownJumpSeqRef = useRef(0);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -320,6 +335,11 @@ export function ConvertWorkspace({
     setJumpPage({ page, seq: jumpSeqRef.current });
   }, []);
 
+  const jumpMarkdown = useCallback((page: number) => {
+    markdownJumpSeqRef.current += 1;
+    setMarkdownJumpPage({ page, seq: markdownJumpSeqRef.current });
+  }, []);
+
   // Structured notices for the status bar bell. Ids are stable so read /
   // dismissed tracking survives re-renders.
   const notices = useMemo<StatusNotice[]>(() => {
@@ -446,6 +466,7 @@ export function ConvertWorkspace({
             path={filePath}
             className="min-h-[280px]"
             scrollToPage={jumpPage}
+            onPageSelect={syncEnabled ? jumpMarkdown : undefined}
           />
 
           <div className="min-h-0 min-w-0">
@@ -456,6 +477,28 @@ export function ConvertWorkspace({
                 onExport={handleExport}
                 className="h-full"
                 showPageMarkers
+                scrollToPage={syncEnabled ? markdownJumpPage : null}
+                onPageSelect={syncEnabled ? jumpToPage : undefined}
+                toolbar={
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => setSyncEnabled((v) => !v)}
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                          syncEnabled
+                            ? "bg-primary/15 text-primary"
+                            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        )}
+                      >
+                        <Link2 className="size-3.5" />
+                        {t("preview.sync")}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t("preview.syncHint")}</TooltipContent>
+                  </Tooltip>
+                }
               />
             ) : null}
           </div>

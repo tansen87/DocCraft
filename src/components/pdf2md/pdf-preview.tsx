@@ -25,9 +25,16 @@ interface PdfPreviewProps {
    * the scroll even when the same page is requested twice in a row.
    */
   scrollToPage?: { page: number; seq: number } | null;
+  /** Called when a rendered page is clicked (page-link mode). */
+  onPageSelect?: (page: number) => void;
 }
 
-export function PdfPreview({ path, className, scrollToPage }: PdfPreviewProps) {
+export function PdfPreview({
+  path,
+  className,
+  scrollToPage,
+  onPageSelect,
+}: PdfPreviewProps) {
   const { t } = useI18n();
   const surfaceRef = useRef<HTMLDivElement>(null);
   const wrapperRefs = useRef(new Map<number, HTMLDivElement>());
@@ -38,6 +45,19 @@ export function PdfPreview({ path, className, scrollToPage }: PdfPreviewProps) {
     undefined,
   );
   const lastWidth = useRef(0);
+  /** Page number just jumped to, briefly highlighted. */
+  const [focusing, setFocusing] = useState<number | null>(null);
+  const focusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  /**
+   * Last scroll offset captured while the pane was visible. Switching tabs
+   * hides views with `display:none`, which collapses the scroll container and
+   * zeroes its offset - restore it when the pane is shown again so the linked
+   * page stays put instead of being lost to the top of the document.
+   */
+  const savedScrollTopRef = useRef(0);
+  const paneVisibleRef = useRef(true);
 
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
@@ -80,6 +100,7 @@ export function PdfPreview({ path, className, scrollToPage }: PdfPreviewProps) {
     canvasRefs.current.clear();
     wrapperRefs.current.clear();
     renderedRef.current.clear();
+    savedScrollTopRef.current = 0;
     setVisible(new Set());
     setAspects({});
 
@@ -101,6 +122,45 @@ export function PdfPreview({ path, className, scrollToPage }: PdfPreviewProps) {
       task.destroy();
     };
   }, [path]);
+
+  // Snapshot the scroll offset while visible and restore it once the pane is
+  // shown again (workspace tabs hide inactive views with display:none, which
+  // wipes the scroll container's offset). The offset keeps updating from real
+  // scroll events only while the viewport still has a box, so the hide-time
+  // collapse to 0 cannot clobber the snapshot.
+  useEffect(() => {
+    const surface = surfaceRef.current;
+    const viewport = surface?.closest(
+      '[data-slot="scroll-area-viewport"]',
+    ) as HTMLElement | null;
+    if (!viewport) return;
+
+    const onScroll = () => {
+      if (paneVisibleRef.current && viewport.clientHeight > 0) {
+        savedScrollTopRef.current = viewport.scrollTop;
+      }
+    };
+    const io = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          paneVisibleRef.current = true;
+          if (savedScrollTopRef.current > 0) {
+            const top = savedScrollTopRef.current;
+            savedScrollTopRef.current = 0;
+            viewport.scrollTop = top;
+          }
+        } else {
+          paneVisibleRef.current = false;
+        }
+      }
+    });
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    io.observe(viewport);
+    return () => {
+      viewport.removeEventListener("scroll", onScroll);
+      io.disconnect();
+    };
+  }, [status]);
 
   useEffect(() => {
     if (status !== "ready" || !pageCount) return;
@@ -193,13 +253,32 @@ export function PdfPreview({ path, className, scrollToPage }: PdfPreviewProps) {
     }
   }, [visible]);
 
-  // Jump to a requested page (status bar notice chips). The page renders on
-  // demand once the IntersectionObserver sees it after the scroll.
+  // Jump to a requested page (status bar notice chips / Markdown page-link).
+  // The page renders on demand once the IntersectionObserver sees it after the
+  // scroll. Nearby jumps animate; far jumps land instantly so 1000-page
+  // documents still hop in well under the acceptance budget.
   useEffect(() => {
     if (!scrollToPage || status !== "ready") return;
     const el = wrapperRefs.current.get(scrollToPage.page);
     if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    const viewport = surfaceRef.current?.closest(
+      '[data-slot="scroll-area-viewport"]',
+    ) as HTMLElement | null;
+    if (viewport) {
+      const delta =
+        el.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+      el.scrollIntoView({
+        behavior:
+          Math.abs(delta) < viewport.clientHeight * 3 ? "smooth" : "auto",
+        block: "start",
+      });
+    } else {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    setFocusing(scrollToPage.page);
+    clearTimeout(focusTimer.current);
+    focusTimer.current = setTimeout(() => setFocusing(null), 1200);
+    return () => clearTimeout(focusTimer.current);
   }, [scrollToPage, status]);
 
   return (
@@ -250,16 +329,31 @@ export function PdfPreview({ path, className, scrollToPage }: PdfPreviewProps) {
                     if (el) wrapperRefs.current.set(i + 1, el);
                     else wrapperRefs.current.delete(i + 1);
                   }}
+                  onClick={onPageSelect ? () => onPageSelect(i + 1) : undefined}
+                  role={onPageSelect ? "button" : undefined}
                   style={{ aspectRatio: aspects[i + 1] ?? DEFAULT_ASPECT }}
-                  className="w-full overflow-hidden rounded-md bg-white shadow-sm ring-1 ring-border/40 dark:shadow-none dark:invert dark:hue-rotate-180"
+                  className={cn("w-full", onPageSelect && "cursor-pointer")}
                 >
-                  <canvas
-                    ref={(el) => {
-                      if (el) canvasRefs.current.set(i + 1, el);
-                      else canvasRefs.current.delete(i + 1);
-                    }}
-                    className="block h-auto w-full"
-                  />
+                  {/* Ring/hover states live OUTSIDE the dark-mode invert filter
+                      so they always use the theme accent color, not the
+                      hue-rotated inverse of it. */}
+                  <div
+                    className={cn(
+                      "h-full w-full overflow-hidden rounded-md shadow-sm ring-1 ring-border/40 transition-shadow dark:shadow-none",
+                      onPageSelect && "hover:ring-2 hover:ring-primary/70",
+                      focusing === i + 1 && "ring-2 ring-primary",
+                    )}
+                  >
+                    <div className="h-full w-full overflow-hidden rounded-md bg-white dark:invert dark:hue-rotate-180">
+                      <canvas
+                        ref={(el) => {
+                          if (el) canvasRefs.current.set(i + 1, el);
+                          else canvasRefs.current.delete(i + 1);
+                        }}
+                        className="block h-auto w-full"
+                      />
+                    </div>
+                  </div>
                 </div>
               ))}
           </div>

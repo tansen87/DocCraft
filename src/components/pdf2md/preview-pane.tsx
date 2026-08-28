@@ -73,19 +73,53 @@ const MarkdownPageView = memo(function MarkdownPageView({
 });
 
 /** Visible "Page N" / "Image N" divider shown at each marker when enabled. */
-function PageBreakMarker({ marker }: { marker: string }) {
+function PageBreakMarker({
+  marker,
+  clickable,
+  active,
+  onClick,
+}: {
+  marker: string;
+  clickable?: boolean;
+  active?: boolean;
+  onClick?: () => void;
+}) {
   const { t } = useI18n();
   const page = marker.match(/\d+/)?.[0];
   if (!page) return null;
   const isImage = /[Ii]mage|张/.test(marker);
   return (
-    <div className="mb-2 flex items-center gap-2">
-      <span className="whitespace-nowrap text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+    <div
+      role={clickable ? "button" : undefined}
+      onClick={onClick}
+      className={cn(
+        "mb-2 flex items-center gap-2",
+        clickable &&
+          "-mx-1 cursor-pointer select-none rounded-md px-1 transition-colors hover:bg-accent/70",
+        active && "bg-accent text-foreground",
+      )}
+    >
+      <span
+        className={cn(
+          "whitespace-nowrap text-xs font-semibold uppercase tracking-widest",
+          active ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
         {isImage ? t("preview.image", { page }) : t("preview.page", { page })}
       </span>
       <div className="h-px flex-1 bg-border" />
     </div>
   );
+}
+
+/** Extract the PDF page number from a `<!-- Page N -->` marker; null for image markers. */
+function markerPageNumber(marker: string): number | null {
+  if (!marker) return null;
+  if (/[Ii]mage/.test(marker) || marker.includes("张")) return null;
+  const m = marker.match(/\d+/);
+  if (!m) return null;
+  const n = Number(m[0]);
+  return Number.isInteger(n) && n > 0 ? n : null;
 }
 
 interface PreviewPaneProps {
@@ -97,6 +131,13 @@ interface PreviewPaneProps {
   showPageMarkers?: boolean;
   /** Optional extra controls rendered in the header before the mode toggle. */
   toolbar?: ReactNode;
+  /**
+   * Request to scroll this pane to the page whose `<!-- Page N -->` marker
+   * matches. The `seq` counter re-triggers the jump even for the same page.
+   */
+  scrollToPage?: { page: number; seq: number } | null;
+  /** Called when a Page block is clicked (page-link mode). */
+  onPageSelect?: (page: number) => void;
   className?: string;
 }
 
@@ -106,12 +147,19 @@ export function PreviewPane({
   onExport,
   showPageMarkers = false,
   toolbar,
+  scrollToPage,
+  onPageSelect,
   className,
 }: PreviewPaneProps) {
   const { t } = useI18n();
   const [mode, setMode] = useState<"raw" | "render">("render");
   const [copied, setCopied] = useState(false);
   const [exporting, setExporting] = useState(false);
+  /** Index of the page block just jumped to, briefly highlighted. */
+  const [focusing, setFocusing] = useState<number | null>(null);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
 
   // Paginate the markdown by its page markers and render pages lazily, so
   // large documents don't pay the whole ReactMarkdown + highlight parse at once.
@@ -120,14 +168,24 @@ export function PreviewPane({
     () => new Set(pages.length ? [0] : []),
   );
   const articleRef = useRef<HTMLElement | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef(new Map<number, HTMLDivElement>());
   // Last measured height of each page, used to reserve real space for
   // reclaimed (unmounted) pages so scrolling back up doesn't reflow.
   const pageHeightsRef = useRef(new Map<number, number>());
+  /**
+   * Last scroll offset captured while the pane was visible. Switching tabs
+   * hides views with `display:none`, which collapses the scroll container and
+   * zeroes its offset - restore it when the pane is shown again so the linked
+   * page stays put instead of being lost to the top of the document.
+   */
+  const savedScrollTopRef = useRef(0);
+  const paneVisibleRef = useRef(true);
 
   useEffect(() => {
     setVisiblePages(new Set(pages.length ? [0] : []));
     pageHeightsRef.current.clear();
+    savedScrollTopRef.current = 0;
   }, [pages]);
 
   // Measure a mounted page's height once so its reclaimed placeholder can
@@ -173,6 +231,78 @@ export function PreviewPane({
     return () => io.disconnect();
   }, [mode, pages]);
 
+  // Jump this pane to the page whose marker matches the request (PDF side
+  // linked back to Markdown). Nearby jumps animate, far jumps land instantly
+  // so 1000-page documents still hop in well under the acceptance budget.
+  useEffect(() => {
+    if (!scrollToPage) return;
+    const idx = pages.findIndex(
+      (pg) => markerPageNumber(pg.marker) === scrollToPage.page,
+    );
+    if (idx < 0) return;
+    const el = pageRefs.current.get(idx);
+    if (!el) return;
+    const viewport = el.closest(
+      '[data-slot="scroll-area-viewport"]',
+    ) as HTMLElement | null;
+    if (viewport) {
+      const delta =
+        el.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+      el.scrollIntoView({
+        behavior:
+          Math.abs(delta) < viewport.clientHeight * 3 ? "smooth" : "auto",
+        block: "start",
+      });
+    } else {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    setFocusing(idx);
+    clearTimeout(focusTimerRef.current);
+    focusTimerRef.current = setTimeout(() => setFocusing(null), 1200);
+    return () => clearTimeout(focusTimerRef.current);
+  }, [scrollToPage, pages]);
+
+  // Snapshot the scroll offset while visible and restore it once the pane is
+  // shown again (workspace tabs hide inactive views with display:none, which
+  // wipes the scroll container's offset). The offset keeps updating from real
+  // scroll events only while the viewport still has a box, so the hide-time
+  // collapse to 0 cannot clobber the snapshot.
+  useEffect(() => {
+    const viewport = rootRef.current?.querySelector<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]',
+    );
+    if (!viewport) return;
+    // Render/raw mode and a new markdown throw away the pane's layout, so a
+    // snapshot captured under the old layout must not be re-applied.
+    savedScrollTopRef.current = 0;
+
+    const onScroll = () => {
+      if (paneVisibleRef.current && viewport.clientHeight > 0) {
+        savedScrollTopRef.current = viewport.scrollTop;
+      }
+    };
+    const io = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          paneVisibleRef.current = true;
+          if (savedScrollTopRef.current > 0) {
+            const top = savedScrollTopRef.current;
+            savedScrollTopRef.current = 0;
+            viewport.scrollTop = top;
+          }
+        } else {
+          paneVisibleRef.current = false;
+        }
+      }
+    });
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    io.observe(viewport);
+    return () => {
+      viewport.removeEventListener("scroll", onScroll);
+      io.disconnect();
+    };
+  }, [mode, pages]);
+
   async function copy() {
     try {
       await navigator.clipboard.writeText(markdown);
@@ -195,6 +325,7 @@ export function PreviewPane({
 
   return (
     <GlassPanel
+      ref={rootRef}
       className={cn(
         "flex h-full min-h-0 flex-col overflow-hidden rounded-xl",
         className,
@@ -320,7 +451,19 @@ export function PreviewPane({
                   <div ref={measurePage(i)}>
                     {showPageMarkers && pg.marker ? (
                       <div>
-                        <PageBreakMarker marker={pg.marker} />
+                        <PageBreakMarker
+                          marker={pg.marker}
+                          clickable={!!onPageSelect}
+                          active={focusing === i}
+                          onClick={
+                            onPageSelect
+                              ? () => {
+                                  const n = markerPageNumber(pg.marker);
+                                  if (n != null) onPageSelect(n);
+                                }
+                              : undefined
+                          }
+                        />
                         <MarkdownPageView markdown={pg.content} />
                       </div>
                     ) : (

@@ -291,6 +291,9 @@ const en = {
   "preview.raw": "Raw",
   "preview.page": "Page {page}",
   "preview.image": "Image {page}",
+  "preview.sync": "Link",
+  "preview.syncHint":
+    "Click a page in either pane to jump to the same page in the other",
 
   "tablepreview.title": "Table Preview",
   "tablepreview.summary": "{count} tables · {rows} rows of data",
@@ -616,6 +619,8 @@ const zh: Record<TranslationKey, string> = {
   "preview.raw": "原始",
   "preview.page": "第 {page} 页",
   "preview.image": "第 {page} 张",
+  "preview.sync": "对照",
+  "preview.syncHint": "点击任一侧页面,另一侧跳转到对应页",
 
   "tablepreview.title": "表格预览",
   "tablepreview.summary": "共 {count} 张表格 · {rows} 行数据",

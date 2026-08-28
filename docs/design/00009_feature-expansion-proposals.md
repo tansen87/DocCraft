@@ -55,15 +55,7 @@
 
 落地:convert 工具栏新增"页码范围"输入(`toolbar.pageRange`,`1-5,8,12-14`);前端 `convert-workspace.tsx` 解析范围并裁剪待渲染 OCR 页集合,`render-pdf-pages.ts` 透传 range;后端 `grid_rebuild::parse_page_range` / `rebuild_document_for_pages` 限页并保留原页号,`convert_pdf` 与 `start_session` 接收 `pageRange` 参数,`finish_session` 仅组装范围内页面。留空行为与现状完全一致。
 
-### 3.3 文件夹批量导入
-
-现状:整窗拖放支持多文件,但不支持目录;上百个 PDF 只能多次框选。
-
-方案:drop 收到目录时(及文件对话框启用 directory 选择)递归收集 `.pdf` / `.png|.jpg` / `.md`,按扩展名分流到对应视图的任务列表;超过阈值(如 200)先弹确认。
-
-验收:拖入一个三类文件混杂的目录后,各视图任务数与磁盘统计一致,子目录递归正确。
-
-### 3.4 PDF ↔ Markdown 页级对照定位
+### 3.3 PDF ↔ Markdown 页级对照定位
 
 现状:split-view 双侧滚动互不联动;好在 markdown 已有 `<!-- Page N -->` 分隔与 page-chips 定位机制,映射数据是现成的。
 
