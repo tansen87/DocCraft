@@ -16,6 +16,8 @@ import type {
   OcrVendorInput,
   MonitorSnapshot,
   ShotRegion,
+  UsageInput,
+  UsageStats,
   UpdateInfo,
 } from "./types";
 
@@ -82,6 +84,17 @@ export const getAppSettings = () => invoke<AppSettings>("get_app_settings");
 
 export const setAppSettings = (settings: AppSettings) =>
   invoke<void>("set_app_settings", { settings });
+
+/** Append one usage event to the local JSONL stats log (never uploaded). */
+export const recordUsage = (entry: UsageInput) =>
+  invoke<void>("record_usage", { entry });
+
+/** Aggregate the local usage log into today / month / total counters. */
+export const getUsageStats = (today: string) =>
+  invoke<UsageStats>("get_usage_stats", { today });
+
+/** Delete the local usage log ("clear statistics" in settings). */
+export const clearUsageStats = () => invoke<void>("clear_usage_stats");
 
 /** Export app settings + OCR vendors to a JSON file. When `includeSecrets`
  * is set, API keys are written in plaintext (the caller must warn first). */

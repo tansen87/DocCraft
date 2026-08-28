@@ -437,3 +437,61 @@ export interface UpdateInfo {
   /** Release page URL. */
   url: string;
 }
+
+// ─── Local usage statistics ───────────────────────────────────────────────
+
+/** What kind of operation produced a usage log entry. */
+export type UsageKind =
+  | "pdf"
+  | "drawTable"
+  | "imageTable"
+  | "image"
+  | "screenshot";
+
+/** One usage event appended to the local JSONL log (`record_usage`). */
+export interface UsageInput {
+  kind: UsageKind;
+  /** Files involved (normally 1 - one entry per operation). */
+  fileCount: number;
+  /** Pages involved (1 for a single image / screenshot). */
+  pageCount: number;
+  /** Pages that actually went through OCR. */
+  ocrPageCount: number;
+  /** OCR engine used: `"local"` (PaddleOCR) or `"ai"` (remote vision); null when no OCR ran. */
+  engine?: "local" | "ai" | null;
+  /** Wall-clock duration of the whole operation in milliseconds. */
+  totalMs: number;
+  /** Local calendar date (`YYYY-MM-DD`) when the operation happened. */
+  date: string;
+}
+
+/** Aggregated counters for one time period (read-only Settings card). */
+export interface UsagePeriodStats {
+  /** Total files (PDF + images combined). */
+  fileCount: number;
+  /** Total pages (PDF pages; each image / screenshot counts as 1). */
+  pageCount: number;
+  /** Pages that went through OCR (PDF OCR pages + one per image / screenshot). */
+  ocrPageCount: number;
+  /** Total wall-clock time of all operations in milliseconds. */
+  totalMs: number;
+  /** PDF files (kinds `pdf` / `drawTable`). */
+  pdfFileCount: number;
+  /** PDF document pages converted or extracted. */
+  pdfPageCount: number;
+  /** PDF pages that went through OCR (the true "scan ratio"). */
+  pdfOcrPageCount: number;
+  /** Image files (kinds `image` / `screenshot` / `imageTable`). */
+  imageFileCount: number;
+  /** OCR pages handled by the local PaddleOCR engine. */
+  localOcrPageCount: number;
+  /** OCR pages handled by the remote AI vision engine. */
+  aiOcrPageCount: number;
+}
+
+/** Read-only aggregate shown in Settings (`get_usage_stats`). */
+export interface UsageStats {
+  month: UsagePeriodStats;
+  today: UsagePeriodStats;
+  total: UsagePeriodStats;
+}

@@ -7,6 +7,7 @@ import { DrawTableToolbar } from "@/components/draw-table/draw-table-toolbar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/i18n";
 import { extractDrawTable, getAppSettings } from "@/lib/ipc";
+import { engineForMode, recordUsage } from "@/lib/usage";
 import type {
   ActivityProgress,
   DrawLine,
@@ -486,6 +487,17 @@ export function DrawTablePanel({
         const result = useOcr
           ? await extractWithOcr(request, renderScale)
           : await extractDrawTable(pdfPath, request);
+
+        const ocrEngine = engineForMode(settings.ocrMode);
+        const pageCount = new Set(result.regions.map((r) => r.page)).size;
+        recordUsage({
+          kind: "drawTable",
+          fileCount: 1,
+          pageCount,
+          ocrPageCount: result.ocrPages.length,
+          engine: ocrEngine,
+          totalMs: result.processingTimeMs,
+        });
 
         const md =
           result.tableCount > 0

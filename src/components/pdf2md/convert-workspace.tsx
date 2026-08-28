@@ -17,6 +17,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { engineForMode, recordUsage } from "@/lib/usage";
 import {
   convertPdf,
   detectPdf,
@@ -263,6 +264,15 @@ export function ConvertWorkspace({
       setResult(r);
       setDetect(r);
       onConverted?.(r);
+      const engine = engineForMode(settings.ocrMode);
+      recordUsage({
+        kind: "pdf",
+        fileCount: 1,
+        pageCount: range ? range.length : r.pageCount,
+        ocrPageCount: engine ? ocrPages.length : 0,
+        engine,
+        totalMs: r.processingTimeMs,
+      });
       toast.success(t("toast.convertDone"));
     } catch (e) {
       toast.error(t("toast.convertFailed"), { description: String(e) });

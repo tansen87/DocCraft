@@ -50,6 +50,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { setViewTask } from "@/lib/global-task";
 import { useI18n } from "@/i18n";
 import { ensureMaxConcurrent } from "@/lib/concurrency";
+import { recordUsage } from "@/lib/usage";
 import {
   cancelScreenshot,
   exportMarkdown,
@@ -192,6 +193,14 @@ export function ImageToMdView() {
               it.id === job.id ? { ...it, status: "done", result } : it,
             ),
           );
+          recordUsage({
+            kind: "image",
+            fileCount: 1,
+            pageCount: 1,
+            ocrPageCount: 1,
+            engine: result.engine,
+            totalMs: result.durationMs,
+          });
         } catch (e) {
           mutate((prev) =>
             prev.map((it) =>
@@ -277,6 +286,15 @@ export function ImageToMdView() {
         );
         // Focus the preview (and its Copy button) on the freshest shot.
         setSelectedId(id);
+
+        recordUsage({
+          kind: "screenshot",
+          fileCount: 1,
+          pageCount: 1,
+          ocrPageCount: 1,
+          engine: result.engine,
+          totalMs: result.durationMs,
+        });
 
         // Post-recognition extras, both on by default and configurable in
         // Settings → Screenshot: auto-copy the text and show a popup. They

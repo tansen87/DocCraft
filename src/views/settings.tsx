@@ -27,6 +27,7 @@ import {
   Trash2,
   Upload,
   X,
+  BarChart3,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -63,18 +64,24 @@ import {
   exportConfig,
   getAppSettings,
   getOcrConfig,
+  getUsageStats,
   importConfig,
   revealOcrKey,
   saveOcrConfig,
   setAppSettings,
+  clearUsageStats,
 } from "@/lib/ipc";
 import { setMaxConcurrent as applyRuntimeConcurrency } from "@/lib/concurrency";
 import { useI18n } from "@/i18n";
+import { formatDuration } from "@/lib/format-duration";
+import { localDate } from "@/lib/usage";
 import type {
   AppSettings,
   OcrModel,
   OcrVendor,
   OcrVendorInput,
+  UsagePeriodStats,
+  UsageStats,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -86,7 +93,8 @@ type SettingsSection =
   | "tray"
   | "draw"
   | "excel"
-  | "backup";
+  | "backup"
+  | "stats";
 
 const SECTIONS: {
   id: SettingsSection;
@@ -98,7 +106,8 @@ const SECTIONS: {
     | "settings.tray"
     | "settings.drawTable"
     | "settings.excel"
-    | "settings.backup";
+    | "settings.backup"
+    | "settings.stats";
   icon: typeof ScanText;
 }[] = [
   {
@@ -135,6 +144,11 @@ const SECTIONS: {
     id: "backup",
     labelKey: "settings.backup",
     icon: RotateCcw,
+  },
+  {
+    id: "stats",
+    labelKey: "settings.stats",
+    icon: BarChart3,
   },
   {
     id: "tray",
@@ -193,14 +207,15 @@ export function SettingsView() {
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [usageStats, setUsageStats] = useState<UsageStats | null>(null);
   /** Bumped after a config import so the load effect re-runs. */
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.all([getOcrConfig(), getAppSettings()])
-      .then(([ocrVendors, settings]) => {
+    Promise.all([getOcrConfig(), getAppSettings(), getUsageStats(localDate())])
+      .then(([ocrVendors, settings, usage]) => {
         if (cancelled) return;
         setVendors(ocrVendors.map(toForm));
         setOcrMode(settings.ocrMode);
@@ -219,6 +234,7 @@ export function SettingsView() {
         setSnipAutoCopy(settings.snipAutoCopy ?? true);
         setSnipResultOpacity(settings.snipResultOpacity ?? 60);
         setMainWindowOpacity(settings.mainWindowOpacity ?? 100);
+        setUsageStats(usage);
         setLoaded(true);
       })
       .catch((e) =>
@@ -235,6 +251,12 @@ export function SettingsView() {
   const markDirty = () => {
     if (loaded) setDirty(true);
   };
+
+  /** Re-fetch usage stats after "clear statistics" so the card resets. */
+  const refreshUsage = useCallback(async () => {
+    const stats = await getUsageStats(localDate()).catch(() => null);
+    setUsageStats(stats);
+  }, []);
 
   async function handleSave() {
     setSaving(true);
@@ -570,6 +592,14 @@ export function SettingsView() {
                     setDirty(false);
                     setReloadKey((k) => k + 1);
                   }}
+                />
+              </section>
+              <section id="settings-stats" className="scroll-mt-3">
+                <SectionHeader title={t("settings.stats")} />
+                <UsageStatsPanel
+                  stats={usageStats}
+                  busy={loading}
+                  onCleared={() => void refreshUsage()}
                 />
               </section>
               <section id="settings-tray" className="scroll-mt-3">
@@ -1658,6 +1688,162 @@ function BackupPanel({
         </Button>
       </SettingRow>
     </Panel>
+  );
+}
+
+/** Read-only local usage statistics card (this month / today / all time). */
+function UsageStatsPanel({
+  stats,
+  busy,
+  onCleared,
+}: {
+  stats: UsageStats | null;
+  busy: boolean;
+  /** Called after the local usage log has been deleted, to reset the card. */
+  onCleared?: () => void;
+}) {
+  const { t } = useI18n();
+  const [clearing, setClearing] = useState(false);
+
+  async function handleClear() {
+    setClearing(true);
+    try {
+      await clearUsageStats();
+      onCleared?.();
+      toast.success(t("toast.statsCleared"));
+    } catch (e) {
+      toast.error(t("toast.statsClearFailed"), { description: String(e) });
+    } finally {
+      setClearing(false);
+    }
+  }
+
+  return (
+    <Panel>
+      <UsagePeriodBlock
+        title={t("settings.statsToday")}
+        period={stats?.today}
+        busy={busy}
+      />
+      <UsagePeriodBlock
+        title={t("settings.statsMonth")}
+        period={stats?.month}
+        busy={busy}
+      />
+      <UsagePeriodBlock
+        title={t("settings.statsTotal")}
+        period={stats?.total}
+        busy={busy}
+      />
+      <SettingRow
+        label={t("settings.clearStats")}
+        description={t("settings.clearStatsDesc")}
+      >
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => void handleClear()}
+          disabled={busy || clearing}
+        >
+          {clearing ? <Loader2 className="animate-spin" /> : <Trash2 />}
+          {t("settings.clearStats")}
+        </Button>
+      </SettingRow>
+    </Panel>
+  );
+}
+
+function UsagePeriodBlock({
+  title,
+  period,
+  busy,
+}: {
+  title: string;
+  period: UsagePeriodStats | undefined;
+  busy: boolean;
+}) {
+  const { t } = useI18n();
+  const pdfOcrRatio =
+    period && period.pdfPageCount > 0
+      ? Math.round((period.pdfOcrPageCount / period.pdfPageCount) * 100)
+      : null;
+  const ocrRatio =
+    pdfOcrRatio ??
+    (period && period.pageCount > 0
+      ? Math.round((period.ocrPageCount / period.pageCount) * 100)
+      : 0);
+  return (
+    <div className="space-y-2 px-4 py-3.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          {title}
+        </span>
+        {busy || !period ? (
+          <Skeleton className="h-4 w-16" />
+        ) : (
+          <span className="text-xs text-muted-foreground">
+            {t("settings.statsDuration")}{" "}
+            <span className="font-medium tabular-nums text-foreground">
+              {formatDuration(period.totalMs)}
+            </span>
+          </span>
+        )}
+      </div>
+      {busy || !period ? (
+        <div className="flex gap-4">
+          <Skeleton className="h-4 w-14" />
+          <Skeleton className="h-4 w-14" />
+          <Skeleton className="h-4 w-14" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-x-4 gap-y-1.5">
+          <StatCell
+            label={t("settings.statsFiles")}
+            value={period.fileCount}
+            sub={t("settings.statsFilesSplit", {
+              pdf: period.pdfFileCount,
+              image: period.imageFileCount,
+            })}
+          />
+          <StatCell
+            label={t("settings.statsPages")}
+            value={period.pageCount}
+            sub={t("settings.statsPagesSplit", {
+              pdf: period.pdfPageCount,
+              image: period.imageFileCount,
+            })}
+          />
+          <StatCell
+            label={t("settings.statsOcrPages")}
+            value={`${period.ocrPageCount} · ${ocrRatio}%`}
+            sub={t("settings.statsOcrSplit", {
+              local: period.localOcrPageCount,
+              ai: period.aiOcrPageCount,
+            })}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCell({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="truncate text-xs text-muted-foreground">{label}</p>
+      <p className="text-sm font-medium tabular-nums">{value}</p>
+      {sub ? (
+        <p className="truncate text-[11px] text-muted-foreground">{sub}</p>
+      ) : null}
+    </div>
   );
 }
 

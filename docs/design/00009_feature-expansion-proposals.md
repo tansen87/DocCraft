@@ -1,6 +1,6 @@
 # 功能扩展提案清单(Feature Expansion Proposals)
 
-状态:待评审(2.3 与 3.1、3.2 已落地,2.1/2.2/2.4 已移除)
+状态:待评审(2.3、3.1、3.2 与 4.2 已落地,2.1/2.2/2.4 已移除)
 关联:[../index.md](../index.md)(项目结构与现状)、[00001_snip-performance.md](./00001_snip-performance.md)、[00005_snip-local-ocr-latency.md](./00005_snip-local-ocr-latency.md)(snip 性能硬约束)、[00007_ui-modernization.md](./00007_ui-modernization.md)(UI 待办)
 
 ---
@@ -55,7 +55,7 @@
 
 落地:convert 工具栏新增"页码范围"输入(`toolbar.pageRange`,`1-5,8,12-14`);前端 `convert-workspace.tsx` 解析范围并裁剪待渲染 OCR 页集合,`render-pdf-pages.ts` 透传 range;后端 `grid_rebuild::parse_page_range` / `rebuild_document_for_pages` 限页并保留原页号,`convert_pdf` 与 `start_session` 接收 `pageRange` 参数,`finish_session` 仅组装范围内页面。留空行为与现状完全一致。
 
-### 3.3 PDF ↔ Markdown 页级对照定位
+### 3.3 PDF ↔ Markdown 页级对照定位 ✅
 
 现状:split-view 双侧滚动互不联动;好在 markdown 已有 `<!-- Page N -->` 分隔与 page-chips 定位机制,映射数据是现成的。
 
@@ -73,22 +73,12 @@
 
 建议:先落 HTML 导出(几乎零风险);DOCX 在有真实需求评估 `docx-rs` 表格还原度后再立项——涉及新依赖,本文只作占位。
 
-### 4.2 本地使用统计
+### 4.2 本地使用统计 ✅
 
 现状:各类 DTO 都带 `processingTimeMs` 但无处沉淀,用户(和开发者)看不到"本月转了多少页、OCR 占比多少"。
 
-方案:后端本地 JSON 追加式日志(日期、文件数、页数、OCR 页数、engine=local/ai、总耗时),绝不联网上传;设置页"备份与恢复"旁新增只读统计卡片;清除缓存区提供"清空统计"。
+方案:后端本地 JSON 追加式日志(日期、文件数、页数、OCR 页数、engine=local/ai、总耗时),绝不联网上传;设置页"备份与恢复"旁新增只读统计卡片;统计卡片最末一行提供"清空统计"。
 
 验收:执行一轮批量+截图操作后,统计数字与实际次数、时长吻合;导出/导入配置不影响统计数据文件。
 
----
-
-## 5. 落地顺序建议
-
-| 批次 | 内容 | 理由 |
-|------|------|------|
-| 第 1 批 | 2.1 / 2.2 / 2.4 | 几乎全部复用现有组件与命令,改动小、体感强 |
-| 第 2 批 | 2.3(横向行线) | 前后端都要动,但范围收敛在 draw-table/grid_rebuild |
-| 第 3 批 | 3.1 + 3.2(settings.rs + ocr.rs 一批改) | 同一模块集中改造,共用一次设置 schema 变更 |
-| 第 4 批 | 3.3 / 3.4 / 3.5 | 中等工作量,彼此独立 |
-| 持续 | P2 各项 | 含新插件/新依赖与发布流水线,逐项评审立项 |
+落地:零新依赖(本地日期桶由前端 `Date` 计算,后端无需时区库)。新建 `core/usage_stats.rs`,以 **JSONL 追加式** 写入配置目录下独立文件 `usage-log.jsonl`,逐行含日期/`kind`/文件数/页数/OCR 页数/`engine`(`"local"|"ai"`)/耗时,`Mutex` 串行化追加避免并发交错;新增 `record_usage` / `get_usage_stats` / `clear_usage_stats` 三个 Tauri 命令。前端 `lib/usage.ts` 提供 fire-and-forget 的 `recordUsage`(失败静默,绝不影响转换流程),接入单文件/批量 PDF 转换、划线表格(PDF 与图片)、图片→MD、截图识别全部完成路径。设置页"备份与恢复"旁新增"使用统计"只读卡片(本月/今日/累计三联,含 OCR 占比),"清空统计"按钮位于该统计卡片最末一行。文件数与页数按 PDF / 图片拆分:PDF 组(`pdf`/`drawTable`,划线来源为 PDF 文档页即计入)、图片组(`image`/`screenshot`/`imageTable`);「文件数」保留总数附 PDF/图片拆分,「页数」保留总数附 `PDF x 页 · 图片 y 页`。「OCR 页数」数值行在页数后附占比(`页数 · 占比%`,取 PDF 页的真实扫描占比,无 PDF 时回退总体占比,避免被必然 100% OCR 的图片/截图拉高),其下按引擎拆分为 `本地 x 页 · AI y 页`(逐引擎 OCR 页数,需先记录 engine 再聚合)。「总耗时」置于时段标题(今日/本月/累计)同一行右侧;统计区固定三列(文件数 / 页数 / OCR 页数)占满整行。统计独立成文件,`export_config` / `import_config` 不触碰,天然满足迁移隔离。

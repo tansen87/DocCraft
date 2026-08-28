@@ -11,7 +11,7 @@ const CONFIG_FILE: &str = "ocr-config.json";
 const APP_SETTINGS_FILE: &str = "app-settings.json";
 const MAX_CONCURRENT_LIMIT: u32 = 16;
 
-fn data_dir(_app: &AppHandle) -> Result<PathBuf, String> {
+pub fn data_dir(_app: &AppHandle) -> Result<PathBuf, String> {
   let dir = get_resources_dir().join("data");
   if !dir.exists() {
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create data directory: {e}"))?;

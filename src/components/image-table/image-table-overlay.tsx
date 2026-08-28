@@ -1,11 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Loader2,
-  MoveHorizontal,
-  MoveVertical,
-  Trash2,
-  X,
-} from "lucide-react";
+import { Loader2, MoveHorizontal, MoveVertical, Trash2, X } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { Button } from "@/components/ui/button";
@@ -17,6 +11,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { ocrImageTable } from "@/lib/ipc";
+import { recordUsage } from "@/lib/usage";
 import type { ImageTableResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -207,6 +202,14 @@ export function ImageTableOverlay({
       });
       onResult(result);
       onClose();
+      recordUsage({
+        kind: "imageTable",
+        fileCount: 1,
+        pageCount: 1,
+        ocrPageCount: 1,
+        engine: result.engine,
+        totalMs: result.durationMs,
+      });
     } catch (e) {
       toast.error(t("imgTable.extractFailed"), { description: String(e) });
     } finally {

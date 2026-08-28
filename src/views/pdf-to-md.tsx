@@ -39,6 +39,7 @@ import {
 } from "@/lib/ipc";
 import { ensureMaxConcurrent } from "@/lib/concurrency";
 import { setViewTask } from "@/lib/global-task";
+import { engineForMode, recordUsage } from "@/lib/usage";
 import { useI18n } from "@/i18n";
 import type { ConvertResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -129,6 +130,15 @@ export function BatchView() {
             : await convertPdf(job.path);
         if (isCancelled()) throw new CancelledError();
         patchItem(job.id, { status: "done", result });
+        const ocrEngine = engineForMode(settings.ocrMode);
+        recordUsage({
+          kind: "pdf",
+          fileCount: 1,
+          pageCount: det.pageCount,
+          ocrPageCount: ocrEngine ? ocrPages.length : 0,
+          engine: ocrEngine,
+          totalMs: result.processingTimeMs,
+        });
       } catch (e) {
         if (isCancelled() || e instanceof CancelledError) {
           // Cancelled - back to the queue as a plain unconverted item.

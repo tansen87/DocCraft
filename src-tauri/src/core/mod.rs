@@ -10,6 +10,7 @@ pub mod secret;
 pub mod settings;
 pub mod snip;
 pub mod update;
+pub mod usage_stats;
 
 use std::path::{Path, PathBuf};
 

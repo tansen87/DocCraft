@@ -12,7 +12,7 @@ use crate::core::snip::{SnipStore, get_window_under_cursor};
 use crate::models::{
   AppSettings, ConvertResult, DetectResult, DrawTableRequest, DrawTableResult, HybridSessionInfo,
   ImageTableRequest, ImageTableResult, MdAnalyzeResult, MdExportResult, MonitorSnapshot,
-  OcrImageResult, OcrVendorDto, OcrVendorInput, ShotRegion,
+  OcrImageResult, OcrVendorDto, OcrVendorInput, ShotRegion, UsageInput, UsageStats,
 };
 
 /// Managed tray icon state so we can rebuild it when settings change.
@@ -248,6 +248,31 @@ fn apply_app_settings(app: &tauri::AppHandle, settings: AppSettings) -> Result<(
 #[tauri::command]
 async fn set_app_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
   apply_app_settings(&app, settings)
+}
+
+/// Append one usage event to the local JSONL stats log (never uploaded).
+#[tauri::command]
+async fn record_usage(app: tauri::AppHandle, entry: UsageInput) -> Result<(), String> {
+  tauri::async_runtime::spawn_blocking(move || core::usage_stats::record_usage(&app, entry))
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Aggregate the local usage log into today / month / total counters.
+/// `today` is the frontend-computed local date (`YYYY-MM-DD`).
+#[tauri::command]
+async fn get_usage_stats(app: tauri::AppHandle, today: String) -> Result<UsageStats, String> {
+  tauri::async_runtime::spawn_blocking(move || core::usage_stats::get_usage_stats(&app, &today))
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Delete the local usage log ("clear statistics" in settings).
+#[tauri::command]
+async fn clear_usage_stats(app: tauri::AppHandle) -> Result<(), String> {
+  tauri::async_runtime::spawn_blocking(move || core::usage_stats::clear_usage_stats(&app))
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Export the full configuration (app settings + OCR vendors) to a JSON file.
@@ -565,6 +590,9 @@ pub fn run() {
       reveal_ocr_key,
       get_app_settings,
       set_app_settings,
+      record_usage,
+      get_usage_stats,
+      clear_usage_stats,
       export_config,
       import_config,
       check_for_update,

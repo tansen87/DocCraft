@@ -538,6 +538,133 @@ pub struct WindowInfo {
   pub height: i32,
 }
 
+// ─── Local usage statistics types ─────────────────────────────────────────
+
+/// What kind of operation produced a usage log entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UsageKind {
+  /// PDF → Markdown conversion (`convert_pdf` or a hybrid session).
+  Pdf,
+  /// Manual draw-table extraction on a PDF page.
+  DrawTable,
+  /// Draw-table extraction on an imported image.
+  ImageTable,
+  /// Single-image → Markdown recognition.
+  Image,
+  /// Screenshot region recognition.
+  Screenshot,
+}
+
+/// Usage event submitted by the frontend. The local calendar date is computed
+/// in the webview so the backend needs no timezone database (zero new deps).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageInput {
+  pub kind: UsageKind,
+  /// Files involved (normally 1 - one entry per operation).
+  pub file_count: u32,
+  /// Pages involved (1 for a single image / screenshot).
+  pub page_count: u32,
+  /// Pages that actually went through OCR.
+  pub ocr_page_count: u32,
+  /// OCR engine used: `"local"` (PaddleOCR) or `"ai"` (remote vision).
+  /// `None` when no OCR was performed.
+  pub engine: Option<String>,
+  /// Wall-clock duration of the whole operation in milliseconds.
+  pub total_ms: u64,
+  /// Local calendar date when the operation happened (`YYYY-MM-DD`).
+  pub date: String,
+}
+
+/// One persisted line of the append-only usage log (JSONL).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageLogEntry {
+  pub date: String,
+  pub kind: UsageKind,
+  pub file_count: u32,
+  pub page_count: u32,
+  pub ocr_page_count: u32,
+  pub engine: Option<String>,
+  pub total_ms: u64,
+}
+
+impl UsageLogEntry {
+  /// `YYYY-MM` bucket derived from `date`.
+  pub fn month(&self) -> String {
+    self.date.chars().take(7).collect()
+  }
+}
+
+/// Aggregated counters for one time period.
+#[derive(Debug, Clone, Copy, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsagePeriodStats {
+  /// Total files (PDF + images combined).
+  pub file_count: u32,
+  /// Total pages (PDF pages; each image / screenshot counts as 1).
+  pub page_count: u32,
+  /// Pages that went through OCR (PDF OCR pages + one per image / screenshot).
+  pub ocr_page_count: u32,
+  /// Total wall-clock time of all operations in milliseconds.
+  pub total_ms: u64,
+  /// PDF files (kinds `Pdf` / `DrawTable`).
+  pub pdf_file_count: u32,
+  /// PDF document pages converted or extracted.
+  pub pdf_page_count: u32,
+  /// PDF pages that went through OCR (the true "scan ratio").
+  pub pdf_ocr_page_count: u32,
+  /// Image files (kinds `Image` / `Screenshot` / `ImageTable`).
+  pub image_file_count: u32,
+  /// OCR pages handled by the local PaddleOCR engine.
+  pub local_ocr_page_count: u32,
+  /// OCR pages handled by the remote AI vision engine.
+  pub ai_ocr_page_count: u32,
+}
+
+impl UsagePeriodStats {
+  pub(crate) fn add(&mut self, entry: &UsageLogEntry) {
+    self.file_count = self.file_count.saturating_add(entry.file_count);
+    self.page_count = self.page_count.saturating_add(entry.page_count);
+    self.ocr_page_count = self.ocr_page_count.saturating_add(entry.ocr_page_count);
+    self.total_ms = self.total_ms.saturating_add(entry.total_ms);
+    match entry.engine.as_deref() {
+      Some("local") => {
+        self.local_ocr_page_count = self
+          .local_ocr_page_count
+          .saturating_add(entry.ocr_page_count);
+      }
+      Some("ai") => {
+        self.ai_ocr_page_count = self.ai_ocr_page_count.saturating_add(entry.ocr_page_count);
+      }
+      _ => {}
+    }
+    match entry.kind {
+      UsageKind::Pdf | UsageKind::DrawTable => {
+        self.pdf_file_count = self.pdf_file_count.saturating_add(entry.file_count);
+        self.pdf_page_count = self.pdf_page_count.saturating_add(entry.page_count);
+        self.pdf_ocr_page_count = self.pdf_ocr_page_count.saturating_add(entry.ocr_page_count);
+      }
+      UsageKind::Image | UsageKind::ImageTable | UsageKind::Screenshot => {
+        self.image_file_count = self.image_file_count.saturating_add(entry.file_count);
+      }
+    }
+  }
+}
+
+/// Read-only aggregate sent to the settings page (`get_usage_stats`).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageStats {
+  /// Current calendar month.
+  pub month: UsagePeriodStats,
+  /// Today.
+  pub today: UsagePeriodStats,
+  /// All recorded history.
+  pub total: UsagePeriodStats,
+}
+
 fn default_true() -> bool {
   true
 }
