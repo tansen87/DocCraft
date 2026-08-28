@@ -30,18 +30,35 @@ pub fn detect_pdf(path: &str, use_cache: bool) -> Result<DetectResult, PdfError>
 /// with positioned items for line-break reconstruction. When `use_cache` is
 /// on, the per-page markdowns and positioned items are reused from the shared
 /// extraction cache (populated by an earlier detection of the same file).
-pub fn convert_pdf(path: &str, use_cache: bool) -> Result<ConvertResult, PdfError> {
+///
+/// When `page_range` is `Some`, only those pages participate in the output
+/// (see [`grid_rebuild::rebuild_document_for_pages`]) while each keeps its
+/// original document page number in its marker.
+pub fn convert_pdf(
+  path: &str,
+  use_cache: bool,
+  page_range: Option<&str>,
+) -> Result<ConvertResult, PdfError> {
   let start = Instant::now();
 
   let det = pdf_inspector::detect_pdf(path)?;
   let ext = extract_cache::cached_extraction(path, use_cache)?;
-  let markdown = grid_rebuild::rebuild_document_from_markdowns(ext.page_markdowns.clone());
+
+  let page_count = ext.page_markdowns.len() as u32;
+  let target_pages = grid_rebuild::parse_page_range(page_range, page_count)
+    .unwrap_or_else(|| (1..=page_count).collect());
+
+  let markdown = grid_rebuild::rebuild_document_for_pages(&ext.page_markdowns, &target_pages);
 
   // Report the pages that truly need OCR (detection-flagged + image-only pages
-  // whose extraction is empty), independent of the OCR toggle.
+  // whose extraction is empty), independent of the OCR toggle. Restricted to
+  // the selected range so the status bar reflects what the conversion covers.
   let mut info = DetectResult::from(&det);
-  info.pages_needing_ocr =
-    grid_rebuild::merge_ocr_pages(&info.pages_needing_ocr, &ext.page_markdowns);
+  let all_ocr = grid_rebuild::merge_ocr_pages(&info.pages_needing_ocr, &ext.page_markdowns);
+  info.pages_needing_ocr = all_ocr
+    .into_iter()
+    .filter(|p| target_pages.contains(p))
+    .collect();
 
   // A local-only conversion never runs OCR, so every page that needs it is
   // skipped - record them so the UI can surface them in the status bar.

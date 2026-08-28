@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::core::page_marker::page_marker;
 use crate::core::settings;
-use crate::core::{extract_cache, get_resources_dir};
+use crate::core::{extract_cache, get_resources_dir, grid_rebuild};
 use crate::models::{
   ConvertResult, DetectResult, HybridSessionInfo, LayoutDto, OcrImageResult, OcrMode, OcrModelSize,
   OcrVendor, PdfTypeDto,
@@ -600,6 +600,11 @@ pub async fn ai_recognize_image(
 pub struct HybridSession {
   /// Per-page markdown for the whole document (0-indexed), matching `info.page_count`.
   pub pages: Vec<String>,
+  /// 1-indexed pages included in this session's output. When a page range was
+  /// requested this is the parsed, clamped range; otherwise it is every page
+  /// in the document. Empty pages are matched by original page number so the
+  /// `<!-- Page N -->` markers stay stable.
+  pub target_pages: Vec<u32>,
   /// Detection metadata, computed once at start.
   pub info: DetectResult,
   /// `(base_url, model_id, api_key)` when at least one page uses remote OCR.
@@ -642,6 +647,7 @@ pub fn start_session(
   store: &HybridStore,
   path: &str,
   ocr_pages: Vec<u32>,
+  page_range: Option<&str>,
 ) -> Result<HybridSessionInfo, String> {
   let start = Instant::now();
 
@@ -653,9 +659,15 @@ pub fn start_session(
 
   let det = pdf_inspector::detect_pdf(path).map_err(|e| e.to_string())?;
 
+  // The pages actually included in this session. A page range (converted at
+  // the document's page count) restricts conversion to a subset - e.g. one
+  // chapter of a large document - while keeping original page numbers.
+  let target_pages = grid_rebuild::parse_page_range(page_range, page_count)
+    .unwrap_or_else(|| (1..=page_count).collect());
+
   let mut ocr_set: Vec<u32> = ocr_pages
     .into_iter()
-    .filter(|p| (1..=page_count).contains(p))
+    .filter(|p| (1..=page_count).contains(p) && target_pages.contains(p))
     .collect();
   ocr_set.sort_unstable();
   ocr_set.dedup();
@@ -670,9 +682,9 @@ pub fn start_session(
   let ocr_mode = app_settings.ocr_mode;
   let mut resolved: Option<(String, String, String)> = None;
 
-  // Force modes: add every page to the OCR set.
+  // Force modes: add every page in the target range to the OCR set.
   if ocr_mode.is_force() {
-    for p in 1..=page_count {
+    for &p in &target_pages {
       if !ocr_set.contains(&p) {
         ocr_set.push(p);
       }
@@ -698,7 +710,7 @@ pub fn start_session(
   // toggle or whether a provider was resolved.
   for (i, md) in page_markdowns.iter().enumerate() {
     let page_1 = (i + 1) as u32;
-    if md.trim().is_empty() && !ocr_set.contains(&page_1) {
+    if target_pages.contains(&page_1) && md.trim().is_empty() && !ocr_set.contains(&page_1) {
       ocr_set.push(page_1);
     }
   }
@@ -743,6 +755,7 @@ pub fn start_session(
 
   let session = HybridSession {
     pages: page_markdowns,
+    target_pages,
     info: info.clone(),
     resolved,
     client,
@@ -878,28 +891,29 @@ pub fn finish_session(store: &HybridStore, session_id: &str) -> Result<ConvertRe
     .remove(session_id)
     .ok_or_else(|| "The conversion session does not exist or has expired".to_string())?;
 
-  let page_count = session.info.page_count;
   let skipped: HashSet<u32> = session.skipped_pages.iter().copied().collect();
-  let mut parts = Vec::with_capacity(page_count as usize);
-  for i in 0..page_count {
-    let page_1 = i + 1;
-    let md = if skipped.contains(&page_1) {
-      format!(
-        "<!-- OCR skipped (page {page_1}): {} -->",
-        session.skip_reason
-      )
-    } else {
-      match session.ocr_results.get(&page_1) {
-        Some(m) => m.clone(),
-        None => session
-          .pages
-          .get(i as usize)
-          .map(|p| p.trim().to_string())
-          .unwrap_or_default(),
-      }
-    };
-    parts.push(format!("{}\n\n{md}", page_marker(page_1)));
-  }
+  let parts: Vec<String> = session
+    .target_pages
+    .iter()
+    .map(|&page_1| {
+      let md = if skipped.contains(&page_1) {
+        format!(
+          "<!-- OCR skipped (page {page_1}): {} -->",
+          session.skip_reason
+        )
+      } else {
+        match session.ocr_results.get(&page_1) {
+          Some(m) => m.clone(),
+          None => session
+            .pages
+            .get(page_1.saturating_sub(1) as usize)
+            .map(|p| p.trim().to_string())
+            .unwrap_or_default(),
+        }
+      };
+      format!("{}\n\n{md}", page_marker(page_1))
+    })
+    .collect();
 
   Ok(ConvertResult {
     info: session.info,

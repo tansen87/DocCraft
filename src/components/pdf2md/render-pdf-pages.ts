@@ -83,9 +83,12 @@ export async function convertWithOcr(
   onProgress?: (p: ActivityProgress | null) => void,
   /** Pollled between stages; when it turns true the session is aborted. */
   isCancelled?: () => boolean,
+  /** Optional page-range spec (`"1-5,8,12-14"`) passed to the backend so text
+   * extraction is limited to those pages. `undefined` converts the whole document. */
+  pageRange?: string,
 ): Promise<ConvertResult> {
   if (isCancelled?.()) throw new CancelledError();
-  const session = await startHybridSession(path, pages);
+  const session = await startHybridSession(path, pages, pageRange);
   try {
     if (session.ocrConfigured) {
       let done = 0;

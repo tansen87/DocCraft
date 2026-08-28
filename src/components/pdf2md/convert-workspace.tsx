@@ -40,6 +40,38 @@ interface ConvertWorkspaceProps {
   onClear?: () => void;
 }
 
+/**
+ * Parse a page-range spec (`"1-5,8,12-14"`) into the set of 1-indexed pages it
+ * selects, clamped to `[1, pageCount]`. Returns `null` when the spec is blank
+ * or selects nothing, meaning "convert the whole document".
+ */
+function parsePageRange(spec: string, pageCount: number): number[] | null {
+  const trimmed = spec.trim();
+  if (!trimmed) return null;
+  if (!Number.isFinite(pageCount) || pageCount <= 0) return null;
+  const pages = new Set<number>();
+  for (const rawToken of trimmed.split(",")) {
+    const token = rawToken.trim();
+    if (!token) continue;
+    const dashIdx = token.indexOf("-");
+    if (dashIdx >= 0) {
+      const a = Number(token.slice(0, dashIdx).trim());
+      const b = Number(token.slice(dashIdx + 1).trim());
+      if (!Number.isInteger(a) || !Number.isInteger(b)) continue;
+      const lo = Math.min(a, b);
+      const hi = Math.max(a, b);
+      for (let p = lo; p <= Math.min(hi, pageCount); p += 1) {
+        if (p >= 1) pages.add(p);
+      }
+    } else {
+      const p = Number(token);
+      if (Number.isInteger(p) && p >= 1 && p <= pageCount) pages.add(p);
+    }
+  }
+  if (pages.size === 0) return null;
+  return [...pages].sort((a, b) => a - b);
+}
+
 export function ConvertWorkspace({
   filePath,
   fileName,
@@ -58,6 +90,8 @@ export function ConvertWorkspace({
   );
   const [drawMode, setDrawMode] = useState(false);
   const [mergedMarkdown, setMergedMarkdown] = useState<string | null>(null);
+  /** Page-range spec (`"1-5,8,12-14"`); empty converts all pages. */
+  const [pageRange, setPageRange] = useState("");
   /** Elapsed time (ms) of the last draw-table extraction, shown in the preview header. */
   const [extractTimeMs, setExtractTimeMs] = useState(0);
   const [pageSize, setPageSize] = useState<{
@@ -183,20 +217,34 @@ export function ConvertWorkspace({
     if (!filePath) return;
     setConverting(true);
     try {
-      const needOcr = detect?.pagesNeedingOcr ?? [];
-      // Route by the OCR toggle: when enabled the backend also OCRs pages whose
-      // local text extraction came up empty (image pages detection may miss).
+      // A page range restarts conversion for only the selected pages. Empty
+      // range (null) keeps the current whole-document behaviour.
+      const range = parsePageRange(pageRange, detect?.pageCount ?? 0);
+      const inRange = range ? new Set<number>(range) : null;
+      const needOcr = inRange
+        ? (detect?.pagesNeedingOcr ?? []).filter((p) => inRange.has(p))
+        : (detect?.pagesNeedingOcr ?? []);
       const settings = await getAppSettings();
       const isForce =
         settings.ocrMode === "forceLocal" || settings.ocrMode === "forceAi";
-      const ocrPages =
-        isForce && detect
+      const ocrPages = range
+        ? isForce
+          ? range
+          : needOcr
+        : isForce && detect
           ? Array.from({ length: detect.pageCount }, (_, i) => i + 1)
           : needOcr;
+      const rangeSpec = range ? pageRange : undefined;
       const r =
         settings.ocrMode !== "disabled"
-          ? await convertWithOcr(filePath, ocrPages, setActivity)
-          : await convertPdf(filePath);
+          ? await convertWithOcr(
+              filePath,
+              ocrPages,
+              setActivity,
+              undefined,
+              rangeSpec,
+            )
+          : await convertPdf(filePath, rangeSpec);
       setResult(r);
       setDetect(r);
       onConverted?.(r);
@@ -207,7 +255,7 @@ export function ConvertWorkspace({
       setConverting(false);
       setActivity(null);
     }
-  }, [filePath, detect, onConverted, t]);
+  }, [filePath, detect, pageRange, onConverted, t]);
 
   const handleConvertRef = useRef(handleConvert);
   handleConvertRef.current = handleConvert;
@@ -331,6 +379,9 @@ export function ConvertWorkspace({
         busy={busy}
         converting={converting}
         drawMode={drawMode}
+        pageRange={pageRange}
+        onPageRangeChange={setPageRange}
+        pageCount={detect?.pageCount ?? 0}
         onToggleDrawMode={toggleDrawMode}
         onConvert={handleConvert}
         onClear={onClear}
@@ -390,7 +441,7 @@ export function ConvertWorkspace({
         </div>
       ) : (
         /* Normal Mode: PDF preview + Markdown preview */
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-1 lg:grid-cols-2">
           <PdfPreview
             path={filePath}
             className="min-h-[280px]"

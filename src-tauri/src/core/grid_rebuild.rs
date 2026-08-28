@@ -45,18 +45,6 @@ pub fn rebuild_pages(
   parts
 }
 
-/// Join already-rebuilt per-page markdowns into a single document string with
-/// `<!-- Page N -->` markers, so callers that rebuilt pages once (e.g. from the
-/// shared extraction cache) do not run the rebuild a second time.
-pub fn rebuild_document_from_markdowns(page_markdowns: Vec<String>) -> String {
-  page_markdowns
-    .into_iter()
-    .enumerate()
-    .map(|(i, page)| format!("{}\n\n{page}", page_marker(i as u32 + 1)))
-    .collect::<Vec<_>>()
-    .join("\n\n")
-}
-
 /// Pages that truly need OCR: detection-flagged pages plus any page whose
 /// rebuilt markdown is empty (image-only pages the detector can miss).
 /// Derived from the real extraction, so the result is independent of whether
@@ -71,6 +59,64 @@ pub fn merge_ocr_pages(detected: &[u32], page_markdowns: &[String]) -> Vec<u32> 
   pages.sort_unstable();
   pages.dedup();
   pages
+}
+
+/// Rebuild a markdown document from only the given 1-indexed pages, keeping
+/// each page's **original** document page number in its `<!-- Page N -->`
+/// marker regardless of the range, so downstream page attribution (e.g. the
+/// Markdown > Excel export) is unaffected. Pages are emitted in ascending order.
+pub fn rebuild_document_for_pages(page_markdowns: &[String], pages: &[u32]) -> String {
+  pages
+    .iter()
+    .filter(|p| **p >= 1 && **p <= page_markdowns.len() as u32)
+    .map(|p| {
+      let md = page_markdowns
+        .get((*p - 1) as usize)
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+      format!("{}\n\n{md}", page_marker(*p))
+    })
+    .collect::<Vec<_>>()
+    .join("\n\n")
+}
+
+/// Parse a page-range spec (`"1-5,8,12-14"`) into a sorted, deduped list of
+/// 1-indexed page numbers, clamped to `page_count`. Returns `None` for an
+/// empty/blank spec (meaning "the whole document"). Malformed tokens are
+/// skipped; if no token yields a valid page the function falls back to `None`.
+pub fn parse_page_range(spec: Option<&str>, page_count: u32) -> Option<Vec<u32>> {
+  let spec = spec?.trim();
+  if spec.is_empty() {
+    return None;
+  }
+  let mut pages: Vec<u32> = Vec::new();
+  for token in spec.split(',') {
+    let token = token.trim();
+    if token.is_empty() {
+      continue;
+    }
+    if let Some((a, b)) = token.split_once('-') {
+      let Ok(a) = a.trim().parse::<u32>() else {
+        continue;
+      };
+      let Ok(b) = b.trim().parse::<u32>() else {
+        continue;
+      };
+      let (lo, hi) = (a.min(b), a.max(b));
+      for p in lo..=hi {
+        if p >= 1 && p <= page_count {
+          pages.push(p);
+        }
+      }
+    } else if let Ok(p) = token.parse::<u32>() {
+      if p >= 1 && p <= page_count {
+        pages.push(p);
+      }
+    }
+  }
+  pages.sort_unstable();
+  pages.dedup();
+  if pages.is_empty() { None } else { Some(pages) }
 }
 
 /// Group positioned items into visual lines (top-to-bottom, then left-to-right).
@@ -167,5 +213,45 @@ mod tests {
     let refs: Vec<&TextItem> = items.iter().collect();
     let md = lines_to_markdown(&refs);
     assert_eq!(md, "姓名 年龄 城市\n张三 28 北京\n李四 35 上海");
+  }
+
+  #[test]
+  fn parse_page_range_handles_specs() {
+    // Blank spec => whole document (None).
+    assert_eq!(parse_page_range(None, 20), None);
+    assert_eq!(parse_page_range(Some("   "), 20), None);
+    // Basic ranges, single pages, mixing, clamping and dedup.
+    assert_eq!(parse_page_range(Some("1-5"), 20), Some(vec![1, 2, 3, 4, 5]));
+    assert_eq!(
+      parse_page_range(Some("1-5,8,12-14"), 20),
+      Some(vec![1, 2, 3, 4, 5, 8, 12, 13, 14])
+    );
+    // Reversed range and clamping to page_count (20 is the max).
+    assert_eq!(
+      parse_page_range(Some("5-2,30,20"), 20),
+      Some(vec![2, 3, 4, 5, 20])
+    );
+    // Numbers out of range and 0 are dropped.
+    assert_eq!(parse_page_range(Some("0,99,3"), 10), Some(vec![3]));
+    // Malformed tokens are skipped; when nothing parses, None.
+    assert_eq!(parse_page_range(Some("x,y"), 10), None);
+  }
+
+  #[test]
+  fn rebuild_document_for_pages_keeps_original_numbers() {
+    let markdowns = vec![
+      "page one".to_string(),
+      "page two".to_string(),
+      "page three".to_string(),
+      "page four".to_string(),
+    ];
+    let md = rebuild_document_for_pages(&markdowns, &[2, 4]);
+    assert_eq!(
+      md,
+      "<!-- Page 2 -->\n\npage two\n\n<!-- Page 4 -->\n\npage four"
+    );
+    // Out-of-range pages are ignored.
+    let md2 = rebuild_document_for_pages(&markdowns, &[1, 99]);
+    assert_eq!(md2, "<!-- Page 1 -->\n\npage one");
   }
 }

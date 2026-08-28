@@ -247,8 +247,8 @@ Commands (invoked from `src/lib/ipc.ts`):
 | Command              | Input                                   | Output                       |
 |----------------------|-----------------------------------------|------------------------------|
 | `detect_pdf`         | `{ path }`                              | `DetectResult` (type, confidence, pages needing OCR, layout) |
-| `convert_pdf`        | `{ path }`                              | `ConvertResult` (`DetectResult` + `markdown` + `processingTimeMs`) |
-| `hybrid_session_start` | `{ path, ocrPages }` - 1-indexed pages needing OCR | `HybridSessionInfo` (sessionId + `ocrConfigured` + detect info; text pages extracted once and kept on the backend; no engine → OCR pages are skipped, not failed) |
+| `convert_pdf`        | `{ path, pageRange? }` - `pageRange` (`"1-5,8,12-14"`) optionally limits output pages (markers keep original page numbers) | `ConvertResult` (`DetectResult` + `markdown` + `processingTimeMs`) |
+| `hybrid_session_start` | `{ path, ocrPages, pageRange? }` - 1-indexed pages needing OCR; `pageRange` optionally limits text extraction | `HybridSessionInfo` (sessionId + `ocrConfigured` + detect info; text pages extracted once and kept on the backend; no engine → OCR pages are skipped, not failed) |
 | `hybrid_page_ocr`    | `{ sessionId, page, imagePng }` - one rendered page | `string` - that page's markdown (local PaddleOCR or remote AI; OCR failures degrade to a `<!-- OCR 失败 … -->` comment) |
 | `hybrid_session_finish` | `{ sessionId }`                       | `ConvertResult` - text + OCR pages reassembled in document order; reports `skippedPages` and `failedPages` |
 | `hybrid_session_abort` | `{ sessionId }`                      | `void` (discards an abandoned session) |

@@ -231,6 +231,10 @@ const en = {
   "toolbar.exitDraw": "Exit draw mode",
   "toolbar.enterDraw": "Manually draw lines to define table area",
   "toolbar.extractToMarkdown": "Extract to Markdown",
+  "toolbar.pageRange": "Pages",
+  "toolbar.pageRangePlaceholder": "e.g. 1-5,8",
+  "toolbar.pageRangeHint":
+    "Convert only these pages (e.g. 1-5,8). Empty converts the whole {count}-page document",
   "mode.drawTable": "Draw table mode",
 
   "status.pdfType": "PDF type",
@@ -556,6 +560,9 @@ const zh: Record<TranslationKey, string> = {
   "toolbar.exitDraw": "退出划线模式",
   "toolbar.enterDraw": "手动划线定义表格区域",
   "toolbar.extractToMarkdown": "提取为 Markdown",
+  "toolbar.pageRange": "页码范围",
+  "toolbar.pageRangePlaceholder": "如 1-5,8",
+  "toolbar.pageRangeHint": "仅转换这些页(如1-5,8).留空则转换全部 {count} 页",
   "mode.drawTable": "划线表格模式",
 
   "status.pdfType": "PDF 类型",

@@ -8,6 +8,7 @@ import {
 
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Tooltip,
   TooltipContent,
@@ -22,6 +23,11 @@ interface ConvertToolbarProps {
   busy: boolean;
   converting: boolean;
   drawMode: boolean;
+  /** Optional page-range spec (`"1-5,8,12-14"`); empty converts all pages. */
+  pageRange: string;
+  onPageRangeChange: (value: string) => void;
+  /** Total pages in the document, used to label the range input. */
+  pageCount: number;
   onToggleDrawMode: () => void;
   onConvert: () => void;
   onClear?: () => void;
@@ -33,6 +39,9 @@ export function ConvertToolbar({
   busy,
   converting,
   drawMode,
+  pageRange,
+  onPageRangeChange,
+  pageCount,
   onToggleDrawMode,
   onConvert,
   onClear,
@@ -52,6 +61,33 @@ export function ConvertToolbar({
           </div>
         </TooltipTrigger>
       </Tooltip>
+
+      {/* Page range input: converts only the selected pages while keeping
+          the original document page numbers in the output markers. */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <label
+              htmlFor="page-range"
+              className="whitespace-nowrap text-xs text-muted-foreground"
+            >
+              {t("toolbar.pageRange")}
+            </label>
+            <Input
+              id="page-range"
+              value={pageRange}
+              onChange={(e) => onPageRangeChange(e.target.value)}
+              disabled={busy || drawMode}
+              placeholder={t("toolbar.pageRangePlaceholder")}
+              className="h-7 w-36 shrink-0"
+            />
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>
+          {t("toolbar.pageRangeHint", { count: pageCount })}
+        </TooltipContent>
+      </Tooltip>
+
       <Tooltip>
         <TooltipTrigger asChild>
           {onClear ? (

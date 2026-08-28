@@ -1,6 +1,6 @@
 # 功能扩展提案清单(Feature Expansion Proposals)
 
-状态:待评审(2.3 与 3.1 已落地,2.1/2.2/2.4 已移除)
+状态:待评审(2.3 与 3.1、3.2 已落地,2.1/2.2/2.4 已移除)
 关联:[../index.md](../index.md)(项目结构与现状)、[00001_snip-performance.md](./00001_snip-performance.md)、[00005_snip-local-ocr-latency.md](./00005_snip-local-ocr-latency.md)(snip 性能硬约束)、[00007_ui-modernization.md](./00007_ui-modernization.md)(UI 待办)
 
 ---
@@ -45,13 +45,15 @@
 
 落地:`AppSettings` 新增 `ai_ocr_prompt` / `draw_table_prompt`(`#[serde(default)]` 空串兜底);`ocr.rs` 新增 `effective_ai_ocr_prompt` / `effective_draw_table_prompt`,接入 hybrid session / image-to-md / 截图 / draw-table(AI 分支)全部远程调用点;设置页 OCR 服务区新增两个可折叠文本域(`PromptTextarea`);导出导入沿用 `appSettings` 序列化天然迁移。
 
-### 3.2 页码范围转换
+### 3.2 页码范围转换 ✅
 
 现状:hybrid session 总是对整份 PDF 转换(`pages_needing_ocr` 全量处理);几百页文档只想取某一章时浪费时间与 token。
 
 方案:convert 工具栏加可选"页码范围"输入(`1-5,8,12-14` 语法);前端据此裁剪待渲染 OCR 页集合,后端文本提取限页(传 range 进 session start);`<!-- Page N -->` 保持**原文档页号**,Excel 归因不受影响。
 
 验收:输入范围后处理时间显著下降且输出只含该范围;不填范围行为与现状完全一致。
+
+落地:convert 工具栏新增"页码范围"输入(`toolbar.pageRange`,`1-5,8,12-14`);前端 `convert-workspace.tsx` 解析范围并裁剪待渲染 OCR 页集合,`render-pdf-pages.ts` 透传 range;后端 `grid_rebuild::parse_page_range` / `rebuild_document_for_pages` 限页并保留原页号,`convert_pdf` 与 `start_session` 接收 `pageRange` 参数,`finish_session` 仅组装范围内页面。留空行为与现状完全一致。
 
 ### 3.3 文件夹批量导入
 
