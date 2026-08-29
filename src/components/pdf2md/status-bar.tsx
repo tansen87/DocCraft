@@ -325,7 +325,7 @@ export function StatusBar({
     : null;
 
   return (
-    <GlassPanel className="flex flex-wrap items-center gap-x-4 rounded-lg px-3 py-1">
+    <GlassPanel className="flex flex-wrap items-center gap-x-4 rounded-xl px-2 py-1 mb-3">
       {hidePdfStats ? null : (
         <>
           <Stat label={t("status.pdfType")}>

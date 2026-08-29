@@ -276,6 +276,11 @@ pub struct DrawTableRequest {
   /// layer never touch these; an image is consumed only when its page has no
   /// extractable text at all.
   pub page_images: Option<Vec<PageImagePayload>>,
+  /// Regions whose content must not be recognized. Same payload as the
+  /// conversion commands: rects are viewport-relative PDF points, i.e. the
+  /// very space `pages[].page_x/page_y` describe, so no extra shift is needed
+  /// (see `docs/design/00011_draw-line-exclude-region.md`).
+  pub exclusions: Option<ExcludeRegions>,
 }
 
 // ─── Exclusion-region types (see docs/design/00010_pdf-exclude-region.md) ──

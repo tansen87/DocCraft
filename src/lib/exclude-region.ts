@@ -63,6 +63,38 @@ export function countRects(spec: ExcludeRegions | null | undefined): number {
   );
 }
 
+/**
+ * Paint the exclusion rects white on an already rendered page canvas.
+ *
+ * The image-side counterpart of the backend's element filter: neither local
+ * OCR nor AI vision ever sees the excluded content. Rects are
+ * viewport-relative PDF points (origin lower-left) while the canvas is
+ * top-left pixels, so `scale` (pixels per point) is a parameter - the
+ * conversion pipeline renders at 2.5 and the draw-table pipeline at 2.5 or
+ * 4.0 depending on its high-precision setting.
+ */
+export function maskExclusions(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  page: number,
+  exclusions: ExcludeRegions | null | undefined,
+  scale: number,
+): void {
+  const rects = rectsForPage(exclusions, page);
+  if (rects.length === 0 || scale <= 0) return;
+  ctx.save();
+  ctx.fillStyle = "#ffffff";
+  for (const r of rects) {
+    ctx.fillRect(
+      r.x * scale,
+      canvas.height - (r.y + r.height) * scale,
+      r.width * scale,
+      r.height * scale,
+    );
+  }
+  ctx.restore();
+}
+
 /** Replace (or remove, when empty) one page's rects. */
 export function withPageRects(
   spec: ExcludeRegions,

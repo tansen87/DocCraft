@@ -59,7 +59,7 @@ export function ConvertToolbar({
   const { t } = useI18n();
 
   return (
-    <GlassPanel className="flex items-center gap-3 rounded-xl px-3 py-2">
+    <GlassPanel className="flex items-center gap-2 rounded-xl px-2 py-1">
       <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
         <FileText className="size-4" />
       </span>
@@ -114,7 +114,7 @@ export function ConvertToolbar({
         <TooltipTrigger asChild>
           <button
             type="button"
-            disabled={busy || excludeMode}
+            disabled={busy}
             onClick={onToggleDrawMode}
             className={cn(
               "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 gap-1.5",
@@ -137,7 +137,7 @@ export function ConvertToolbar({
         <TooltipTrigger asChild>
           <button
             type="button"
-            disabled={busy || drawMode}
+            disabled={busy}
             onClick={onToggleExcludeMode}
             className={cn(
               "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 gap-1.5",

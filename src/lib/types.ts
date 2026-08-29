@@ -283,6 +283,12 @@ export interface DrawTableRequest {
    * extractable text at all.
    */
   pageImages?: PageImagePayload[];
+  /**
+   * Regions whose content must not be recognized. The rects are
+   * viewport-relative PDF points, i.e. the same space `pages[].pageX/pageY`
+   * describe, so the backend compares them without any further shift.
+   */
+  exclusions?: ExcludeRegions | null;
 }
 
 /** Metadata about where a table was extracted from. */
@@ -345,6 +351,14 @@ export type CanvasElement = DrawLine | DrawRect;
 
 /** Mode for the canvas overlay interaction. */
 export type DrawMode = "horizontal" | "vertical" | "rectangle" | "select";
+
+/**
+ * Active tool inside the draw-table surface. Line tools place separators on
+ * click; the exclude tool hands the pointer to the exclusion-region editor
+ * (same store as the normal-mode editor), so both orders of "draw lines first"
+ * and "exclude area first" work on the same page.
+ */
+export type DrawTool = "vertical" | "horizontal" | "exclude";
 
 // ─── Status bar activity & notices ───────────────────────────────────────
 

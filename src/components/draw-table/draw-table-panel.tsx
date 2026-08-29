@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import * as pdfjs from "pdfjs-dist";
 import { toast } from "sonner";
 
@@ -6,6 +7,7 @@ import { CanvasOverlay } from "@/components/draw-table/canvas-overlay";
 import { DrawTableToolbar } from "@/components/draw-table/draw-table-toolbar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/i18n";
+import { maskExclusions } from "@/lib/exclude-region";
 import { extractDrawTable, getAppSettings } from "@/lib/ipc";
 import { engineForMode, recordUsage } from "@/lib/usage";
 import type {
@@ -13,6 +15,8 @@ import type {
   DrawLine,
   DrawTableRequest,
   DrawTableResult,
+  DrawTool,
+  ExcludeRegions,
   MdTable,
   PageDrawTable,
   PageImagePayload,
@@ -60,6 +64,27 @@ interface DrawTablePanelProps {
    * may be needed - attaching images is harmless for text pages.
    */
   mayNeedOcr?: boolean;
+  /**
+   * Rectangles whose content must not be recognized. They are sent to the
+   * backend with the request and, additionally, painted white on the OCR page
+   * images so a remote vision model cannot see them either.
+   */
+  exclusions?: ExcludeRegions | null;
+  /**
+   * Extra layer rendered on top of the drawing surface for the given page
+   * (the exclusion-region editor). It is mounted whenever the exclusion editor
+   * is open; it only receives the pointer while the exclude tool is active, so
+   * the rects stay visible while line tools are drawn over them.
+   */
+  renderPageOverlay?: (page: number) => ReactNode;
+  /**
+   * Whether the exclusion-region editor is open (drive the workspace-level
+   * store shared with the normal-mode editor). The exclude tool needs it on so
+   * the overlay and the rect list are available.
+   */
+  exclusionEditorOpen?: boolean;
+  /** Open the exclusion-region editor (called when the exclude tool is picked). */
+  onOpenExclusionEditor?: () => void;
   /** Called when tables are extracted and ready to merge into Markdown. The
    * second argument is the total backend extraction time in milliseconds. */
   onMergeToMarkdown?: (markdown: string, processingTimeMs?: number) => void;
@@ -151,6 +176,10 @@ export function DrawTablePanel({
   pageWidth,
   pageHeight,
   mayNeedOcr,
+  exclusions,
+  renderPageOverlay,
+  exclusionEditorOpen,
+  onOpenExclusionEditor,
   onMergeToMarkdown,
   onProgress,
   className,
@@ -159,8 +188,8 @@ export function DrawTablePanel({
   const [drawState, setDrawState] = useState<PageDrawState>(() => ({
     ...EMPTY_DRAW_STATE,
   }));
-  /** Which direction a click on the canvas creates. */
-  const [mode, setMode] = useState<"vertical" | "horizontal">("vertical");
+  /** Which tool a click on the canvas uses (line direction or exclusion). */
+  const [mode, setMode] = useState<DrawTool>("vertical");
 
   const pageCanvasRef = useRef<HTMLCanvasElement>(null);
   // Cache the loaded PDF document so page switches reuse the parsed doc
@@ -208,6 +237,10 @@ export function DrawTablePanel({
           ctx.fillStyle = "#ffffff";
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           await page.render({ canvas, viewport }).promise;
+          // Paint the excluded rects white before the PNG is captured: local
+          // OCR and remote vision then never see that content. The render
+          // scale varies (2.5 / 4.0) with the high-precision setting.
+          maskExclusions(ctx, canvas, pageNum, exclusions, renderScale);
           const dataUrl = canvas.toDataURL("image/png");
           const comma = dataUrl.indexOf(",");
           out.push({
@@ -222,7 +255,7 @@ export function DrawTablePanel({
       }
       return out;
     },
-    [getDoc],
+    [getDoc, exclusions],
   );
 
   // Per-page state storage
@@ -383,6 +416,24 @@ export function DrawTablePanel({
     pushHistory({ ...EMPTY_DRAW_STATE });
   }, [pushHistory]);
 
+  /** Pick the active tool; the exclude tool needs the editor open to work. */
+  const handleModeChange = useCallback(
+    (next: DrawTool) => {
+      setMode(next);
+      if (next === "exclude") onOpenExclusionEditor?.();
+    },
+    [onOpenExclusionEditor],
+  );
+
+  // If the exclusion editor is closed (Esc / toolbar toggle) while the
+  // exclude tool is active, no surface owns the pointer - fall back to a
+  // line tool so clicks on the page never silently do nothing.
+  useEffect(() => {
+    if (mode === "exclude" && exclusionEditorOpen === false) {
+      setMode("vertical");
+    }
+  }, [mode, exclusionEditorOpen]);
+
   /**
    * Extraction with local PaddleOCR fallback: pages without a text layer are
    * rendered to PNG and recognized on-device. Small ranges attach all images
@@ -470,6 +521,9 @@ export function DrawTablePanel({
         pages,
         useForAllPages: true,
         ...(maxPages ? { maxPages } : {}),
+        // Every IPC call inside `extractWithOcr` spreads this request, so the
+        // batched OCR runs keep the exclusions too.
+        exclusions,
       };
 
       try {
@@ -530,6 +584,7 @@ export function DrawTablePanel({
       currentPage,
       drawState,
       mayNeedOcr,
+      exclusions,
       onMergeToMarkdown,
       extractWithOcr,
       onProgress,
@@ -576,7 +631,7 @@ export function DrawTablePanel({
         canRedo={historyIndex < history.length - 1}
         onClear={handleClear}
         mode={mode}
-        onModeChange={setMode}
+        onModeChange={handleModeChange}
         onExtract={handleExtract}
         onExtractFirst5={handleExtractFirst5}
         extracting={extracting}
@@ -598,17 +653,33 @@ export function DrawTablePanel({
             className="absolute left-0 top-0 block dark:invert dark:hue-rotate-180"
             style={{ width: canvasWidth, height: canvasHeight }}
           />
-          <CanvasOverlay
-            scale={scale}
-            mode={mode}
-            verticalLines={drawState.verticalLines}
-            horizontalLines={drawState.horizontalLines}
-            onLineAdd={handleLineAdd}
-            onLineRemove={handleLineRemove}
-            onLineUpdate={handleLineUpdate}
-            width={canvasWidth}
-            height={canvasHeight}
-          />
+          {/* Line overlay: interactive while a line tool is active, inert
+              while the exclude tool owns the pointer. */}
+          <div className={cn(mode === "exclude" && "pointer-events-none")}>
+            <CanvasOverlay
+              scale={scale}
+              mode={mode === "exclude" ? "vertical" : mode}
+              verticalLines={drawState.verticalLines}
+              horizontalLines={drawState.horizontalLines}
+              onLineAdd={handleLineAdd}
+              onLineRemove={handleLineRemove}
+              onLineUpdate={handleLineUpdate}
+              width={canvasWidth}
+              height={canvasHeight}
+            />
+          </div>
+          {/* Exclusion editor: mounted while the editor is open so the rects
+              stay visible over the lines; only receives the pointer while the
+              exclude tool is active (see the pointer-events toggle). */}
+          {renderPageOverlay ? (
+            <div
+              className={cn(
+                mode === "exclude" ? undefined : "pointer-events-none",
+              )}
+            >
+              {renderPageOverlay(currentPage)}
+            </div>
+          ) : null}
         </div>
       </ScrollArea>
     </div>

@@ -9,6 +9,12 @@
 //!   [`TextItem`]s. Those items are filtered here and the page markdown is
 //!   rebuilt from what remains.
 //!
+//! The line-draw pipeline (`core::line_draw`, see
+//! `docs/design/00011_draw-line-exclude-region.md`) reuses the same rects for
+//! its own positioned text elements. It already shifts those elements into
+//! viewport-relative space, so it compares them against [`rects_for_page`]
+//! directly - only the conversion pipeline needs [`page_filters`].
+//!
 //! Coordinate spaces (the single easiest thing to get wrong):
 //!
 //! * Rects arrive in **viewport-relative** PDF points with the origin at the
@@ -74,15 +80,26 @@ pub fn page_filters(spec: &ExcludeRegions, page_count: u32) -> HashMap<u32, Vec<
 /// True when the item's bounding box intersects one of the rects, which are
 /// expected to be in absolute user space (see [`page_filters`]).
 pub fn hits_item(rects: &[RegionRect], it: &TextItem) -> bool {
-  rects.iter().any(|r| overlaps(r, it))
+  hits_box(
+    rects,
+    it.x as f64,
+    it.y as f64,
+    it.width as f64,
+    (it.height as f64).max(it.font_size as f64),
+  )
 }
 
-fn overlaps(r: &RegionRect, it: &TextItem) -> bool {
-  let left = it.x as f64;
-  let right = left + it.width as f64;
-  let bottom = it.y as f64;
-  let top = bottom + (it.height as f64).max(it.font_size as f64);
-  left < r.x + r.width && right > r.x && bottom < r.y + r.height && top > r.y
+/// True when a box intersects one of the rects. Both sides must live in the
+/// same coordinate space: [`page_filters`] rects for absolute user space, or
+/// [`rects_for_page`] rects for viewport-relative points - the line-draw
+/// pipeline already shifts its elements into that space, so it compares them
+/// against the un-shifted rects directly.
+pub fn hits_box(rects: &[RegionRect], left: f64, bottom: f64, width: f64, height: f64) -> bool {
+  let right = left + width;
+  let top = bottom + height;
+  rects
+    .iter()
+    .any(|r| left < r.x + r.width && right > r.x && bottom < r.y + r.height && top > r.y)
 }
 
 /// Remove the excluded content from a list of text items, keeping every item
@@ -115,22 +132,57 @@ pub fn filter_items(items: &[TextItem], filters: &HashMap<u32, Vec<RegionRect>>)
 }
 
 /// Split `it` into items carrying only the characters outside every rect.
-///
-/// `TextItem` has no per-glyph geometry, so each character is assumed to be
-/// `width / char_count` wide. Characters whose measured span intersects a rect
-/// are dropped; the remaining characters are re-joined into runs, each with a
-/// proportionally re-scaled width. Returns empty when the rects cover the whole
-/// span (the line is fully excluded).
 fn split_outside(rects: &[RegionRect], it: &TextItem) -> Vec<TextItem> {
-  let chars: Vec<char> = it.text.chars().collect();
-  if chars.is_empty() || it.width <= 0.0 {
+  let height = (it.height as f64).max(it.font_size as f64);
+  split_box_outside(
+    rects,
+    it.x as f64,
+    it.y as f64,
+    it.width as f64,
+    height,
+    &it.text,
+  )
+  .into_iter()
+  .map(|(x, width, text)| TextItem {
+    x: x as f32,
+    width: width as f32,
+    text,
+    ..it.clone()
+  })
+  .collect()
+}
+
+/// Pieces of `text` that fall outside every rect, as `(left, width, text)`.
+///
+/// Returns the text unchanged when nothing intersects, and nothing when the
+/// rects cover the whole box. Each piece keeps the x it occupies in the source
+/// box, so callers that assign content to columns by x - the line-draw
+/// pipeline maps a drawn vertical line to a column - still put every piece in
+/// its original column instead of shifting the right-hand ones left.
+///
+/// Neither pipeline carries per-glyph geometry, so each character is assumed
+/// to be `width / char_count` wide. Whitespace-only pieces are dropped; the
+/// rects and the box must live in the same space (see [`hits_box`]).
+pub fn split_box_outside(
+  rects: &[RegionRect],
+  left: f64,
+  bottom: f64,
+  width: f64,
+  height: f64,
+  text: &str,
+) -> Vec<(f64, f64, String)> {
+  let chars: Vec<char> = text.chars().collect();
+  if chars.is_empty() || width <= 0.0 {
     return Vec::new();
   }
-  let advance = it.width as f64 / chars.len() as f64;
+  if !hits_box(rects, left, bottom, width, height) {
+    return vec![(left, width, text.to_string())];
+  }
+  let advance = width / chars.len() as f64;
   // Kept runs as (first char index, kept text).
   let mut runs: Vec<(usize, String)> = Vec::new();
   for (idx, ch) in chars.iter().enumerate() {
-    let x0 = it.x as f64 + idx as f64 * advance;
+    let x0 = left + idx as f64 * advance;
     let x1 = x0 + advance;
     if rects.iter().any(|r| x0 < r.x + r.width && x1 > r.x) {
       continue;
@@ -147,12 +199,7 @@ fn split_outside(rects: &[RegionRect], it: &TextItem) -> Vec<TextItem> {
     .filter(|(_, text)| !text.trim().is_empty())
     .map(|(start, text)| {
       let len = text.chars().count() as f64;
-      TextItem {
-        x: (it.x as f64 + start as f64 * advance) as f32,
-        width: (len * advance) as f32,
-        text,
-        ..it.clone()
-      }
+      (left + start as f64 * advance, len * advance, text)
     })
     .collect()
 }
@@ -377,5 +424,54 @@ mod tests {
     assert_eq!(kept[0].x, 100.0);
     assert_eq!(kept[1].text, "CD");
     assert_eq!(kept[1].x, 140.0);
+  }
+
+  #[test]
+  fn hits_box_uses_strict_overlap_on_every_edge() {
+    let rects = vec![rect(100.0, 700.0, 100.0, 100.0)];
+    // Contained.
+    assert!(hits_box(&rects, 120.0, 720.0, 10.0, 10.0));
+    // Straddling the right border.
+    assert!(hits_box(&rects, 190.0, 720.0, 20.0, 10.0));
+    // Ends exactly where the rect starts: touching is not overlapping.
+    assert!(!hits_box(&rects, 80.0, 720.0, 20.0, 10.0));
+    // Entirely above the rect.
+    assert!(!hits_box(&rects, 120.0, 810.0, 10.0, 10.0));
+  }
+
+  #[test]
+  fn split_box_outside_returns_the_whole_text_when_nothing_overlaps() {
+    let far_away = vec![rect(0.0, 0.0, 10.0, 10.0)];
+    let pieces = split_box_outside(&far_away, 100.0, 700.0, 40.0, 12.0, "hello");
+    assert_eq!(pieces.len(), 1);
+    assert_eq!(pieces[0], (100.0, 40.0, "hello".to_string()));
+  }
+
+  #[test]
+  fn split_box_outside_drops_a_fully_covered_box() {
+    let full = vec![rect(0.0, 0.0, 595.0, 842.0)];
+    assert!(split_box_outside(&full, 72.0, 700.0, 100.0, 12.0, "header").is_empty());
+  }
+
+  /// The line-draw pipeline assigns content to columns by x, so every piece
+  /// must keep the x it occupied in the source box: excluding a middle column
+  /// must not shift the right-hand columns one slot to the left.
+  #[test]
+  fn split_box_outside_keeps_each_piece_at_its_original_x() {
+    let band = vec![rect(113.0, 0.0, 9.0, 842.0)];
+    let (left, width) = (72.0, 100.0);
+    let pieces = split_box_outside(&band, left, 770.0, width, 12.0, "Alice   28    Beijing");
+    assert_eq!(pieces.len(), 2);
+    assert_eq!(pieces[0].2.trim(), "Alice");
+    assert_eq!(
+      pieces[0].0, left,
+      "the leading piece starts where the line did"
+    );
+    assert_eq!(pieces[1].2.trim(), "Beijing");
+    assert!(
+      pieces[1].0 > left + width / 2.0,
+      "the trailing piece must stay on the right, got x={}",
+      pieces[1].0
+    );
   }
 }

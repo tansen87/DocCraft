@@ -434,22 +434,64 @@ export function ConvertWorkspace({
       // Reset when entering draw mode
       setMergedMarkdown(null);
       setExtractTimeMs(0);
-      // The two editors share the page surface: only one can be active.
-      setExcludeMode(false);
     }
   }, [drawMode]);
 
+  /**
+   * The two editors are not exclusive: in draw mode the draw-table surface
+   * owns a tri-state tool (vertical / horizontal / exclude) that hands the
+   * pointer to whichever overlay is active, so lines and exclusion rects can
+   * be placed in any order while the editor stays open.
+   */
   const toggleExcludeMode = useCallback(() => {
-    setExcludeMode((prev) => {
-      if (!prev) setDrawMode(false);
-      return !prev;
-    });
+    setExcludeMode((prev) => !prev);
   }, []);
 
   const clearExclusions = useCallback(() => {
     setExcludePages([]);
     setUseForAllPages(false);
   }, []);
+
+  /**
+   * Exclusion editor layer for one page. Shared by the normal PDF preview and
+   * the draw-table surface, which both lay the page out at the same scale, so
+   * the same viewport-relative rects line up on either.
+   */
+  const renderExcludeOverlay = useCallback(
+    (page: number) => {
+      const geom = pageGeom?.[page];
+      if (!geom) return null;
+      return (
+        <ExcludeOverlay
+          page={page}
+          pageWidth={geom.pageWidth}
+          pageHeight={geom.pageHeight}
+          disabled={geom.rotation % 360 !== 0}
+          rects={excludePages.find((p) => p.page === page)?.rects ?? []}
+          onChange={(next) => updatePageRects(page, next)}
+        />
+      );
+    },
+    [pageGeom, excludePages, updatePageRects],
+  );
+
+  /** Floating inspector, rendered next to whichever surface is active. */
+  const excludePanelNode = excludeMode ? (
+    <ExcludePanel
+      pages={excludePages}
+      loading={!pageGeom}
+      useForAllPages={useForAllPages}
+      onUseForAllPagesChange={setUseForAllPages}
+      onClear={clearExclusions}
+      onRemove={(page, index) => {
+        const current = excludePages.find((p) => p.page === page)?.rects ?? [];
+        updatePageRects(
+          page,
+          current.filter((_, i) => i !== index),
+        );
+      }}
+    />
+  ) : null;
 
   // Esc leaves the exclusion editor.
   useEffect(() => {
@@ -506,12 +548,6 @@ export function ConvertWorkspace({
         text: t("notice.failedPages", { count: failed.length }),
         pages: failed,
         onPageClick: jumpToPage,
-        actions: [
-          {
-            label: t("status.actionRetry"),
-            onClick: () => void handleConvertRef.current(),
-          },
-        ],
       });
     }
     const skipped = drawMode ? [] : (result?.skippedPages ?? []);
@@ -596,12 +632,19 @@ export function ConvertWorkspace({
                         detect.pagesNeedingOcr.length > 0
                       : undefined
                   }
+                  exclusions={exclusionSpec}
+                  renderPageOverlay={
+                    excludeMode ? renderExcludeOverlay : undefined
+                  }
+                  exclusionEditorOpen={excludeMode}
+                  onOpenExclusionEditor={() => setExcludeMode(true)}
                   onMergeToMarkdown={handleMergeToMarkdown}
                   onProgress={setActivity}
                   className="h-full"
                 />
               </div>
             )}
+            {excludePanelNode}
           </GlassPanel>
 
           {mergedMarkdown ? (
@@ -627,46 +670,10 @@ export function ConvertWorkspace({
               onPageSelect={
                 syncEnabled && !excludeMode ? jumpMarkdown : undefined
               }
-              renderPageOverlay={
-                excludeMode
-                  ? (page) => {
-                      const geom = pageGeom?.[page];
-                      if (!geom) return null;
-                      return (
-                        <ExcludeOverlay
-                          page={page}
-                          pageWidth={geom.pageWidth}
-                          pageHeight={geom.pageHeight}
-                          disabled={geom.rotation % 360 !== 0}
-                          rects={
-                            excludePages.find((p) => p.page === page)?.rects ??
-                            []
-                          }
-                          onChange={(next) => updatePageRects(page, next)}
-                        />
-                      );
-                    }
-                  : undefined
-              }
+              renderPageOverlay={excludeMode ? renderExcludeOverlay : undefined}
             />
 
-            {excludeMode ? (
-              <ExcludePanel
-                pages={excludePages}
-                loading={!pageGeom}
-                useForAllPages={useForAllPages}
-                onUseForAllPagesChange={setUseForAllPages}
-                onClear={clearExclusions}
-                onRemove={(page, index) => {
-                  const current =
-                    excludePages.find((p) => p.page === page)?.rects ?? [];
-                  updatePageRects(
-                    page,
-                    current.filter((_, i) => i !== index),
-                  );
-                }}
-              />
-            ) : null}
+            {excludePanelNode}
           </div>
 
           <div className="min-h-0 min-w-0">
@@ -710,11 +717,12 @@ export function ConvertWorkspace({
           result={detect}
           loading={detecting}
           extra={
-            drawMode
-              ? t("mode.drawTable")
-              : excludeMode
-                ? t("toolbar.excludeRegion")
-                : undefined
+            [
+              drawMode ? t("mode.drawTable") : null,
+              excludeMode ? t("toolbar.excludeRegion") : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || undefined
           }
           notices={notices}
           progress={activity}

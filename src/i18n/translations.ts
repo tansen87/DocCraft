@@ -228,18 +228,18 @@ const en = {
 
   "toolbar.remove": "Remove",
   "toolbar.drawTable": "Draw Table",
-  "toolbar.exitDraw": "Exit draw mode",
+  "toolbar.exitDraw": "Exit draw",
   "toolbar.enterDraw": "Manually draw lines to define table area",
-  "toolbar.extractToMarkdown": "Extract to Markdown",
+  "toolbar.extractToMarkdown": "Extract PDF",
   "toolbar.pageRange": "Pages",
   "toolbar.pageRangePlaceholder": "e.g. 1-5,8",
   "toolbar.pageRangeHint":
     "Convert only these pages (e.g. 1-5,8). Empty converts the whole {count}-page document",
   "toolbar.excludeRegion": "Exclude Region",
-  "toolbar.exitExclude": "Exit exclusion mode",
+  "toolbar.exitExclude": "Exit exclusion",
   "toolbar.enterExclude":
     "Drag rectangles over content that must not be recognized",
-  "mode.drawTable": "Draw table mode",
+  "mode.drawTable": "Draw table",
   "exclude.title": "Excluded regions",
   "exclude.applyAllPages": "Apply to every page",
   "exclude.applyAllPagesHint":
@@ -268,7 +268,6 @@ const en = {
   "status.progressOcrPlain": "Recognizing pages…",
   "status.progressOcr": "Recognizing page {current}/{total}",
   "status.progressImageOcr": "Recognizing image {current}/{total}",
-  "status.actionRetry": "Retry",
   "status.pagePrev": "Previous page",
   "status.pageNext": "Next page",
   "status.pagesHidden": "+{count} pages hidden",
@@ -317,6 +316,13 @@ const en = {
 
   "drawtable.instruction":
     "Click to add a line · double-click to delete · drag to adjust",
+  "drawtable.instructionVertical":
+    "Click to add a column separator · double-click to delete · drag to adjust",
+  "drawtable.instructionHorizontal":
+    "Click to add a row boundary · double-click to delete · drag to adjust",
+  "drawtable.instructionExclude":
+    "Drag to exclude an area · double-click a rect to delete",
+  "drawtable.excludeMode": "Draw exclusion regions",
   "drawtable.verticalMode": "Draw column separators (vertical lines)",
   "drawtable.horizontalMode": "Draw row boundaries (horizontal lines)",
   "drawtable.undo": "Undo (Ctrl+Z)",
@@ -592,14 +598,14 @@ const zh: Record<TranslationKey, string> = {
   "toolbar.drawTable": "划线表格",
   "toolbar.exitDraw": "退出划线模式",
   "toolbar.enterDraw": "手动划线定义表格区域",
-  "toolbar.extractToMarkdown": "提取为 Markdown",
+  "toolbar.extractToMarkdown": "提取PDF",
   "toolbar.pageRange": "页码范围",
   "toolbar.pageRangePlaceholder": "如 1-5,8",
   "toolbar.pageRangeHint": "仅转换这些页(如1-5,8).留空则转换全部 {count} 页",
   "toolbar.excludeRegion": "排除区域",
   "toolbar.exitExclude": "退出排除模式",
   "toolbar.enterExclude": "拖拽框选不参与识别的区域",
-  "mode.drawTable": "划线表格模式",
+  "mode.drawTable": "划线表格",
   "exclude.title": "排除区域",
   "exclude.applyAllPages": "应用到每一页",
   "exclude.applyAllPagesHint": "把已绘制的矩形套用到全部页面,适合排除页眉页脚",
@@ -627,7 +633,6 @@ const zh: Record<TranslationKey, string> = {
   "status.progressOcrPlain": "正在识别页面…",
   "status.progressOcr": "正在识别第 {current}/{total} 页",
   "status.progressImageOcr": "正在识别第 {current}/{total} 张图片",
-  "status.actionRetry": "重试",
   "status.pagePrev": "上一页",
   "status.pageNext": "下一页",
   "status.pagesHidden": "中间还有 {count} 页",
@@ -671,6 +676,10 @@ const zh: Record<TranslationKey, string> = {
   "tablepreview.empty": "未检测到表格",
 
   "drawtable.instruction": "选择方向后点击添加线条 · 双击删除 · 拖拽调整位置",
+  "drawtable.instructionVertical": "点击添加竖线 · 双击删除 · 拖拽调整位置",
+  "drawtable.instructionHorizontal": "点击添加横线 · 双击删除 · 拖拽调整位置",
+  "drawtable.instructionExclude": "拖拽框选排除区域 · 双击矩形删除",
+  "drawtable.excludeMode": "画排除区域",
   "drawtable.verticalMode": "画列分隔线(竖线)",
   "drawtable.horizontalMode": "画行边界线(横线)",
   "drawtable.undo": "撤销 (Ctrl+Z)",

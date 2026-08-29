@@ -57,7 +57,7 @@ export function AppHeader({ activeTab, onTabChange }: AppHeaderProps) {
 
   return (
     <header
-      className="sticky top-0 z-20 glass-panel glass-blur flex h-12 items-center gap-2 border-b border-border/30 px-2 transition-colors hover:bg-green-500/15"
+      className="sticky top-0 z-20 glass-panel glass-blur flex h-10 items-center gap-2 px-2 transition-colors hover:bg-green-500/15"
       style={{ "--glass-bg-opacity": opacity / 100 } as React.CSSProperties}
     >
       <Tabs

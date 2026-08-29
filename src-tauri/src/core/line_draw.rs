@@ -8,9 +8,10 @@ use crate::core::extract_cache;
 use crate::core::md_to_xlsx::parse_md_tables;
 use crate::core::ocr::{LocalOcrEngine, OcrRecognition, RemoteOcrProvider};
 use crate::core::page_marker::page_marker;
+use crate::core::region_exclude;
 use crate::models::{
   DrawTableRegion, DrawTableRequest, DrawTableResult, MdTable, PageDrawTable, PageImagePayload,
-  TableRegionInfo,
+  RegionRect, TableRegionInfo,
 };
 
 /// OCR engines available for the draw-table fallback. The caller resolves at
@@ -202,6 +203,35 @@ fn filter_text_by_region(elements: &[TextElement], region: &DrawTableRegion) -> 
     })
     .cloned()
     .collect()
+}
+
+/// Elements with the excluded parts removed.
+///
+/// The inverse of [`filter_text_by_region`], and deliberately not a whole
+/// element drop: pdf-inspector merges a visual line into one element, so a
+/// band over a single column would otherwise erase the entire row. Splitting
+/// keeps each piece at the x it occupied, and the drawn vertical lines then
+/// still assign it to its original column instead of shifting the right-hand
+/// columns one slot left.
+///
+/// Elements are already viewport-relative, so the rects (from
+/// [`region_exclude::rects_for_page`]) are compared as they are.
+fn filter_elements(rects: &[RegionRect], elements: Vec<TextElement>) -> Vec<TextElement> {
+  let mut out = Vec::with_capacity(elements.len());
+  for e in elements {
+    for (x, width, text) in
+      region_exclude::split_box_outside(rects, e.x, e.y, e.width, e.font_size, &e.text)
+    {
+      out.push(TextElement {
+        text,
+        x,
+        y: e.y,
+        width,
+        font_size: e.font_size,
+      });
+    }
+  }
+  out
 }
 
 /// Build a list of column boundaries from vertical lines.
@@ -883,6 +913,18 @@ pub fn extract_tables_from_draw_lines(
       empty_text_pages.push(page_num);
     }
 
+    // Exclusion regions: drop the content the user masked out. Applied after
+    // the empty-page check above on purpose - deciding OCR routing from
+    // filtered elements would make a page that exclusions emptied look like a
+    // scanned page, exactly the trap the conversion pipeline avoids (see
+    // docs/design/00010_pdf-exclude-region.md §4.1).
+    if let Some(spec) = &request.exclusions {
+      let rects = region_exclude::rects_for_page(spec, page_num);
+      if !rects.is_empty() {
+        elements = filter_elements(&rects, elements);
+      }
+    }
+
     // Process rectangle-based tables (legacy)
     if let Some(rects) = &page_draw.rectangles {
       for rect in rects {
@@ -1095,6 +1137,105 @@ mod tests {
     assert_eq!(filtered.len(), 2);
     assert_eq!(filtered[0].text, "A");
     assert_eq!(filtered[1].text, "B");
+  }
+
+  // ── Exclusion regions (docs/design/00011) ────────────────────────────────
+
+  fn el(text: &str, x: f64, y: f64) -> TextElement {
+    TextElement {
+      text: text.to_string(),
+      x,
+      y,
+      width: text.chars().count() as f64 * 6.0,
+      font_size: 12.0,
+    }
+  }
+
+  /// A page header plus a two-row table, cut into three columns by vertical
+  /// lines at x=200 and x=330.
+  fn page_elements() -> Vec<TextElement> {
+    vec![
+      el("CONFIDENTIAL", 72.0, 800.0),
+      el("Name", 80.0, 730.0),
+      el("Age", 250.0, 730.0),
+      el("City", 380.0, 730.0),
+      el("Alice", 80.0, 700.0),
+      el("28", 250.0, 700.0),
+      el("Beijing", 380.0, 700.0),
+    ]
+  }
+
+  fn cut_into_columns(elements: Vec<TextElement>) -> MdTable {
+    extract_table_from_vertical_lines(&elements, &[200.0, 330.0], 595.0, 842.0, false)
+  }
+
+  fn band(x: f64, y: f64, width: f64, height: f64) -> Vec<RegionRect> {
+    vec![RegionRect {
+      x,
+      y,
+      width,
+      height,
+    }]
+  }
+
+  #[test]
+  fn no_exclusions_keeps_the_whole_page() {
+    let base = cut_into_columns(page_elements());
+    // The page header is simply the topmost text line, so it becomes the
+    // table header when nothing is excluded.
+    assert_eq!(base.columns, vec!["CONFIDENTIAL", "", ""]);
+    assert_eq!(base.rows[0], vec!["Name", "Age", "City"]);
+    assert_eq!(base.rows[1], vec!["Alice", "28", "Beijing"]);
+  }
+
+  #[test]
+  fn a_header_band_removes_the_page_header() {
+    let filtered = filter_elements(&band(0.0, 780.0, 595.0, 62.0), page_elements());
+    let table = cut_into_columns(filtered);
+    // The excluded line is gone, so the real column row becomes the header.
+    assert_eq!(table.columns, vec!["Name", "Age", "City"]);
+    assert_eq!(table.rows, vec![vec!["Alice", "28", "Beijing"]]);
+  }
+
+  #[test]
+  fn a_column_band_removes_only_that_column() {
+    // Band over the "Age" column (x 240..270) at full height.
+    let filtered = filter_elements(&band(240.0, 0.0, 30.0, 842.0), page_elements());
+    let table = cut_into_columns(filtered);
+    assert_eq!(table.columns, vec!["CONFIDENTIAL", "", ""]);
+    assert_eq!(table.rows[0], vec!["Name", "", "City"]);
+    assert_eq!(
+      table.rows[1],
+      vec!["Alice", "", "Beijing"],
+      "the right-hand column must keep its own slot instead of shifting left"
+    );
+  }
+
+  /// pdf-inspector merges a visual line into a single element, so a band over
+  /// one column must not erase the whole row - and the surviving pieces must
+  /// still land in the columns their x belongs to.
+  #[test]
+  fn a_column_band_splits_a_merged_row_into_its_original_columns() {
+    let merged = vec![TextElement {
+      text: "Alice   28   Beijing".to_string(),
+      x: 80.0,
+      y: 700.0,
+      width: 400.0,
+      font_size: 12.0,
+    }];
+    // Covers the "28" token (x 240..280) plus the padding around it.
+    let filtered = filter_elements(&band(235.0, 0.0, 50.0, 842.0), merged);
+    assert_eq!(
+      filtered.len(),
+      2,
+      "expected both sides to survive: {filtered:?}"
+    );
+    let table = cut_into_columns(filtered);
+    assert_eq!(
+      table.columns,
+      vec!["Alice", "", "Beijing"],
+      "each piece must be cut into the column its x belongs to"
+    );
   }
 
   #[test]

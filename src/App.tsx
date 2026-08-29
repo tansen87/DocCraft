@@ -91,7 +91,7 @@ function App() {
           theme={resolvedTheme === "dark" ? "dark" : "light"}
         />
         <AppHeader activeTab={tab} onTabChange={setTab} />
-        <main className="flex h-[calc(100dvh-3rem)] w-full flex-col overflow-y-auto bg-white/[0.03] p-3">
+        <main className="flex h-[calc(100dvh-2rem)] w-full flex-col overflow-hidden bg-white/[0.03] p-1">
           <div
             className={
               tab === "pdftomd" ? "flex min-h-0 flex-1 flex-col" : "hidden"

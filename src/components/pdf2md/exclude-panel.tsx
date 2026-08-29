@@ -81,7 +81,7 @@ export function ExcludePanel({
                 {t("exclude.page", { page })}
               </span>
               <span className="truncate text-[11px] tabular-nums text-muted-foreground">
-                {Math.round(rect.width)} × {Math.round(rect.height)}
+                {Math.round(rect.width)} x {Math.round(rect.height)}
               </span>
               <Button
                 variant="ghost"

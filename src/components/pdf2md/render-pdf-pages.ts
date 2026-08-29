@@ -2,7 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import * as pdfjs from "pdfjs-dist";
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-import { rectsForPage } from "@/lib/exclude-region";
+import { maskExclusions } from "@/lib/exclude-region";
 import type {
   ActivityProgress,
   ConvertResult,
@@ -30,34 +30,6 @@ export class CancelledError extends Error {
 const OCR_RENDER_SCALE = 2.5;
 
 /**
- * Paint the exclusion rects white on an already rendered page.
- *
- * The OCR pipeline never sees the excluded content, which is the image-side
- * counterpart of the backend's text-item filter. Rects are viewport-relative
- * PDF points (origin lower-left) while the canvas is top-left pixels.
- */
-function maskExclusions(
-  ctx: CanvasRenderingContext2D,
-  canvas: HTMLCanvasElement,
-  page: number,
-  exclusions: ExcludeRegions | null | undefined,
-): void {
-  const rects = rectsForPage(exclusions, page);
-  if (rects.length === 0) return;
-  ctx.save();
-  ctx.fillStyle = "#ffffff";
-  for (const r of rects) {
-    ctx.fillRect(
-      r.x * OCR_RENDER_SCALE,
-      canvas.height - (r.y + r.height) * OCR_RENDER_SCALE,
-      r.width * OCR_RENDER_SCALE,
-      r.height * OCR_RENDER_SCALE,
-    );
-  }
-  ctx.restore();
-}
-
-/**
  * Yield OCR page images one at a time. The document is parsed once but each
  * page's bitmap + base64 payload exists only until the caller consumes it, so
  * peak memory stays at ~one page instead of the whole document.
@@ -82,7 +54,7 @@ export async function* renderPdfPagesForOcr(
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         await page.render({ canvas, viewport }).promise;
-        maskExclusions(ctx, canvas, pageNum, exclusions);
+        maskExclusions(ctx, canvas, pageNum, exclusions, OCR_RENDER_SCALE);
         const dataUrl = canvas.toDataURL("image/png");
         const comma = dataUrl.indexOf(",");
         yield {

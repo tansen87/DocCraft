@@ -7,6 +7,7 @@ import {
   MoveHorizontal,
   MoveVertical,
   RotateCcw,
+  SquareDashed,
   Trash2,
 } from "lucide-react";
 
@@ -17,7 +18,19 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
+import type { DrawTool } from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { GlassPanel } from "@/components/ui/glass-panel";
+
+/**
+ * Active-tool styling. The selected tool is tinted with the same green as the
+ * Switch control (see `components/ui/switch.tsx`), so the current mode reads
+ * at a glance; inactive tools stay ghost.
+ */
+const TOOL_ACTIVE =
+  "bg-[#6FCF97]/15 text-[#54BD82] ring-1 ring-inset ring-[#54BD82]/40 hover:bg-[#6FCF97]/25 hover:text-[#54BD82]";
+const TOOL_INACTIVE =
+  "text-muted-foreground hover:bg-muted hover:text-foreground";
 
 interface DrawTableToolbarProps {
   onUndo: () => void;
@@ -25,10 +38,10 @@ interface DrawTableToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   onClear: () => void;
-  /** Which line direction a click on the canvas creates. */
-  mode: "vertical" | "horizontal";
-  /** Switch the drawing direction. */
-  onModeChange: (mode: "vertical" | "horizontal") => void;
+  /** Which tool a click on the canvas uses (line directions + exclusion). */
+  mode: DrawTool;
+  /** Switch the active tool. */
+  onModeChange: (mode: DrawTool) => void;
   onExtract: () => void;
   onExtractFirst5: () => void;
   /** Which extraction is currently running (`null` when idle). */
@@ -66,18 +79,29 @@ export function DrawTableToolbar({
     <GlassPanel className="flex items-center gap-1 rounded-lg px-2 py-1.5">
       {/* Instruction */}
       <span className="px-1 text-xs text-muted-foreground">
-        {t("drawtable.instruction")}
+        {t(
+          mode === "exclude"
+            ? "drawtable.instructionExclude"
+            : mode === "vertical"
+              ? "drawtable.instructionVertical"
+              : "drawtable.instructionHorizontal",
+        )}
       </span>
 
       <div className="mx-1 h-5 w-px bg-border" />
 
-      {/* Line-direction toggle: column separators vs row boundaries */}
+      {/* Tool switcher: column separators vs row boundaries vs exclusion. The
+          active tool is tinted with the switch green, inactive tools are
+          ghost. */}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            variant={mode === "vertical" ? "secondary" : "ghost"}
+            variant="ghost"
             size="icon-sm"
-            className="size-7"
+            className={cn(
+              "size-7",
+              mode === "vertical" ? TOOL_ACTIVE : TOOL_INACTIVE,
+            )}
             onClick={() => onModeChange("vertical")}
           >
             <MoveVertical className="size-3.5" />
@@ -88,15 +112,34 @@ export function DrawTableToolbar({
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            variant={mode === "horizontal" ? "secondary" : "ghost"}
+            variant="ghost"
             size="icon-sm"
-            className="size-7"
+            className={cn(
+              "size-7",
+              mode === "horizontal" ? TOOL_ACTIVE : TOOL_INACTIVE,
+            )}
             onClick={() => onModeChange("horizontal")}
           >
             <MoveHorizontal className="size-3.5" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>{t("drawtable.horizontalMode")}</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={cn(
+              "size-7",
+              mode === "exclude" ? TOOL_ACTIVE : TOOL_INACTIVE,
+            )}
+            onClick={() => onModeChange("exclude")}
+          >
+            <SquareDashed className="size-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{t("drawtable.excludeMode")}</TooltipContent>
       </Tooltip>
 
       <div className="mx-1 h-5 w-px bg-border" />
