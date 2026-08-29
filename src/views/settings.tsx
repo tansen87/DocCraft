@@ -46,7 +46,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GlassPanel } from "@/components/ui/glass-panel";
 import type { OcrMode, OcrModelSize } from "@/lib/types";
 import {
@@ -416,7 +415,7 @@ export function SettingsView() {
   return (
     <div
       ref={containerRef}
-      className="relative mx-auto flex w-full max-w-5xl min-h-0 flex-1 gap-3"
+      className="relative flex w-full min-h-0 flex-1 gap-3"
     >
       <aside className="flex w-14 shrink-0 flex-col gap-1 md:w-52">
         {SECTIONS.map((s) => {
@@ -674,7 +673,7 @@ function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-x-6 px-4 py-3.5">
+    <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-x-6">
       <div className="min-w-0 space-y-0.5">
         <Label htmlFor={htmlFor}>{label}</Label>
         {description ? (
@@ -683,7 +682,9 @@ function SettingRow({
           </p>
         ) : null}
       </div>
-      <div className="ml-auto shrink-0 pl-2">{children}</div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 sm:ml-auto sm:justify-end sm:pl-2">
+        {children}
+      </div>
     </div>
   );
 }
@@ -851,56 +852,37 @@ function OcrSettingsPanel({
   return (
     <>
       <Panel>
-        <div className="space-y-3 px-4 py-3.5">
-          <div className="space-y-0.5">
-            <Label>{t("settings.ocrEnabled")}</Label>
-            <p className="text-xs text-muted-foreground">
-              {t(`settings.ocrMode.${ocrMode}Desc`)}
-            </p>
-          </div>
-          <Tabs
+        <SettingRow
+          label={t("settings.ocrEnabled")}
+          description={t(`settings.ocrMode.${ocrMode}Desc`)}
+        >
+          <Select
             value={ocrMode}
             onValueChange={(v) => onOcrModeChange(v as OcrMode)}
+            disabled={loading}
           >
-            <TabsList className="w-full">
-              <TabsTrigger
-                value="forceLocal"
-                disabled={loading}
-                className="min-w-0 flex-1 truncate px-1.5 text-xs"
-              >
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="forceLocal">
                 {t("settings.ocrMode.forceLocal")}
-              </TabsTrigger>
-              <TabsTrigger
-                value="forceAi"
-                disabled={loading}
-                className="min-w-0 flex-1 truncate px-1.5 text-xs"
-              >
+              </SelectItem>
+              <SelectItem value="forceAi">
                 {t("settings.ocrMode.forceAi")}
-              </TabsTrigger>
-              <TabsTrigger
-                value="nonTextLocal"
-                disabled={loading}
-                className="min-w-0 flex-1 truncate px-1.5 text-xs"
-              >
+              </SelectItem>
+              <SelectItem value="nonTextLocal">
                 {t("settings.ocrMode.nonTextLocal")}
-              </TabsTrigger>
-              <TabsTrigger
-                value="nonTextAi"
-                disabled={loading}
-                className="min-w-0 flex-1 truncate px-1.5 text-xs"
-              >
+              </SelectItem>
+              <SelectItem value="nonTextAi">
                 {t("settings.ocrMode.nonTextAi")}
-              </TabsTrigger>
-              <TabsTrigger
-                value="disabled"
-                disabled={loading}
-                className="min-w-0 flex-1 truncate px-1.5 text-xs"
-              >
+              </SelectItem>
+              <SelectItem value="disabled">
                 {t("settings.ocrMode.disabled")}
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </SettingRow>
       </Panel>
 
       <Panel>
@@ -910,7 +892,7 @@ function OcrSettingsPanel({
             onValueChange={(v) => onOcrModelSizeChange(v as OcrModelSize)}
             disabled={loading}
           >
-            <SelectTrigger className="w-44">
+            <SelectTrigger className="w-48">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -1054,7 +1036,7 @@ function PromptTextarea({
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   return (
-    <div className="px-4 py-3.5">
+    <div className="px-4 py-3">
       <button
         type="button"
         onClick={() => !disabled && setOpen((o) => !o)}
@@ -1277,7 +1259,7 @@ function TextSepSettingsPanel({
         description={t("settings.textSeparatorDesc")}
       >
         <Select value={value} onValueChange={onChange} disabled={disabled}>
-          <SelectTrigger className="w-36">
+          <SelectTrigger className="w-48">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -1331,15 +1313,15 @@ const HOTKEY_MODIFIER_CODES = new Set([
   "MetaRight",
 ]);
 
-/** Friendly label for one token of an accelerator (`Ctrl`, `KeyA`, `F8`, ...). */
+/** Friendly label for one token of an accelerator (`Ctrl`, `A`, `F8`, ...). */
 function hotkeyTokenLabel(part: string): string {
   const lower = part.toLowerCase();
   if (lower === "ctrl" || lower === "control") return "Ctrl";
   if (lower === "alt" || lower === "option") return "Alt";
   if (lower === "shift") return "Shift";
   if (lower === "super" || lower === "meta" || lower === "win") return "Win";
-  if (/^key[a-z]$/.test(part)) return part.slice(3).toUpperCase();
-  if (/^digit\d$/.test(part)) return part.slice(5);
+  if (/^key[a-z]$/i.test(part)) return part.slice(3).toUpperCase();
+  if (/^digit\d$/i.test(part)) return part.slice(5);
   const labels: Record<string, string> = {
     Space: "Space",
     Minus: "-",
@@ -1487,7 +1469,7 @@ function HotkeyInput({
         disabled={disabled}
         aria-label={t("settings.screenshotHotkey")}
         className={cn(
-          "flex h-9 w-56 items-center gap-1.5 rounded-lg border px-3 text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          "flex h-9 w-48 items-center gap-1.5 rounded-lg border px-3 text-sm transition-colors outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
           recording
             ? "border-primary bg-primary/5 ring-2 ring-primary/20"
             : "border-input hover:bg-muted/40",
@@ -1511,17 +1493,6 @@ function HotkeyInput({
           </span>
         )}
       </button>
-      {!recording && value ? (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          disabled={disabled}
-          onClick={() => onChange("")}
-          aria-label={t("tooltip.remove")}
-        >
-          <X />
-        </Button>
-      ) : null}
     </div>
   );
 }
@@ -1773,7 +1744,7 @@ function UsagePeriodBlock({
       ? Math.round((period.ocrPageCount / period.pageCount) * 100)
       : 0);
   return (
-    <div className="space-y-2 px-4 py-3.5">
+    <div className="space-y-2 px-4 py-3">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           {title}
@@ -1796,7 +1767,7 @@ function UsagePeriodBlock({
           <Skeleton className="h-4 w-14" />
         </div>
       ) : (
-        <div className="grid grid-cols-3 gap-x-4 gap-y-1.5">
+        <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-3 sm:gap-y-1.5">
           <StatCell
             label={t("settings.statsFiles")}
             value={period.fileCount}

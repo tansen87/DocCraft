@@ -129,10 +129,10 @@ const en = {
   "settings.snipAutoCopy": "Auto-copy result",
   "settings.snipAutoCopyDesc":
     "When enabled, copy the recognition result to the clipboard",
-  "settings.snipResultOpacity": "Glass opacity",
+  "settings.snipResultOpacity": "Identify window opacity",
   "settings.snipResultOpacityDesc":
-    "Background transparency of the result popup (0 = fully transparent, 100 = fully opaque)",
-  "settings.mainWindowOpacity": "Window opacity",
+    "Background transparency of the result window (0 = fully transparent, 100 = fully opaque)",
+  "settings.mainWindowOpacity": "Main window opacity",
   "settings.mainWindowOpacityDesc":
     "Background transparency of the main window (0 = fully transparent, 100 = fully opaque)",
   "settings.screenshotHotkey": "Screenshot hotkey",
@@ -483,10 +483,10 @@ const zh: Record<TranslationKey, string> = {
   "settings.snipResultPopupDesc": "开启时,弹窗显示识别结果",
   "settings.snipAutoCopy": "复制识别结果",
   "settings.snipAutoCopyDesc": "开始时,自动把结果复制到剪贴板",
-  "settings.snipResultOpacity": "毛玻璃透明度",
+  "settings.snipResultOpacity": "识别窗口透明度",
   "settings.snipResultOpacityDesc":
-    "结果窗口背景的透明度 (0 = 完全透明, 100 = 完全不透明)",
-  "settings.mainWindowOpacity": "窗口透明度",
+    "识别窗口背景的透明度 (0 = 完全透明, 100 = 完全不透明)",
+  "settings.mainWindowOpacity": "主窗口透明度",
   "settings.mainWindowOpacityDesc":
     "主窗口背景的透明度 (0 = 完全透明, 100 = 完全不透明)",
   "settings.screenshotHotkey": "截图识别快捷键",
