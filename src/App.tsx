@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { Toaster } from "sonner";
 import { useTheme } from "next-themes";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -13,6 +13,15 @@ import { GlassOpacityContext } from "@/lib/glass-opacity";
 
 const TABS: WorkspaceTab[] = ["pdftomd", "imgtomd", "mdtoexcel", "settings"];
 const TAB_STORAGE_KEY = "doccraft-active-tab";
+
+// The tab views stay mounted (to keep per-tab state when switching), so memoize
+// them: re-rendering App (theme toggle, glass-opacity preview, ...) must not
+// reconcile the whole workspace tree again. They still update on language
+// changes because they consume the i18n context.
+const BatchViewView = memo(BatchView);
+const ImageToMdViewView = memo(ImageToMdView);
+const MdToXlsxViewView = memo(MdToXlsxView);
+const SettingsViewView = memo(SettingsView);
 
 function initialTab(): WorkspaceTab {
   const saved = localStorage.getItem(TAB_STORAGE_KEY);
@@ -97,28 +106,28 @@ function App() {
               tab === "pdftomd" ? "flex min-h-0 flex-1 flex-col" : "hidden"
             }
           >
-            <BatchView />
+            <BatchViewView />
           </div>
           <div
             className={
               tab === "imgtomd" ? "flex min-h-0 flex-1 flex-col" : "hidden"
             }
           >
-            <ImageToMdView />
+            <ImageToMdViewView />
           </div>
           <div
             className={
               tab === "mdtoexcel" ? "flex min-h-0 flex-1 flex-col" : "hidden"
             }
           >
-            <MdToXlsxView />
+            <MdToXlsxViewView />
           </div>
           <div
             className={
               tab === "settings" ? "flex min-h-0 flex-1 flex-col" : "hidden"
             }
           >
-            <SettingsView />
+            <SettingsViewView />
           </div>
         </main>
       </div>

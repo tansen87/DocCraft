@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as pdfjs from "pdfjs-dist";
 import { FileText } from "lucide-react";
@@ -16,6 +23,67 @@ const MAX_DPR = 1.5;
 const RESIZE_DEBOUNCE_MS = 150;
 const IO_BUFFER_PX = 600;
 const DEFAULT_ASPECT = "0.7071";
+
+/**
+ * The rendered page grid. The actual bitmaps live in canvases owned by the
+ * parent (via callback refs), so this list is pure with respect to props and
+ * free of state/context - memoizing it keeps bulk language/theme re-renders of
+ * the surrounding panes from rebuilding hundreds of page wrappers.
+ */
+const PageGrid = memo(function PageGrid({
+  pageCount,
+  aspects,
+  focusing,
+  onPageSelect,
+  renderPageOverlay,
+  onWrapperRef,
+  onCanvasRef,
+}: {
+  pageCount: number;
+  aspects: Record<number, string>;
+  focusing: number | null;
+  onPageSelect?: (page: number) => void;
+  renderPageOverlay?: (page: number) => ReactNode;
+  onWrapperRef: (page: number) => (el: HTMLDivElement | null) => void;
+  onCanvasRef: (page: number) => (el: HTMLCanvasElement | null) => void;
+}) {
+  return (
+    <>
+      {Array.from({ length: pageCount }, (_, i) => (
+        <div
+          key={i}
+          data-page={i + 1}
+          ref={onWrapperRef(i + 1)}
+          onClick={onPageSelect ? () => onPageSelect(i + 1) : undefined}
+          role={onPageSelect ? "button" : undefined}
+          style={{ aspectRatio: aspects[i + 1] ?? DEFAULT_ASPECT }}
+          className={cn("w-full", onPageSelect && "cursor-pointer")}
+        >
+          {/* Ring/hover states live OUTSIDE the dark-mode invert filter
+              so they always use the theme accent color, not the
+              hue-rotated inverse of it. */}
+          <div
+            className={cn(
+              "relative h-full w-full overflow-hidden rounded-md shadow-sm ring-1 ring-border/40 transition-shadow dark:shadow-none",
+              onPageSelect && "hover:ring-2 hover:ring-primary/70",
+              focusing === i + 1 && "ring-2 ring-primary",
+            )}
+          >
+            <div className="h-full w-full overflow-hidden rounded-md bg-white dark:invert dark:hue-rotate-180">
+              <canvas
+                ref={onCanvasRef(i + 1)}
+                className="block h-auto w-full"
+              />
+            </div>
+            {/* Overlays (exclusion regions) sit outside the dark-mode
+                invert filter so their colors stay true to the theme. */}
+            {renderPageOverlay?.(i + 1)}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+});
 
 interface PdfPreviewProps {
   path: string;
@@ -73,6 +141,24 @@ export function PdfPreview({
   const [visible, setVisible] = useState<ReadonlySet<number>>(new Set());
   const [aspects, setAspects] = useState<Record<number, string>>({});
   const [tick, setTick] = useState(0);
+
+  // Stable callback refs handed to the memoized PageGrid so parent re-renders
+  // (language/theme) don't cheapen the memo: the grid can rebuild its entries
+  // without those callbacks changing identity on the parent's own re-render.
+  const onWrapperRef = useCallback(
+    (page: number) => (el: HTMLDivElement | null) => {
+      if (el) wrapperRefs.current.set(page, el);
+      else wrapperRefs.current.delete(page);
+    },
+    [],
+  );
+  const onCanvasRef = useCallback(
+    (page: number) => (el: HTMLCanvasElement | null) => {
+      if (el) canvasRefs.current.set(page, el);
+      else canvasRefs.current.delete(page);
+    },
+    [],
+  );
 
   useEffect(() => {
     const el = surfaceRef.current;
@@ -327,45 +413,17 @@ export function PdfPreview({
                 {t("preview.cannotPreview")}
               </div>
             )}
-            {status === "ready" &&
-              Array.from({ length: pageCount ?? 0 }, (_, i) => (
-                <div
-                  key={i}
-                  data-page={i + 1}
-                  ref={(el) => {
-                    if (el) wrapperRefs.current.set(i + 1, el);
-                    else wrapperRefs.current.delete(i + 1);
-                  }}
-                  onClick={onPageSelect ? () => onPageSelect(i + 1) : undefined}
-                  role={onPageSelect ? "button" : undefined}
-                  style={{ aspectRatio: aspects[i + 1] ?? DEFAULT_ASPECT }}
-                  className={cn("w-full", onPageSelect && "cursor-pointer")}
-                >
-                  {/* Ring/hover states live OUTSIDE the dark-mode invert filter
-                      so they always use the theme accent color, not the
-                      hue-rotated inverse of it. */}
-                  <div
-                    className={cn(
-                      "relative h-full w-full overflow-hidden rounded-md shadow-sm ring-1 ring-border/40 transition-shadow dark:shadow-none",
-                      onPageSelect && "hover:ring-2 hover:ring-primary/70",
-                      focusing === i + 1 && "ring-2 ring-primary",
-                    )}
-                  >
-                    <div className="h-full w-full overflow-hidden rounded-md bg-white dark:invert dark:hue-rotate-180">
-                      <canvas
-                        ref={(el) => {
-                          if (el) canvasRefs.current.set(i + 1, el);
-                          else canvasRefs.current.delete(i + 1);
-                        }}
-                        className="block h-auto w-full"
-                      />
-                    </div>
-                    {/* Overlays (exclusion regions) sit outside the dark-mode
-                        invert filter so their colors stay true to the theme. */}
-                    {renderPageOverlay?.(i + 1)}
-                  </div>
-                </div>
-              ))}
+            {status === "ready" && pageCount ? (
+              <PageGrid
+                pageCount={pageCount}
+                aspects={aspects}
+                focusing={focusing}
+                onPageSelect={onPageSelect}
+                renderPageOverlay={renderPageOverlay}
+                onWrapperRef={onWrapperRef}
+                onCanvasRef={onCanvasRef}
+              />
+            ) : null}
           </div>
         </ScrollArea>
       </div>
