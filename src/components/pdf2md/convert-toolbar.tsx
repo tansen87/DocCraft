@@ -47,7 +47,6 @@ export function ConvertToolbar({
   converting,
   drawMode,
   excludeMode,
-  excludeCount,
   pageRange,
   onPageRangeChange,
   pageCount,
@@ -148,11 +147,6 @@ export function ConvertToolbar({
           >
             <SquareDashedMousePointer className="size-4" />
             {t("toolbar.excludeRegion")}
-            {excludeCount > 0 ? (
-              <span className="rounded bg-primary/15 px-1 text-[11px] font-medium tabular-nums text-primary">
-                {excludeCount}
-              </span>
-            ) : null}
           </button>
         </TooltipTrigger>
         <TooltipContent>

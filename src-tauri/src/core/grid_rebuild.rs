@@ -63,9 +63,9 @@ pub fn rebuild_pages(
 /// OCR pipeline, where the frontend masks the excluded rects on the rendered
 /// image instead.
 ///
-/// A table page touched by an exclusion loses its GFM table - the whole-page
-/// table markdown cannot be filtered by region, so the page is rebuilt from
-/// the remaining items as plain text lines (documented trade-off).
+/// A table page touched by an exclusion is rebuilt from the surviving items as
+/// a GFM table ([`lines_to_table_markdown`]) rather than plain text, so the
+/// page is still recognised as a table after the excluded content is removed.
 pub fn rebuild_pages_excluding(
   page_markdowns: &[String],
   items: &[TextItem],
@@ -101,6 +101,11 @@ pub fn rebuild_pages_excluding(
     };
     if keep_original {
       parts.push(markdown.clone());
+    } else if has_table {
+      // An excluded table page is rebuilt as a GFM table so it is still
+      // recognised as a table (instead of collapsing to text_separator-joined
+      // plain text). The excluded items are already gone from `page_items`.
+      parts.push(lines_to_table_markdown(&page_items));
     } else {
       parts.push(lines_to_markdown(&page_items, separator));
     }
@@ -208,8 +213,36 @@ fn group_lines<'a>(items: &[&'a TextItem]) -> Vec<Vec<&'a TextItem>> {
   lines
 }
 
-/// Render every visual line as its own markdown line, joining the line's text
-/// items with `separator` (see [`rebuild_pages`]); an empty separator collapses
+/// Group positioned items into rows of cells. Each visual line becomes a row;
+/// within a line, items (and the multi-space column gaps inside a merged item)
+/// are split into individual cells. Empty cells are dropped, and lines that
+/// end up empty are skipped.
+///
+/// This is the shared backbone of [`lines_to_markdown`] (plain-text join) and
+/// [`lines_to_table_markdown`] (GFM table), so both produce the same row/cell
+/// structure from the same input.
+fn group_cells(items: &[&TextItem]) -> Vec<Vec<String>> {
+  let lines = group_lines(items);
+  let mut rows = Vec::with_capacity(lines.len());
+  for line in lines {
+    let mut cells: Vec<String> = Vec::new();
+    for it in line {
+      let trimmed = it.text.trim();
+      match split_at_column_gaps(trimmed) {
+        Some(parts) => cells.extend(parts),
+        None => cells.push(trimmed.to_string()),
+      }
+    }
+    cells.retain(|p| !p.is_empty());
+    if !cells.is_empty() {
+      rows.push(cells);
+    }
+  }
+  rows
+}
+
+/// Render every visual line as its own markdown line, joining the line's cells
+/// with `separator` (see [`rebuild_pages`]); an empty separator collapses
 /// to a single space.
 ///
 /// PDF producers often write each row of a borderless grid as one text run, so
@@ -223,24 +256,74 @@ fn lines_to_markdown(items: &[&TextItem], separator: &str) -> String {
   } else {
     separator
   };
-  let lines = group_lines(items);
-  let mut out = Vec::new();
-  for line in lines {
-    let mut pieces: Vec<String> = Vec::new();
-    for it in line {
-      let trimmed = it.text.trim();
-      match split_at_column_gaps(trimmed) {
-        Some(cells) => pieces.extend(cells),
-        None => pieces.push(trimmed.to_string()),
-      }
-    }
-    pieces.retain(|p| !p.is_empty());
-    if pieces.is_empty() {
-      continue;
-    }
-    out.push(pieces.join(join));
+  group_cells(items)
+    .iter()
+    .map(|cells| cells.join(join))
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
+/// Rebuild a page as a GFM table from its positioned items, used when an
+/// exclusion region touches a table page (see [`rebuild_pages_excluding`]).
+///
+/// The original GFM table produced by pdf-inspector cannot be filtered by
+/// region, so instead the surviving items (exclusion already applied by
+/// [`region_exclude::filter_items`]) are regrouped into rows and cells by
+/// [`group_cells`] and emitted as a fresh GFM table: the first row is the
+/// header, followed by the `---` delimiter, then the data rows. Shorter rows
+/// are padded with empty cells so every row has the same column count.
+///
+/// This keeps the page recognised as a table (the bug where an all-table PDF
+/// collapsed to `text_separator`-joined plain text on the excluded page) while
+/// still honouring the exclusion - the dropped items simply vanish from the
+/// rebuilt table.
+fn lines_to_table_markdown(items: &[&TextItem]) -> String {
+  let rows = group_cells(items);
+  if rows.is_empty() {
+    return String::new();
   }
-  out.join("\n")
+  let ncols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+  if ncols == 0 {
+    return String::new();
+  }
+  let padded: Vec<Vec<String>> = rows
+    .iter()
+    .map(|r| {
+      let mut row = r.clone();
+      while row.len() < ncols {
+        row.push(String::new());
+      }
+      row
+    })
+    .collect();
+
+  let mut out = String::new();
+  out.push('|');
+  for cell in &padded[0] {
+    out.push(' ');
+    out.push_str(cell);
+    out.push_str(" |");
+  }
+  out.push('\n');
+  out.push('|');
+  for _ in 0..ncols {
+    out.push_str(" --- |");
+  }
+  out.push('\n');
+  for row in &padded[1..] {
+    out.push('|');
+    for cell in row {
+      out.push(' ');
+      out.push_str(cell);
+      out.push_str(" |");
+    }
+    out.push('\n');
+  }
+  // Match lines_to_markdown: no trailing newline.
+  if out.ends_with('\n') {
+    out.pop();
+  }
+  out
 }
 
 /// Split `text` at runs of 2+ consecutive spaces (the visible column gaps left
@@ -445,5 +528,194 @@ mod tests {
     // Out-of-range pages are ignored.
     let md2 = rebuild_document_for_pages(&markdowns, &[1, 99]);
     assert_eq!(md2, "<!-- Page 1 -->\n\npage one");
+  }
+
+  // ─── group_cells / lines_to_table_markdown ──────────────────────────────
+
+  #[test]
+  fn group_cells_splits_rows_and_columns() {
+    let items = grid_items();
+    let refs: Vec<&TextItem> = items.iter().collect();
+    let rows = group_cells(&refs);
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0], vec!["姓名", "年龄", "城市"]);
+    assert_eq!(rows[1], vec!["张三", "28", "北京"]);
+    assert_eq!(rows[2], vec!["李四", "35", "上海"]);
+  }
+
+  /// Merged single-item rows (one text run with multi-space column gaps) are
+  /// split into cells the same way plain rows are, so the GFM table stays
+  /// rectangular.
+  #[test]
+  fn group_cells_splits_merged_rows() {
+    let items = vec![
+      item("Name", 72.0, 790.0, 32.0, 12.0),
+      item("Age", 190.0, 790.0, 21.0, 12.0),
+      item("City", 310.0, 790.0, 21.0, 12.0),
+      item("Alice    28    Beijing", 72.0, 770.0, 102.0, 12.0),
+      item("Bob    35    Shanghai", 72.0, 750.0, 112.0, 12.0),
+    ];
+    let refs: Vec<&TextItem> = items.iter().collect();
+    let rows = group_cells(&refs);
+    assert_eq!(rows[0], vec!["Name", "Age", "City"]);
+    assert_eq!(rows[1], vec!["Alice", "28", "Beijing"]);
+    assert_eq!(rows[2], vec!["Bob", "35", "Shanghai"]);
+  }
+
+  #[test]
+  fn lines_to_table_markdown_emits_valid_gfm() {
+    let items = grid_items();
+    let refs: Vec<&TextItem> = items.iter().collect();
+    let md = lines_to_table_markdown(&refs);
+    let expected = "\
+| 姓名 | 年龄 | 城市 |
+| --- | --- | --- |
+| 张三 | 28 | 北京 |
+| 李四 | 35 | 上海 |";
+    assert_eq!(md, expected);
+  }
+
+  /// Shorter rows are padded with empty cells so the table stays rectangular
+  /// even after an exclusion removes a cell from some rows.
+  #[test]
+  fn lines_to_table_markdown_pads_uneven_rows() {
+    let items = vec![
+      item("A", 72.0, 790.0, 10.0, 12.0),
+      item("B", 150.0, 790.0, 10.0, 12.0),
+      item("C", 72.0, 770.0, 10.0, 12.0),
+      // Second row has only one cell - padded to two columns.
+    ];
+    let refs: Vec<&TextItem> = items.iter().collect();
+    let md = lines_to_table_markdown(&refs);
+    let expected = "\
+| A | B |
+| --- | --- |
+| C |  |";
+    assert_eq!(md, expected);
+  }
+
+  #[test]
+  fn lines_to_table_markdown_empty_items_yields_empty_string() {
+    let refs: Vec<&TextItem> = Vec::new();
+    assert_eq!(lines_to_table_markdown(&refs), "");
+  }
+
+  // ─── rebuild_pages_excluding: table pages stay tables ───────────────────
+
+  /// Regression for the reported bug: a text-type PDF that is entirely tables,
+  /// when an exclusion region is drawn on the first page, must keep that page
+  /// as a GFM table - not collapse to `text_separator`-joined plain text.
+  #[test]
+  fn excluded_table_page_is_rebuilt_as_gfm_table_not_plain_text() {
+    let items = grid_items();
+    let original_md =
+      "| 姓名 | 年龄 | 城市 |\n| --- | --- | --- |\n| 张三 | 28 | 北京 |\n| 李四 | 35 | 上海 |";
+    let spec = ExcludeRegions {
+      pages: vec![crate::models::PageExclude {
+        page: 1,
+        // Exclude the 城市/北京/上海 column (right band).
+        rects: vec![crate::models::RegionRect {
+          x: 340.0,
+          y: 0.0,
+          width: 260.0,
+          height: 900.0,
+        }],
+        page_x: 0.0,
+        page_y: 0.0,
+        page_width: 595.0,
+        page_height: 842.0,
+      }],
+      use_for_all_pages: None,
+      total_pages: Some(1),
+    };
+    let out = rebuild_pages_excluding(
+      &[original_md.to_string()],
+      &items,
+      &[1],     // page 1 is a table page
+      &[false], // text page, no OCR
+      &spec,
+      "|",
+    );
+    assert_eq!(out.len(), 1);
+    // The page is still a GFM table (has the delimiter row), and the excluded
+    // 城市 column is gone.
+    let expected = "\
+| 姓名 | 年龄 |
+| --- | --- |
+| 张三 | 28 |
+| 李四 | 35 |";
+    assert_eq!(out[0], expected);
+  }
+
+  /// A non-table excluded page still degrades to plain-text lines (the existing
+  /// behaviour is unchanged - only table pages get the GFM rebuild).
+  #[test]
+  fn excluded_non_table_page_still_uses_plain_text_lines() {
+    let items = vec![
+      item("hello", 72.0, 790.0, 40.0, 12.0),
+      item("world", 72.0, 770.0, 40.0, 12.0),
+    ];
+    let spec = ExcludeRegions {
+      pages: vec![crate::models::PageExclude {
+        page: 1,
+        // Band covers only "hello" (y≈790-802); "world" (y≈770-782) is below it.
+        rects: vec![crate::models::RegionRect {
+          x: 0.0,
+          y: 800.0,
+          width: 595.0,
+          height: 20.0,
+        }],
+        page_x: 0.0,
+        page_y: 0.0,
+        page_width: 595.0,
+        page_height: 842.0,
+      }],
+      use_for_all_pages: None,
+      total_pages: Some(1),
+    };
+    let out = rebuild_pages_excluding(
+      &["hello\nworld".to_string()],
+      &items,
+      &[], // no table pages
+      &[false],
+      &spec,
+      "|",
+    );
+    // "hello" was excluded; "world" survives as a plain line, not a table.
+    assert_eq!(out[0], "world");
+  }
+
+  /// A table page that is NOT excluded keeps its original markdown verbatim
+  /// (the exclusion must not touch untouched table pages).
+  #[test]
+  fn non_excluded_table_page_keeps_original_markdown() {
+    let items = grid_items();
+    let original_md = "| 姓名 | 年龄 | 城市 |\n| --- | --- | --- |\n| 张三 | 28 | 北京 |";
+    let spec = ExcludeRegions {
+      pages: vec![crate::models::PageExclude {
+        page: 2, // exclusion is on page 2, not page 1
+        rects: vec![crate::models::RegionRect {
+          x: 0.0,
+          y: 0.0,
+          width: 100.0,
+          height: 100.0,
+        }],
+        page_x: 0.0,
+        page_y: 0.0,
+        page_width: 595.0,
+        page_height: 842.0,
+      }],
+      use_for_all_pages: None,
+      total_pages: Some(2),
+    };
+    let out = rebuild_pages_excluding(
+      &[original_md.to_string(), "page two".to_string()],
+      &items,
+      &[1],
+      &[false, false],
+      &spec,
+      "|",
+    );
+    assert_eq!(out[0], original_md);
   }
 }

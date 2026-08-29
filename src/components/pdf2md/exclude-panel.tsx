@@ -1,10 +1,16 @@
-import { Eraser, SquareDashedMousePointer, X } from "lucide-react";
+import { useState } from "react";
+import { ChevronUp, Eraser, SquareDashedMousePointer, X } from "lucide-react";
 
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { GlassPanel } from "@/components/ui/glass-panel";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { PageExclude } from "@/lib/types";
 
 interface ExcludePanelProps {
@@ -21,6 +27,10 @@ interface ExcludePanelProps {
 /**
  * Floating inspector for the exclusion regions of the open document: the
  * apply-to-every-page switch, the list of drawn rects and a clear-all action.
+ *
+ * The panel can be collapsed ("缩放") down to a small circular button in the
+ * top-right corner that shows only the exclusion-region icon, freeing the
+ * preview while editing; clicking it re-expands the full panel.
  */
 export function ExcludePanel({
   pages,
@@ -31,9 +41,30 @@ export function ExcludePanel({
   onRemove,
 }: ExcludePanelProps) {
   const { t } = useI18n();
+  const [expanded, setExpanded] = useState(true);
   const entries = pages.flatMap((page) =>
     page.rects.map((rect, index) => ({ page: page.page, rect, index })),
   );
+
+  if (!expanded) {
+    return (
+      <div className="absolute right-3 top-11 z-10">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="secondary"
+              size="icon-lg"
+              className="rounded-full shadow-lg"
+              onClick={() => setExpanded(true)}
+            >
+              <SquareDashedMousePointer />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">{t("exclude.expand")}</TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
 
   return (
     <GlassPanel className="absolute right-3 top-11 z-10 w-60 rounded-xl p-3 shadow-lg">
@@ -43,6 +74,14 @@ export function ExcludePanel({
         <span className="ml-auto shrink-0 text-xs text-muted-foreground">
           {t("exclude.rectCount", { count: entries.length })}
         </span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="size-6 shrink-0 rounded-full"
+          onClick={() => setExpanded(false)}
+        >
+          <ChevronUp className="size-3.5" />
+        </Button>
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-2">
