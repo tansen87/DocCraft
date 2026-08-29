@@ -692,6 +692,7 @@ pub fn extract_tables_from_draw_lines(
   use_cache: bool,
   high_precision: bool,
   ocr_engines: Option<&DrawOcrEngines>,
+  text_separator: &str,
 ) -> Result<DrawTableResult, String> {
   let start = Instant::now();
 
@@ -758,7 +759,7 @@ pub fn extract_tables_from_draw_lines(
       None => extract_text_elements(path, page_filter.as_ref())?,
     }
   } else {
-    extract_cache::cached_extraction(path, true)
+    extract_cache::cached_extraction(path, true, text_separator)
       .map(|ext| ext.items)
       .map_err(|e| e.to_string())?
   };
@@ -973,9 +974,16 @@ pub fn extract_tables_and_merge(
   use_cache: bool,
   high_precision: bool,
   ocr_engines: Option<&DrawOcrEngines>,
+  text_separator: &str,
 ) -> Result<String, String> {
-  let result =
-    extract_tables_from_draw_lines(path, request, use_cache, high_precision, ocr_engines)?;
+  let result = extract_tables_from_draw_lines(
+    path,
+    request,
+    use_cache,
+    high_precision,
+    ocr_engines,
+    text_separator,
+  )?;
 
   if result.tables.is_empty() {
     return if let Some(md) = existing_markdown {

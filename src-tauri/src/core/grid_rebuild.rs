@@ -10,6 +10,8 @@ use pdf_inspector::TextItem;
 use pdf_inspector::extractor::ItemType;
 
 use crate::core::page_marker::page_marker;
+use crate::core::region_exclude;
+use crate::models::ExcludeRegions;
 
 /// Rebuild the document markdown page by page, keeping every visual line on
 /// its own line, returning one markdown string per page (in document order).
@@ -17,10 +19,15 @@ use crate::core::page_marker::page_marker;
 /// * Pages that pdf-inspector already classified as containing a table
 ///   (`pages_with_tables`) or that need OCR are left untouched.
 /// * Every other page is rebuilt: each visual line is kept on its own line.
+///
+/// `separator` joins the text items that share a visual line (the app's
+/// "text separator" setting, e.g. `"|"` for column layouts); an empty value
+/// falls back to a single space so words never get glued together.
 pub fn rebuild_pages(
   pages: &[pdf_inspector::PageMarkdown],
   items: &[TextItem],
   pages_with_tables: &[u32],
+  separator: &str,
 ) -> Vec<String> {
   let mut parts = Vec::with_capacity(pages.len());
   for page in pages {
@@ -38,9 +45,65 @@ pub fn rebuild_pages(
     let markdown = if has_table || page.needs_ocr || page_items.is_empty() {
       page.markdown.clone()
     } else {
-      lines_to_markdown(&page_items)
+      lines_to_markdown(&page_items, separator)
     };
     parts.push(markdown);
+  }
+  parts
+}
+
+/// Same as [`rebuild_pages`] but with user-drawn exclusion regions applied:
+/// text items that intersect an excluded rectangle are dropped before the
+/// visual lines are regrouped.
+///
+/// Only pages that carry at least one rect are re-rendered, so a document
+/// without exclusions produces byte-identical output to [`rebuild_pages`].
+///
+/// Pages flagged `needs_ocr` keep their markdown: their content comes from the
+/// OCR pipeline, where the frontend masks the excluded rects on the rendered
+/// image instead.
+///
+/// A table page touched by an exclusion loses its GFM table - the whole-page
+/// table markdown cannot be filtered by region, so the page is rebuilt from
+/// the remaining items as plain text lines (documented trade-off).
+pub fn rebuild_pages_excluding(
+  page_markdowns: &[String],
+  items: &[TextItem],
+  pages_with_tables: &[u32],
+  needs_ocr_flags: &[bool],
+  spec: &ExcludeRegions,
+  separator: &str,
+) -> Vec<String> {
+  let page_count = page_markdowns.len() as u32;
+  let filters = region_exclude::page_filters(spec, page_count);
+  let kept = region_exclude::filter_items(items, &filters);
+  let mut parts = Vec::with_capacity(page_markdowns.len());
+  for (i, markdown) in page_markdowns.iter().enumerate() {
+    let page_no = (i + 1) as u32;
+    let has_table = pages_with_tables.contains(&page_no);
+    let needs_ocr = needs_ocr_flags.get(i).copied().unwrap_or(false);
+    let excluded = filters.get(&page_no).is_some_and(|r| !r.is_empty());
+    let page_items: Vec<&TextItem> = kept
+      .iter()
+      .filter(|it| {
+        it.page == page_no
+          && matches!(it.item_type, ItemType::Text | ItemType::FormField)
+          && !it.text.trim().is_empty()
+      })
+      .collect();
+
+    // Untouched pages follow the normal path (tables and OCR pages keep their
+    // markdown); an excluded page is rebuilt unless its content comes from OCR.
+    let keep_original = if excluded {
+      needs_ocr
+    } else {
+      has_table || needs_ocr || page_items.is_empty()
+    };
+    if keep_original {
+      parts.push(markdown.clone());
+    } else {
+      parts.push(lines_to_markdown(&page_items, separator));
+    }
   }
   parts
 }
@@ -145,18 +208,69 @@ fn group_lines<'a>(items: &[&'a TextItem]) -> Vec<Vec<&'a TextItem>> {
   lines
 }
 
-/// Render every visual line as its own markdown line.
-fn lines_to_markdown(items: &[&TextItem]) -> String {
+/// Render every visual line as its own markdown line, joining the line's text
+/// items with `separator` (see [`rebuild_pages`]); an empty separator collapses
+/// to a single space.
+///
+/// PDF producers often write each row of a borderless grid as one text run, so
+/// pdf-inspector returns a single item whose cells are separated by runs of
+/// extra spaces. Those runs are split into cells here (`split_at_column_gaps`),
+/// so the separator appears between the columns of every row - not just rows
+/// whose cells happen to be separate items.
+fn lines_to_markdown(items: &[&TextItem], separator: &str) -> String {
+  let join = if separator.trim().is_empty() {
+    " "
+  } else {
+    separator
+  };
   let lines = group_lines(items);
   let mut out = Vec::new();
   for line in lines {
-    let text: Vec<&str> = line.iter().map(|it| it.text.trim()).collect();
-    if text.is_empty() {
+    let mut pieces: Vec<String> = Vec::new();
+    for it in line {
+      let trimmed = it.text.trim();
+      match split_at_column_gaps(trimmed) {
+        Some(cells) => pieces.extend(cells),
+        None => pieces.push(trimmed.to_string()),
+      }
+    }
+    pieces.retain(|p| !p.is_empty());
+    if pieces.is_empty() {
       continue;
     }
-    out.push(text.join(" "));
+    out.push(pieces.join(join));
   }
   out.join("\n")
+}
+
+/// Split `text` at runs of 2+ consecutive spaces (the visible column gaps left
+/// by single-run rows). Pieces are trimmed and empty ones dropped; returns
+/// `None` when there is no such run, so a single intact cell keeps its exact
+/// text (single spaces inside a cell / normal prose stay untouched).
+fn split_at_column_gaps(text: &str) -> Option<Vec<String>> {
+  let bytes = text.as_bytes();
+  let mut cells: Vec<String> = Vec::new();
+  let mut seg_start = 0usize;
+  let mut i = 0usize;
+  while i < bytes.len() {
+    if bytes[i] == b' ' && i + 1 < bytes.len() && bytes[i + 1] == b' ' {
+      let cell = &text[seg_start..i];
+      if !cell.trim().is_empty() {
+        cells.push(cell.trim().to_string());
+      }
+      while i < bytes.len() && bytes[i] == b' ' {
+        i += 1;
+      }
+      seg_start = i;
+    } else {
+      i += 1;
+    }
+  }
+  let last = &text[seg_start..];
+  if !last.trim().is_empty() {
+    cells.push(last.trim().to_string());
+  }
+  if cells.len() >= 2 { Some(cells) } else { None }
 }
 
 #[cfg(test)]
@@ -211,8 +325,57 @@ mod tests {
   fn line_breaks_preserve_each_row() {
     let items = grid_items();
     let refs: Vec<&TextItem> = items.iter().collect();
-    let md = lines_to_markdown(&refs);
+    let md = lines_to_markdown(&refs, " ");
     assert_eq!(md, "姓名 年龄 城市\n张三 28 北京\n李四 35 上海");
+  }
+
+  /// The configured text separator (default `|`, the app's "连接符") joins the
+  /// items of a visual line, mirroring what the OCR engine does for OCR boxes.
+  #[test]
+  fn text_separator_joins_same_line_items() {
+    let items = grid_items();
+    let refs: Vec<&TextItem> = items.iter().collect();
+    assert_eq!(
+      lines_to_markdown(&refs, "|"),
+      "姓名|年龄|城市\n张三|28|北京\n李四|35|上海"
+    );
+    // A blank separator falls back to a space so words never glue together.
+    assert_eq!(
+      lines_to_markdown(&refs, ""),
+      "姓名 年龄 城市\n张三 28 北京\n李四 35 上海"
+    );
+  }
+
+  /// Rows that pdf-inspector merged into a single item (written as one text
+  /// run with visible multi-space column gaps) must still get the separator on
+  /// every row's columns, exactly like the per-cell header row.
+  #[test]
+  fn merged_rows_split_at_column_gaps_and_get_the_separator() {
+    let items = vec![
+      item("Name", 72.0, 790.0, 32.0, 12.0),
+      item("Age", 190.0, 790.0, 21.0, 12.0),
+      item("City", 310.0, 790.0, 21.0, 12.0),
+      item("Alice    28    Beijing", 72.0, 770.0, 102.0, 12.0),
+      item("Bob    35    Shanghai", 72.0, 750.0, 112.0, 12.0),
+    ];
+    let refs: Vec<&TextItem> = items.iter().collect();
+    assert_eq!(
+      lines_to_markdown(&refs, "|"),
+      "Name|Age|City\nAlice|28|Beijing\nBob|35|Shanghai"
+    );
+  }
+
+  /// A single space between words is normal spacing, not a column gap: prose
+  /// and CW/CJK lines must not be fragmented by the splitter.
+  #[test]
+  fn single_space_runs_are_left_alone() {
+    let items = vec![item("This is prose", 72.0, 790.0, 80.0, 12.0)];
+    let refs: Vec<&TextItem> = items.iter().collect();
+    assert_eq!(lines_to_markdown(&refs, "|"), "This is prose");
+    // No leading/trailing garbage either.
+    let items2 = vec![item("  padded   ", 72.0, 790.0, 60.0, 12.0)];
+    let refs2: Vec<&TextItem> = items2.iter().collect();
+    assert_eq!(lines_to_markdown(&refs2, "|"), "padded");
   }
 
   #[test]
@@ -235,6 +398,35 @@ mod tests {
     assert_eq!(parse_page_range(Some("0,99,3"), 10), Some(vec![3]));
     // Malformed tokens are skipped; when nothing parses, None.
     assert_eq!(parse_page_range(Some("x,y"), 10), None);
+  }
+
+  #[test]
+  fn excluding_a_column_keeps_the_other_columns() {
+    // A 3x3 grid where the last column (城市/北京/上海) is excluded via a
+    // full-height band on the right side of the page.
+    let items = grid_items();
+    let spec = ExcludeRegions {
+      pages: vec![crate::models::PageExclude {
+        page: 1,
+        rects: vec![crate::models::RegionRect {
+          x: 340.0,
+          y: 0.0,
+          width: 260.0,
+          height: 900.0,
+        }],
+        page_x: 0.0,
+        page_y: 0.0,
+        page_width: 595.0,
+        page_height: 842.0,
+      }],
+      use_for_all_pages: None,
+      total_pages: Some(1),
+    };
+    let kept = region_exclude::filter_items(&items, &region_exclude::page_filters(&spec, 1));
+    let refs: Vec<&TextItem> = kept.iter().collect();
+    let md = lines_to_markdown(&refs, " ");
+    let expected = "姓名 年龄\n张三 28\n李四 35";
+    assert_eq!(md, expected);
   }
 
   #[test]

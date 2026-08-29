@@ -36,6 +36,7 @@ pub struct FullExtraction {
 /// cached).
 struct CacheEntry {
   path: String,
+  separator: String,
   extraction: FullExtraction,
 }
 
@@ -45,21 +46,30 @@ static CACHE: Mutex<Option<CacheEntry>> = Mutex::new(None);
 /// decodes the whole document and populates the cache; later calls clone the
 /// cached copy. When `use_cache` is `false` the cache is neither read nor
 /// written, so callers that opted out of caching re-extract every time.
-pub fn cached_extraction(path: &str, use_cache: bool) -> Result<FullExtraction, PdfError> {
+///
+/// `separator` (the "text separator" setting) is baked into the per-page
+/// markdown, so the cache is keyed by path + separator: a change of separator
+/// re-extracts the document instead of serving stale joins.
+pub fn cached_extraction(
+  path: &str,
+  use_cache: bool,
+  separator: &str,
+) -> Result<FullExtraction, PdfError> {
   if !use_cache {
-    return extract_fresh(path);
+    return extract_fresh(path, separator);
   }
 
   let mut guard = CACHE.lock().unwrap_or_else(|e| e.into_inner());
   if let Some(entry) = guard.as_ref() {
-    if entry.path == path {
+    if entry.path == path && entry.separator == separator {
       return Ok(entry.extraction.clone());
     }
   }
 
-  let extraction = extract_fresh(path)?;
+  let extraction = extract_fresh(path, separator)?;
   *guard = Some(CacheEntry {
     path: path.to_string(),
+    separator: separator.to_string(),
     extraction: extraction.clone(),
   });
   Ok(extraction)
@@ -75,10 +85,11 @@ pub fn peek_items(path: &str) -> Option<Vec<TextItem>> {
     .map(|entry| entry.extraction.items.clone())
 }
 
-fn extract_fresh(path: &str) -> Result<FullExtraction, PdfError> {
+fn extract_fresh(path: &str, separator: &str) -> Result<FullExtraction, PdfError> {
   let pages = pdf_inspector::extract_pages_markdown(path, None)?;
   let items = pdf_inspector::extract_text_with_positions(path)?;
-  let page_markdowns = grid_rebuild::rebuild_pages(&pages.pages, &items, &pages.pages_with_tables);
+  let page_markdowns =
+    grid_rebuild::rebuild_pages(&pages.pages, &items, &pages.pages_with_tables, separator);
   Ok(FullExtraction {
     page_markdowns,
     needs_ocr_flags: pages.pages.iter().map(|p| p.needs_ocr).collect(),

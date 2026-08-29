@@ -6,6 +6,7 @@ import type {
   DetectResult,
   DrawTableRequest,
   DrawTableResult,
+  ExcludeRegions,
   HybridSessionInfo,
   ImageTableRequest,
   ImageTableResult,
@@ -24,19 +25,29 @@ import type {
 export const detectPdf = (path: string) =>
   invoke<DetectResult>("detect_pdf", { path });
 
-export const convertPdf = (path: string, pageRange?: string) =>
-  invoke<ConvertResult>("convert_pdf", { path, pageRange: pageRange ?? null });
+export const convertPdf = (
+  path: string,
+  pageRange?: string,
+  exclusions?: ExcludeRegions | null,
+) =>
+  invoke<ConvertResult>("convert_pdf", {
+    path,
+    pageRange: pageRange ?? null,
+    exclusions: exclusions ?? null,
+  });
 
 /** Begin a hybrid session: text pages extracted once, kept on the backend. */
 export const startHybridSession = (
   path: string,
   ocrPages: number[],
   pageRange?: string,
+  exclusions?: ExcludeRegions | null,
 ) =>
   invoke<HybridSessionInfo>("hybrid_session_start", {
     path,
     ocrPages,
     pageRange: pageRange ?? null,
+    exclusions: exclusions ?? null,
   });
 
 /** Stream one rendered page through the OCR provider. */

@@ -199,6 +199,49 @@ export interface PageDrawTable {
   pageHeight: number;
 }
 
+// ─── Exclusion regions (see docs/design/00010_pdf-exclude-region.md) ──────
+
+/**
+ * A rectangle whose content must not take part in recognition, expressed in
+ * **viewport-relative PDF points with the origin at the lower-left corner**.
+ */
+export interface ExcludeRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** One page's exclusion rects plus the page geometry from pdfjs `rawDims`. */
+export interface PageExclude {
+  /** 1-indexed page number. */
+  page: number;
+  rects: ExcludeRect[];
+  /** Page origin (x, y of lower-left corner) in PDF points. */
+  pageX: number;
+  pageY: number;
+  pageWidth: number;
+  pageHeight: number;
+}
+
+/** Exclusion payload sent with a conversion. */
+export interface ExcludeRegions {
+  pages: PageExclude[];
+  /** Apply the rects of the first page carrying any to every page. */
+  useForAllPages?: boolean;
+  totalPages?: number;
+}
+
+/** Per-page geometry of a document, captured when exclusion mode is entered. */
+export interface PageGeometry {
+  pageX: number;
+  pageY: number;
+  pageWidth: number;
+  pageHeight: number;
+  /** `page.rotate` of the pdf.js page; non-zero pages cannot carry rects yet. */
+  rotation: number;
+}
+
 /** A page rendered to PNG (base64) for the draw-table local OCR fallback. */
 export interface PageImagePayload {
   /** 1-indexed page number. */

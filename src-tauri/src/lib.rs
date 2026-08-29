@@ -10,9 +10,10 @@ use tauri::{Listener, Manager};
 use crate::core::ocr::HybridStore;
 use crate::core::snip::{SnipStore, get_window_under_cursor};
 use crate::models::{
-  AppSettings, ConvertResult, DetectResult, DrawTableRequest, DrawTableResult, HybridSessionInfo,
-  ImageTableRequest, ImageTableResult, MdAnalyzeResult, MdExportResult, MonitorSnapshot,
-  OcrImageResult, OcrVendorDto, OcrVendorInput, ShotRegion, UsageInput, UsageStats,
+  AppSettings, ConvertResult, DetectResult, DrawTableRequest, DrawTableResult, ExcludeRegions,
+  HybridSessionInfo, ImageTableRequest, ImageTableResult, MdAnalyzeResult, MdExportResult,
+  MonitorSnapshot, OcrImageResult, OcrVendorDto, OcrVendorInput, ShotRegion, UsageInput,
+  UsageStats,
 };
 
 /// Managed tray icon state so we can rebuild it when settings change.
@@ -103,11 +104,15 @@ pub fn update_tray(app: &tauri::AppHandle, enabled: bool) {
 /// following conversion reuses it.
 #[tauri::command]
 async fn detect_pdf(app: tauri::AppHandle, path: String) -> Result<DetectResult, String> {
-  let use_cache = core::settings::get_app_settings(&app)?.cache_extracted_text;
-  tauri::async_runtime::spawn_blocking(move || core::convert::detect_pdf(&path, use_cache))
-    .await
-    .map_err(|e| e.to_string())?
-    .map_err(|e| e.to_string())
+  let settings = core::settings::get_app_settings(&app)?;
+  let use_cache = settings.cache_extracted_text;
+  let text_separator = settings.text_separator;
+  tauri::async_runtime::spawn_blocking(move || {
+    core::convert::detect_pdf(&path, use_cache, &text_separator)
+  })
+  .await
+  .map_err(|e| e.to_string())?
+  .map_err(|e| e.to_string())
 }
 
 /// Convert a PDF to Markdown locally via pdf-inspector.
@@ -116,10 +121,19 @@ async fn convert_pdf(
   app: tauri::AppHandle,
   path: String,
   page_range: Option<String>,
+  exclusions: Option<ExcludeRegions>,
 ) -> Result<ConvertResult, String> {
-  let use_cache = core::settings::get_app_settings(&app)?.cache_extracted_text;
+  let settings = core::settings::get_app_settings(&app)?;
+  let use_cache = settings.cache_extracted_text;
+  let text_separator = settings.text_separator;
   tauri::async_runtime::spawn_blocking(move || {
-    core::convert::convert_pdf(&path, use_cache, page_range.as_deref())
+    core::convert::convert_pdf(
+      &path,
+      use_cache,
+      page_range.as_deref(),
+      exclusions.as_ref(),
+      &text_separator,
+    )
   })
   .await
   .map_err(|e| e.to_string())?
@@ -142,10 +156,18 @@ async fn hybrid_session_start(
   path: String,
   ocr_pages: Vec<u32>,
   page_range: Option<String>,
+  exclusions: Option<ExcludeRegions>,
 ) -> Result<HybridSessionInfo, String> {
   tauri::async_runtime::spawn_blocking(move || {
     let store = app.state::<HybridStore>();
-    core::ocr::start_session(&app, &store, &path, ocr_pages, page_range.as_deref())
+    core::ocr::start_session(
+      &app,
+      &store,
+      &path,
+      ocr_pages,
+      page_range.as_deref(),
+      exclusions.as_ref(),
+    )
   })
   .await
   .map_err(|e| e.to_string())?
@@ -419,6 +441,7 @@ async fn extract_draw_table(
     let settings = core::settings::get_app_settings(&app)?;
     let use_cache = settings.cache_extracted_text;
     let high_precision = settings.draw_table_high_precision;
+    let text_separator = settings.text_separator;
     let (local, remote) = resolve_draw_ocr(&app, &draw_data)?;
     let remote_prompt = core::ocr::effective_draw_table_prompt(&app)?;
     let engines = core::line_draw::DrawOcrEngines {
@@ -432,6 +455,7 @@ async fn extract_draw_table(
       use_cache,
       high_precision,
       Some(&engines),
+      &text_separator,
     )
   })
   .await
@@ -450,6 +474,7 @@ async fn extract_draw_table_to_markdown(
     let settings = core::settings::get_app_settings(&app)?;
     let use_cache = settings.cache_extracted_text;
     let high_precision = settings.draw_table_high_precision;
+    let text_separator = settings.text_separator;
     let (local, remote) = resolve_draw_ocr(&app, &draw_data)?;
     let remote_prompt = core::ocr::effective_draw_table_prompt(&app)?;
     let engines = core::line_draw::DrawOcrEngines {
@@ -464,6 +489,7 @@ async fn extract_draw_table_to_markdown(
       use_cache,
       high_precision,
       Some(&engines),
+      &text_separator,
     )
   })
   .await

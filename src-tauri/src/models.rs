@@ -278,6 +278,44 @@ pub struct DrawTableRequest {
   pub page_images: Option<Vec<PageImagePayload>>,
 }
 
+// ─── Exclusion-region types (see docs/design/00010_pdf-exclude-region.md) ──
+
+/// One page's exclusion regions: rectangles whose content must not take part
+/// in recognition.
+///
+/// Rects live in **viewport-relative PDF points with the origin at the
+/// lower-left corner** of the pdf.js viewBox - the same space as
+/// [`PageDrawTable`] - so the backend shifts them by `(page_x, page_y)` before
+/// comparing them against pdf-inspector's absolute user-space coordinates.
+/// `rects` being empty means "nothing is excluded on this page", which lets the
+/// frontend opt individual pages (e.g. rotated ones) out of an
+/// apply-to-all-pages template.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageExclude {
+  pub page: u32,
+  pub rects: Vec<RegionRect>,
+  /// Page origin (x, y of lower-left corner) in PDF points, from pdfjs rawDims.
+  pub page_x: f64,
+  pub page_y: f64,
+  /// Page width/height in PDF points (without userUnit scaling).
+  pub page_width: f64,
+  pub page_height: f64,
+}
+
+/// Complete exclusion payload for one conversion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExcludeRegions {
+  pub pages: Vec<PageExclude>,
+  /// When `true`, the rects of the first page that carries any are applied to
+  /// every page of the document instead of only to the listed pages.
+  pub use_for_all_pages: Option<bool>,
+  /// Total page count. Only needed for `use_for_all_pages` so pages without
+  /// their own entry can be expanded.
+  pub total_pages: Option<u32>,
+}
+
 /// Metadata about where a table was extracted from.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

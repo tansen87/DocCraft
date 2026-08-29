@@ -2,6 +2,7 @@ import {
   FileText,
   Columns3Cog,
   Loader2,
+  SquareDashedMousePointer,
   WandSparkles,
   Trash2,
 } from "lucide-react";
@@ -23,12 +24,18 @@ interface ConvertToolbarProps {
   busy: boolean;
   converting: boolean;
   drawMode: boolean;
+  /** Whether the exclusion-region editor is active (mutually exclusive with
+   * `drawMode` - both take over the page surface). */
+  excludeMode: boolean;
+  /** Number of exclusion rects drawn for this document. */
+  excludeCount: number;
   /** Optional page-range spec (`"1-5,8,12-14"`); empty converts all pages. */
   pageRange: string;
   onPageRangeChange: (value: string) => void;
   /** Total pages in the document, used to label the range input. */
   pageCount: number;
   onToggleDrawMode: () => void;
+  onToggleExcludeMode: () => void;
   onConvert: () => void;
   onClear?: () => void;
 }
@@ -39,10 +46,13 @@ export function ConvertToolbar({
   busy,
   converting,
   drawMode,
+  excludeMode,
+  excludeCount,
   pageRange,
   onPageRangeChange,
   pageCount,
   onToggleDrawMode,
+  onToggleExcludeMode,
   onConvert,
   onClear,
 }: ConvertToolbarProps) {
@@ -104,7 +114,7 @@ export function ConvertToolbar({
         <TooltipTrigger asChild>
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || excludeMode}
             onClick={onToggleDrawMode}
             className={cn(
               "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 gap-1.5",
@@ -119,6 +129,34 @@ export function ConvertToolbar({
         </TooltipTrigger>
         <TooltipContent>
           {drawMode ? t("toolbar.exitDraw") : t("toolbar.enterDraw")}
+        </TooltipContent>
+      </Tooltip>
+
+      {/* Exclusion-region editor toggle */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            disabled={busy || drawMode}
+            onClick={onToggleExcludeMode}
+            className={cn(
+              "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 gap-1.5",
+              excludeMode
+                ? "bg-background text-foreground shadow-sm"
+                : "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+            )}
+          >
+            <SquareDashedMousePointer className="size-4" />
+            {t("toolbar.excludeRegion")}
+            {excludeCount > 0 ? (
+              <span className="rounded bg-primary/15 px-1 text-[11px] font-medium tabular-nums text-primary">
+                {excludeCount}
+              </span>
+            ) : null}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {excludeMode ? t("toolbar.exitExclude") : t("toolbar.enterExclude")}
         </TooltipContent>
       </Tooltip>
 

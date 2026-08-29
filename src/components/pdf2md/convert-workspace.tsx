@@ -4,6 +4,8 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 
 import { ConvertToolbar } from "./convert-toolbar";
+import { ExcludeOverlay } from "./exclude-overlay";
+import { ExcludePanel } from "./exclude-panel";
 import { PdfPreview } from "./pdf-preview";
 import { PreviewPane } from "./preview-pane";
 import { convertWithOcr } from "./render-pdf-pages";
@@ -11,6 +13,7 @@ import { StatusBar } from "./status-bar";
 import { DrawTablePanel } from "@/components/draw-table/draw-table-panel";
 import { useI18n } from "@/i18n";
 import { Link2 } from "lucide-react";
+import { countRects, withPageRects } from "@/lib/exclude-region";
 import {
   Tooltip,
   TooltipContent,
@@ -29,6 +32,10 @@ import type {
   ActivityProgress,
   ConvertResult,
   DetectResult,
+  ExcludeRect,
+  ExcludeRegions,
+  PageExclude,
+  PageGeometry,
   StatusNotice,
 } from "@/lib/types";
 import * as pdfjs from "pdfjs-dist";
@@ -97,6 +104,18 @@ export function ConvertWorkspace({
     initialResult ?? null,
   );
   const [drawMode, setDrawMode] = useState(false);
+  /**
+   * Exclusion-region editor. Rects are kept per page in PDF points; the
+   * "apply to all pages" flag makes the first page carrying rects the template
+   * for the whole document (see docs/design/00010_pdf-exclude-region.md).
+   */
+  const [excludeMode, setExcludeMode] = useState(false);
+  const [excludePages, setExcludePages] = useState<PageExclude[]>([]);
+  const [useForAllPages, setUseForAllPages] = useState(false);
+  /** Per-page geometry (pdfjs rawDims) captured when exclusion mode is entered. */
+  const [pageGeom, setPageGeom] = useState<Record<number, PageGeometry> | null>(
+    null,
+  );
   const [mergedMarkdown, setMergedMarkdown] = useState<string | null>(null);
   /** Page-range spec (`"1-5,8,12-14"`); empty converts all pages. */
   const [pageRange, setPageRange] = useState("");
@@ -206,6 +225,106 @@ export function ConvertWorkspace({
     };
   }, [drawMode, filePath]);
 
+  // Exclusion regions belong to one document: drop them when the file changes.
+  useEffect(() => {
+    setExcludePages([]);
+    setPageGeom(null);
+  }, [filePath]);
+
+  // Load the geometry of every page so rects can be stored in PDF points and
+  // clamped correctly when they are applied to pages of a different size.
+  useEffect(() => {
+    if (!excludeMode) return;
+    let cancelled = false;
+    const task = pdfjs.getDocument({ url: convertFileSrc(filePath) });
+    task.promise
+      .then(async (doc) => {
+        const geom: Record<number, PageGeometry> = {};
+        for (let i = 1; i <= doc.numPages; i += 1) {
+          if (cancelled) return;
+          const page = await doc.getPage(i);
+          // rawDims excludes userUnit scaling, matching the backend's
+          // PDF-point coordinate space.
+          const rawDims = page.getViewport({ scale: 1 }).rawDims as {
+            pageWidth: number;
+            pageHeight: number;
+            pageX: number;
+            pageY: number;
+          };
+          geom[i] = {
+            pageWidth: rawDims.pageWidth,
+            pageHeight: rawDims.pageHeight,
+            pageX: rawDims.pageX,
+            pageY: rawDims.pageY,
+            rotation: page.rotate ?? 0,
+          };
+          page.cleanup();
+        }
+        if (!cancelled) setPageGeom(geom);
+      })
+      .catch(() => {
+        if (!cancelled) setPageGeom({});
+      });
+    return () => {
+      cancelled = true;
+      task.destroy();
+    };
+  }, [excludeMode, filePath]);
+
+  const updatePageRects = useCallback(
+    (page: number, rects: ExcludeRect[]) => {
+      const geom = pageGeom?.[page];
+      if (!geom) return;
+      setExcludePages(
+        (prev) =>
+          withPageRects(
+            { pages: prev },
+            {
+              page,
+              rects,
+              pageX: geom.pageX,
+              pageY: geom.pageY,
+              pageWidth: geom.pageWidth,
+              pageHeight: geom.pageHeight,
+            },
+          ).pages,
+      );
+    },
+    [pageGeom],
+  );
+
+  /** Payload sent with the conversion commands; `null` when nothing is drawn. */
+  const exclusionSpec = useMemo<ExcludeRegions | null>(() => {
+    if (excludePages.length === 0) return null;
+    const pages = excludePages
+      .filter((p) => p.rects.length > 0)
+      .map((p) => ({ ...p, rects: [...p.rects] }))
+      .sort((a, b) => a.page - b.page);
+    if (pages.length === 0) return null;
+    if (useForAllPages && pageGeom) {
+      // Rotated pages opt out with an explicit empty entry: their viewport
+      // does not match PDF user space, so template rects cannot be mapped.
+      for (const [key, geom] of Object.entries(pageGeom)) {
+        const page = Number(key);
+        if (geom.rotation % 360 === 0) continue;
+        if (pages.some((p) => p.page === page)) continue;
+        pages.push({
+          page,
+          rects: [],
+          pageX: geom.pageX,
+          pageY: geom.pageY,
+          pageWidth: geom.pageWidth,
+          pageHeight: geom.pageHeight,
+        });
+      }
+    }
+    return {
+      pages,
+      useForAllPages,
+      totalPages: detect?.pageCount ?? Object.keys(pageGeom ?? {}).length,
+    };
+  }, [excludePages, useForAllPages, pageGeom, detect?.pageCount]);
+
   useEffect(() => {
     if (initialResult) {
       setDetect(initialResult);
@@ -259,8 +378,9 @@ export function ConvertWorkspace({
               setActivity,
               undefined,
               rangeSpec,
+              exclusionSpec,
             )
-          : await convertPdf(filePath, rangeSpec);
+          : await convertPdf(filePath, rangeSpec, exclusionSpec);
       setResult(r);
       setDetect(r);
       onConverted?.(r);
@@ -280,7 +400,7 @@ export function ConvertWorkspace({
       setConverting(false);
       setActivity(null);
     }
-  }, [filePath, detect, pageRange, onConverted, t]);
+  }, [filePath, detect, pageRange, exclusionSpec, onConverted, t]);
 
   const handleConvertRef = useRef(handleConvert);
   handleConvertRef.current = handleConvert;
@@ -314,8 +434,32 @@ export function ConvertWorkspace({
       // Reset when entering draw mode
       setMergedMarkdown(null);
       setExtractTimeMs(0);
+      // The two editors share the page surface: only one can be active.
+      setExcludeMode(false);
     }
   }, [drawMode]);
+
+  const toggleExcludeMode = useCallback(() => {
+    setExcludeMode((prev) => {
+      if (!prev) setDrawMode(false);
+      return !prev;
+    });
+  }, []);
+
+  const clearExclusions = useCallback(() => {
+    setExcludePages([]);
+    setUseForAllPages(false);
+  }, []);
+
+  // Esc leaves the exclusion editor.
+  useEffect(() => {
+    if (!excludeMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setExcludeMode(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [excludeMode]);
 
   const handleMergeToMarkdown = useCallback(
     (markdown: string, processingTimeMs?: number) => {
@@ -409,10 +553,13 @@ export function ConvertWorkspace({
         busy={busy}
         converting={converting}
         drawMode={drawMode}
+        excludeMode={excludeMode}
+        excludeCount={countRects(exclusionSpec)}
         pageRange={pageRange}
         onPageRangeChange={setPageRange}
         pageCount={detect?.pageCount ?? 0}
         onToggleDrawMode={toggleDrawMode}
+        onToggleExcludeMode={toggleExcludeMode}
         onConvert={handleConvert}
         onClear={onClear}
       />
@@ -472,12 +619,55 @@ export function ConvertWorkspace({
       ) : (
         /* Normal Mode: PDF preview + Markdown preview */
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-1 lg:grid-cols-2">
-          <PdfPreview
-            path={filePath}
-            className="min-h-[280px]"
-            scrollToPage={jumpPage}
-            onPageSelect={syncEnabled ? jumpMarkdown : undefined}
-          />
+          <div className="relative min-h-0 min-w-0">
+            <PdfPreview
+              path={filePath}
+              className="h-full min-h-[280px]"
+              scrollToPage={jumpPage}
+              onPageSelect={
+                syncEnabled && !excludeMode ? jumpMarkdown : undefined
+              }
+              renderPageOverlay={
+                excludeMode
+                  ? (page) => {
+                      const geom = pageGeom?.[page];
+                      if (!geom) return null;
+                      return (
+                        <ExcludeOverlay
+                          page={page}
+                          pageWidth={geom.pageWidth}
+                          pageHeight={geom.pageHeight}
+                          disabled={geom.rotation % 360 !== 0}
+                          rects={
+                            excludePages.find((p) => p.page === page)?.rects ??
+                            []
+                          }
+                          onChange={(next) => updatePageRects(page, next)}
+                        />
+                      );
+                    }
+                  : undefined
+              }
+            />
+
+            {excludeMode ? (
+              <ExcludePanel
+                pages={excludePages}
+                loading={!pageGeom}
+                useForAllPages={useForAllPages}
+                onUseForAllPagesChange={setUseForAllPages}
+                onClear={clearExclusions}
+                onRemove={(page, index) => {
+                  const current =
+                    excludePages.find((p) => p.page === page)?.rects ?? [];
+                  updatePageRects(
+                    page,
+                    current.filter((_, i) => i !== index),
+                  );
+                }}
+              />
+            ) : null}
+          </div>
 
           <div className="min-h-0 min-w-0">
             {result ? (
@@ -519,7 +709,13 @@ export function ConvertWorkspace({
         <StatusBar
           result={detect}
           loading={detecting}
-          extra={drawMode ? t("mode.drawTable") : undefined}
+          extra={
+            drawMode
+              ? t("mode.drawTable")
+              : excludeMode
+                ? t("toolbar.excludeRegion")
+                : undefined
+          }
           notices={notices}
           progress={activity}
         />

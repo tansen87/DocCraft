@@ -12,8 +12,8 @@ use crate::core::page_marker::page_marker;
 use crate::core::settings;
 use crate::core::{extract_cache, get_resources_dir, grid_rebuild};
 use crate::models::{
-  ConvertResult, DetectResult, HybridSessionInfo, LayoutDto, OcrImageResult, OcrMode, OcrModelSize,
-  OcrVendor, PdfTypeDto,
+  ConvertResult, DetectResult, ExcludeRegions, HybridSessionInfo, LayoutDto, OcrImageResult,
+  OcrMode, OcrModelSize, OcrVendor, PdfTypeDto,
 };
 
 /// Prompt sent to the vision model for every OCR page.
@@ -648,13 +648,15 @@ pub fn start_session(
   path: &str,
   ocr_pages: Vec<u32>,
   page_range: Option<&str>,
+  exclusions: Option<&ExcludeRegions>,
 ) -> Result<HybridSessionInfo, String> {
   let start = Instant::now();
 
   let use_cache = settings::get_app_settings(app)?.cache_extracted_text;
-  let ext = extract_cache::cached_extraction(path, use_cache)
+  let text_separator = settings::get_app_settings(app)?.text_separator;
+  let ext = extract_cache::cached_extraction(path, use_cache, &text_separator)
     .map_err(|e| format!("Text extraction failed: {e}"))?;
-  let page_markdowns = ext.page_markdowns;
+  let page_markdowns = &ext.page_markdowns;
   let page_count = page_markdowns.len() as u32;
 
   let det = pdf_inspector::detect_pdf(path).map_err(|e| e.to_string())?;
@@ -716,6 +718,23 @@ pub fn start_session(
   }
   ocr_set.sort_unstable();
   ocr_set.dedup();
+
+  // Exclusions are applied last: the routing above is decided from the
+  // unfiltered extraction, so a page emptied by an exclusion is not mistaken
+  // for an image-only page that needs OCR. OCR pages keep their markdown -
+  // their content comes from the page image, where the frontend has already
+  // masked the excluded rects.
+  let page_markdowns: Vec<String> = match exclusions {
+    Some(spec) if !spec.pages.is_empty() => grid_rebuild::rebuild_pages_excluding(
+      page_markdowns,
+      &ext.items,
+      &ext.pages_with_tables,
+      &ext.needs_ocr_flags,
+      spec,
+      &text_separator,
+    ),
+    _ => page_markdowns.clone(),
+  };
 
   let (resolved, skipped_pages, skip_reason): (
     Option<(String, String, String)>,

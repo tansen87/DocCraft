@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import * as pdfjs from "pdfjs-dist";
 import { FileText } from "lucide-react";
@@ -27,6 +27,12 @@ interface PdfPreviewProps {
   scrollToPage?: { page: number; seq: number } | null;
   /** Called when a rendered page is clicked (page-link mode). */
   onPageSelect?: (page: number) => void;
+  /**
+   * Optional layer rendered on top of each page (1-indexed). Used by the
+   * exclusion-region editor, which measures its own box to map CSS pixels to
+   * PDF points.
+   */
+  renderPageOverlay?: (page: number) => ReactNode;
 }
 
 export function PdfPreview({
@@ -34,6 +40,7 @@ export function PdfPreview({
   className,
   scrollToPage,
   onPageSelect,
+  renderPageOverlay,
 }: PdfPreviewProps) {
   const { t } = useI18n();
   const surfaceRef = useRef<HTMLDivElement>(null);
@@ -339,7 +346,7 @@ export function PdfPreview({
                       hue-rotated inverse of it. */}
                   <div
                     className={cn(
-                      "h-full w-full overflow-hidden rounded-md shadow-sm ring-1 ring-border/40 transition-shadow dark:shadow-none",
+                      "relative h-full w-full overflow-hidden rounded-md shadow-sm ring-1 ring-border/40 transition-shadow dark:shadow-none",
                       onPageSelect && "hover:ring-2 hover:ring-primary/70",
                       focusing === i + 1 && "ring-2 ring-primary",
                     )}
@@ -353,6 +360,9 @@ export function PdfPreview({
                         className="block h-auto w-full"
                       />
                     </div>
+                    {/* Overlays (exclusion regions) sit outside the dark-mode
+                        invert filter so their colors stay true to the theme. */}
+                    {renderPageOverlay?.(i + 1)}
                   </div>
                 </div>
               ))}
