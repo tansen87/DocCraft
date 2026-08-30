@@ -487,7 +487,7 @@ export interface ConfigImportResult {
   settingsApplied: boolean;
 }
 
-/** A newer release found by the update check (GitHub Releases API). */
+/** A release found by the update check (GitHub Releases API). */
 export interface UpdateInfo {
   /** Version without the leading `v` (parsed from `tag_name`). */
   version: string;
@@ -497,6 +497,8 @@ export interface UpdateInfo {
   notes: string;
   /** Release page URL. */
   url: string;
+  /** Whether this release is strictly newer than the running app version. */
+  isNewer: boolean;
 }
 
 // ─── Local usage statistics ───────────────────────────────────────────────

@@ -9,6 +9,8 @@ const en = {
   "theme.light": "Light",
   "theme.dark": "Dark",
   "theme.system": "System",
+  "theme.toggle": "Theme",
+  "language.toggle": "Language",
 
   "status.converting": "Converting",
   "status.done": "Done",
@@ -148,7 +150,7 @@ const en = {
   "tooltip.exportMerged":
     "Export the Markdown of every recognized image into one file",
   "tooltip.exportSingle": "Export every recognized image as its own .md file",
-  "tooltip.drawTable": "Draw table lines on the image and extract",
+  "tooltip.drawTable": "Draw table",
 
   "settings.ocr": "OCR Service",
   "action.openFolder": "Open folder",
@@ -283,20 +285,16 @@ const en = {
   "notice.failedImages": "{count} image(s) failed to recognize",
 
   "pdfmeta.text": "Text",
-  "pdfmeta.textHint": "No OCR needed, converted locally",
   "pdfmeta.mixed": "Mixed",
-  "pdfmeta.mixedHint": "Some pages are scanned, needs OCR",
   "pdfmeta.scanned": "Scanned",
   "pdfmeta.image": "Image",
-  "pdfmeta.ocrHint": "Requires OCR API config (Settings)",
 
   "preview.pdf": "PDF Preview",
   "preview.loading": "Loading…",
   "preview.loadFailed": "Failed to load",
   "preview.totalPages": "{count} pages total",
-  "preview.rendering": "Rendering PDF…",
   "preview.cannotPreview":
-    'Cannot preview this PDF. Click "Extract to Markdown" in the top right to continue.',
+    'Cannot preview this PDF. Click "Extract PDF" in the top right to continue.',
 
   "preview.markdown": "Markdown",
   "preview.timeChars": "Completed in {time} · {chars} chars",
@@ -367,8 +365,11 @@ const en = {
   "update.upToDate": "You're on the latest version",
   "update.checkFailed": "Update check failed",
   "update.updateNow": "Update",
-  "update.later": "Later",
   "update.notesEmpty": "No release notes.",
+  "update.viewGithub": "GitHub",
+  "update.viewGitee": "Gitee",
+  "update.latestDesc":
+    "You can also view the project and the latest release on these platforms",
 
   backToList: "Back to list",
 } as const;
@@ -384,6 +385,8 @@ const zh: Record<TranslationKey, string> = {
   "theme.light": "亮色",
   "theme.dark": "暗色",
   "theme.system": "跟随系统",
+  "theme.toggle": "主题",
+  "language.toggle": "语言",
 
   "status.converting": "转换中",
   "status.done": "完成",
@@ -514,7 +517,7 @@ const zh: Record<TranslationKey, string> = {
   "settings.hotkeyRecording": "按下任意键",
   "tooltip.exportMerged": "将所有识别成功的图片导出为一个 Markdown 文件",
   "tooltip.exportSingle": "将每张识别成功的图片按原文件名分别导出为 .md 文件",
-  "tooltip.drawTable": "在图片上划线提取表格",
+  "tooltip.drawTable": "划线表格",
 
   "settings.ocr": "OCR 服务",
   "action.openFolder": "打开文件夹",
@@ -641,20 +644,15 @@ const zh: Record<TranslationKey, string> = {
   "notice.failedImages": "{count} 张图片识别失败",
 
   "pdfmeta.text": "文本型",
-  "pdfmeta.textHint": "无需 OCR, 本地直接转换",
   "pdfmeta.mixed": "混合型",
-  "pdfmeta.mixedHint": "部分页面为扫描内容, 需要 OCR",
   "pdfmeta.scanned": "扫描件",
   "pdfmeta.image": "图片版",
-  "pdfmeta.ocrHint": "需要配置 OCR API(设置页)",
 
   "preview.pdf": "PDF 预览",
   "preview.loading": "加载中…",
   "preview.loadFailed": "加载失败",
   "preview.totalPages": "共 {count} 页",
-  "preview.rendering": "正在渲染 PDF…",
-  "preview.cannotPreview":
-    "无法预览该 PDF, 可点击右上角「提取为 Markdown」继续",
+  "preview.cannotPreview": "无法预览该 PDF, 可点击右上角「提取PDF」继续",
 
   "preview.markdown": "Markdown",
   "preview.timeChars": "耗时 {time} · {chars} 字符",
@@ -720,8 +718,10 @@ const zh: Record<TranslationKey, string> = {
   "update.upToDate": "已是最新版本",
   "update.checkFailed": "检查更新失败",
   "update.updateNow": "前往更新",
-  "update.later": "稍后",
   "update.notesEmpty": "暂无更新说明",
+  "update.viewGithub": "GitHub",
+  "update.viewGitee": "Gitee",
+  "update.latestDesc": "你也可以在以下平台查看项目与最新发布",
 
   backToList: "返回列表",
 };

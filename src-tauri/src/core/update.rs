@@ -26,11 +26,19 @@ pub struct UpdateInfo {
   pub notes: String,
   /// Release page URL (`html_url` field).
   pub url: String,
+  /// Whether this release is strictly newer than the running app version.
+  /// Lets the frontend keep the "update available" badge accurate while still
+  /// handing back the release URL so users can open the page even when current.
+  pub is_newer: bool,
 }
 
-/// Ask GitHub whether a release newer than the running app exists.
-/// Returns `Ok(None)` when up-to-date or when the repository simply has no
-/// releases yet; network failures surface as errors for the manual check.
+/// Ask GitHub for the latest published release.
+///
+/// Returns `Ok(None)` only when the repository has no releases yet (HTTP 404)
+/// or the tag is unparsable. A release that is *not* newer than the running
+/// app is still returned (with `is_newer = false`) so the UI can offer a link
+/// to the release page. Network/HTTP failures surface as errors for the manual
+/// check.
 pub async fn check_for_update(app: &tauri::AppHandle) -> Result<Option<UpdateInfo>, String> {
   let current = app.package_info().version.to_string();
   let client = reqwest::Client::builder()
@@ -62,7 +70,7 @@ pub async fn check_for_update(app: &tauri::AppHandle) -> Result<Option<UpdateInf
     .unwrap_or("")
     .trim();
   let latest = tag.trim_start_matches('v').to_string();
-  if latest.is_empty() || !is_newer(&latest, &current) {
+  if latest.is_empty() {
     return Ok(None);
   }
 
@@ -74,11 +82,14 @@ pub async fn check_for_update(app: &tauri::AppHandle) -> Result<Option<UpdateInf
       .to_string()
   };
 
+  let newer = is_newer(&latest, &current);
+
   Ok(Some(UpdateInfo {
     version: latest,
     title: str_field("name"),
     notes: str_field("body"),
     url: str_field("html_url"),
+    is_newer: newer,
   }))
 }
 

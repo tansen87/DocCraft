@@ -698,7 +698,7 @@ function SectionHeader({
 }) {
   return (
     <div className="mb-3 space-y-0.5">
-      <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <h2 className="text-base font-semibold uppercase tracking-wider text-muted-foreground">
         {title}
       </h2>
       {description ? (
