@@ -1,6 +1,6 @@
 [package]
 name = "doccraft"
-version = "0.1.0"
+version = "0.2.0"
 description = "DocCraft document conversion desktop tool"
 authors = ["tansen"]
 edition = "2024"
@@ -37,7 +37,7 @@ ocr-rs = "2.4.1"
 pdf-inspector = "1.17.0"
 uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "native-tls"] }
-rust_xlsxwriter = "0.98.2"
+rust_xlsxwriter = "0.99.0"
 base64 = "0.23.1"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 xcap = "0.9.8"
