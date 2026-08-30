@@ -16,6 +16,7 @@ const en = {
   "status.queued": "Queued",
   "status.analyzing": "Analyzing",
   "status.ready": "Ready",
+  "status.waiting": "Waiting",
 
   "overlay.releaseToAdd": "Release to add to list",
   "overlay.hintAddMore": "You can add multiple files",
@@ -89,7 +90,7 @@ const en = {
 
   "mdtoexcel.title": "Markdown to Excel",
   "mdtoexcel.readyCount": "Ready {ready} / {total} file(s)",
-  "mdtoexcel.detected": "Detected {count} tables · {rows} rows of data",
+  "mdtoexcel.detected": "Detected {count} tables · {rows} lines",
   "mdtoexcel.analyzing": "Analyzing…",
 
   "drop.pdfTitle": "Drag PDF files anywhere in the window",
@@ -307,12 +308,6 @@ const en = {
   "preview.syncHint":
     "Click a page in either pane to jump to the same page in the other",
 
-  "tablepreview.title": "Table Preview",
-  "tablepreview.summary": "{count} tables · {rows} rows of data",
-  "tablepreview.table": "Table {index}",
-  "tablepreview.loadMore": "Scroll to load more rows",
-  "tablepreview.empty": "No tables detected",
-
   "drawtable.instruction":
     "Click to add a line · double-click to delete · drag to adjust",
   "drawtable.instructionVertical":
@@ -396,6 +391,7 @@ const zh: Record<TranslationKey, string> = {
   "status.queued": "等待中",
   "status.analyzing": "解析中",
   "status.ready": "已就绪",
+  "status.waiting": "等待导出",
 
   "overlay.releaseToAdd": "松开以加入列表",
   "overlay.hintAddMore": "可追加多个文件",
@@ -466,7 +462,7 @@ const zh: Record<TranslationKey, string> = {
 
   "mdtoexcel.title": "Markdown 转 Excel",
   "mdtoexcel.readyCount": "已就绪 {ready} / {total} 个文件",
-  "mdtoexcel.detected": "检测到 {count} 张表格 · {rows} 行数据",
+  "mdtoexcel.detected": "检测到 {count} 张表格 · 共 {rows} 行",
   "mdtoexcel.analyzing": "正在解析…",
 
   "drop.pdfTitle": "将 PDF 文件拖到窗口任意位置",
@@ -668,12 +664,6 @@ const zh: Record<TranslationKey, string> = {
   "preview.image": "第 {page} 张",
   "preview.sync": "对照",
   "preview.syncHint": "点击任一侧页面,另一侧跳转到对应页",
-
-  "tablepreview.title": "表格预览",
-  "tablepreview.summary": "共 {count} 张表格 · {rows} 行数据",
-  "tablepreview.table": "表格 {index}",
-  "tablepreview.loadMore": "滚动加载更多行",
-  "tablepreview.empty": "未检测到表格",
 
   "drawtable.instruction": "选择方向后点击添加线条 · 双击删除 · 拖拽调整位置",
   "drawtable.instructionVertical": "点击添加竖线 · 双击删除 · 拖拽调整位置",

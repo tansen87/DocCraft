@@ -27,6 +27,15 @@ const PAGE_MARKER_RE =
 const IO_BUFFER_PX = 600;
 /** Placeholder height for not-yet-rendered pages so scrolling stays smooth. */
 const PLACEHOLDER_HEIGHT_PX = 240;
+/**
+ * Line-based chunking kicks in when a document has no page/image markers at
+ * all (e.g. a hand-written markdown opened in the Markdown > Excel view), so
+ * very large files still get lazy rendering instead of one giant parse.
+ * The threshold keeps the per-chunk markdown parse cheap on typical screens.
+ */
+const CHUNK_LINES = 200;
+/** How far past the target the chunker looks for a blank-line boundary. */
+const CHUNK_SCAN = 40;
 
 interface MarkdownPage {
   marker: string;
@@ -37,6 +46,11 @@ interface MarkdownPage {
  * Split markdown into per-page chunks using the app's own page markers.
  * Each chunk carries the marker that PRECEDES its content, so page N's
  * content is labelled by the `<!-- Page N -->` marker at its start.
+ *
+ * When the document has no markers at all, it is split into fixed-size line
+ * chunks (preferring blank-line boundaries so tables/code fences are not cut
+ * mid-block). The chunks carry an empty marker, so they render exactly like
+ * the original text - only the lazy mounting is finer-grained.
  */
 function splitMarkdownPages(markdown: string): MarkdownPage[] {
   const pages: MarkdownPage[] = [];
@@ -53,6 +67,38 @@ function splitMarkdownPages(markdown: string): MarkdownPage[] {
     lastIndex = match.index + match[0].length;
   }
   pages.push({ marker: pendingMarker, content: markdown.slice(lastIndex) });
+
+  // Marker-less document: chunk by lines so huge files stay lazy-rendered.
+  if (pages.length <= 1 && pages[0]?.content.trim()) {
+    const lines = pages[0].content.split("\n");
+    if (lines.length > CHUNK_LINES) {
+      const chunks: MarkdownPage[] = [];
+      let start = 0;
+      while (start < lines.length) {
+        let end = Math.min(start + CHUNK_LINES, lines.length);
+        if (end < lines.length) {
+          // Prefer a blank line before `end`, scanning a little forward/back,
+          // so a table or code fence spanning the boundary stays intact.
+          let back = end;
+          while (back > start && back > end - CHUNK_SCAN && lines[back - 1].trim() !== "") {
+            back -= 1;
+          }
+          if (back > start && back >= end - CHUNK_SCAN) {
+            end = back;
+          } else {
+            let forward = end;
+            while (forward < lines.length && forward < end + CHUNK_SCAN && lines[forward].trim() !== "") {
+              forward += 1;
+            }
+            if (forward < lines.length && forward < end + CHUNK_SCAN) end = forward;
+          }
+        }
+        chunks.push({ marker: "", content: lines.slice(start, end).join("\n") });
+        start = end;
+      }
+      return chunks;
+    }
+  }
   return pages;
 }
 
@@ -131,6 +177,8 @@ interface PreviewPaneProps {
   showPageMarkers?: boolean;
   /** Optional extra controls rendered in the header before the mode toggle. */
   toolbar?: ReactNode;
+  /** Override the export button tooltip (e.g. "Export to Excel" in md→xlsx). */
+  exportHint?: string;
   /**
    * Request to scroll this pane to the page whose `<!-- Page N -->` marker
    * matches. The `seq` counter re-triggers the jump even for the same page.
@@ -147,6 +195,7 @@ export function PreviewPane({
   onExport,
   showPageMarkers = false,
   toolbar,
+  exportHint,
   scrollToPage,
   onPageSelect,
   className,
@@ -389,7 +438,7 @@ export function PreviewPane({
               {exporting ? <Loader2 className="animate-spin" /> : <Download />}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>{t("tooltip.exportMarkdown")}</TooltipContent>
+          <TooltipContent>{exportHint ?? t("tooltip.exportMarkdown")}</TooltipContent>
         </Tooltip>
       </div>
 

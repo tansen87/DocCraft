@@ -25,7 +25,16 @@ const STATUS_TOKEN_MAP: Record<string, string> = {
     "bg-success-muted border-success/30 text-success dark:border-success/40",
 };
 
-function StatusBadge({ status, error }: { status: Status; error?: string }) {
+function StatusBadge({
+  status,
+  error,
+  readyLabel,
+}: {
+  status: Status;
+  error?: string;
+  /** Override the label shown for the `ready` state (e.g. "waiting to export"). */
+  readyLabel?: string;
+}) {
   const { t } = useI18n();
 
   if (status === "queued") {
@@ -66,7 +75,7 @@ function StatusBadge({ status, error }: { status: Status; error?: string }) {
           ? t("status.analyzing")
           : status === "done"
             ? t("status.done")
-            : t("status.ready")}
+            : (readyLabel ?? t("status.ready"))}
     </Badge>
   );
 }

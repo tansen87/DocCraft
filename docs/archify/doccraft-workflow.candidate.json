@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "DocCraft PDF → Markdown 转换工作流",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "ui", "label": "前端 (React + pdf.js)" },
+    { "id": "backend", "label": "Rust 核心 (Tauri)" },
+    { "id": "ocr", "label": "OCR 引擎" },
+    { "id": "degrade", "label": "降级处理", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "input", "label": "输入与检测", "fromCol": 0, "toCol": 1 },
+    { "id": "ocr-session", "label": "混合 OCR 会话", "fromCol": 2, "toCol": 3, "variant": "dashed" },
+    { "id": "output-phase", "label": "重组与输出", "fromCol": 4, "toCol": 5 }
+  ],
+  "groups": [
+    { "id": "text_work", "label": "纯本地文本提取", "lane": "backend", "fromCol": 1, "toCol": 1, "variant": "emphasis" },
+    { "id": "ocr_work", "label": "OCR 执行", "lane": "ocr", "fromCol": 2, "toCol": 5, "variant": "dashed" },
+    { "id": "degrade_path", "label": "优雅降级路径", "lane": "degrade", "fromCol": 4, "toCol": 5, "variant": "security" }
+  ],
+  "mainPath": ["drop", "detect", "session", "ocr-ai", "finish", "output"],
+  "nodes": [
+    { "id": "drop", "lane": "ui", "col": 0, "type": "frontend", "label": "拖放 / 选择", "sublabel": "全窗口拖放 · 文件选择", "width": 92 },
+    { "id": "detect", "lane": "backend", "col": 0, "type": "backend", "label": "PDF 智能分类", "sublabel": "pdf-inspector", "tag": "10–50ms", "width": 92 },
+    { "id": "convert-text", "lane": "backend", "col": 1, "type": "backend", "label": "本地文本提取", "sublabel": "convert_pdf · 纯本地", "tag": "不联网", "width": 84 },
+    { "id": "session", "lane": "backend", "col": 3, "type": "backend", "label": "混合会话启动", "sublabel": "hybrid_session_start", "width": 92 },
+    { "id": "ocr-local", "lane": "ocr", "col": 2, "type": "backend", "label": "本地 PaddleOCR", "sublabel": "ocr-rs · 设备内识别", "tag": "纯离线", "width": 110 },
+    { "id": "ocr-ai", "lane": "ocr", "col": 5, "type": "cloud", "label": "远程 AI 视觉", "sublabel": "OpenAI 兼容视觉 API", "tag": "密钥仅存后端", "width": 110 },
+    { "id": "finish", "lane": "backend", "col": 5, "type": "backend", "label": "重组会话结果", "sublabel": "hybrid_session_finish", "width": 92 },
+    { "id": "output", "lane": "ui", "col": 5, "type": "frontend", "label": "预览 / 导出", "sublabel": "分页渲染 · 保存 .md", "width": 106 },
+    { "id": "skip", "lane": "degrade", "col": 4, "type": "security", "label": "OCR 跳过 / 失败", "sublabel": "<!-- OCR 跳过/失败 -->", "width": 106 },
+    { "id": "notices", "lane": "degrade", "col": 5, "type": "messagebus", "label": "通知铃铛", "sublabel": "定位页面 · 重试", "width": 88 }
+  ],
+  "edges": [
+    { "id": "drop-detect", "from": "drop", "to": "detect", "label": "文件路径" },
+    { "id": "detect-text", "from": "detect", "to": "convert-text", "label": "纯文本", "role": "branch", "labelAt": [156, 258] },
+    { "id": "detect-session", "from": "detect", "to": "session", "label": "需要 OCR", "variant": "emphasis", "fromSide": "right", "toSide": "top", "via": [[134, 158], [430, 158]], "labelAt": [282, 150] },
+    { "id": "text-output", "from": "convert-text", "to": "output", "label": "本地 Markdown", "role": "branch", "fromSide": "bottom", "toSide": "right", "via": [[220, 545], [712, 545], [712, 119]], "labelSegment": 1, "labelAt": [465, 537] },
+    { "id": "session-local", "from": "session", "to": "ocr-local", "label": "本地模式", "role": "branch", "fromSide": "bottom", "toSide": "top", "via": [[430, 290], [300, 290]], "labelAt": [365, 285] },
+    { "id": "session-ai", "from": "session", "to": "ocr-ai", "label": "AI 模式", "role": "branch", "fromSide": "bottom", "toSide": "top", "via": [[430, 290], [625, 290]], "labelAt": [545, 300] },
+    { "id": "local-finish", "from": "ocr-local", "to": "finish", "label": "页面 MD", "role": "branch", "fromSide": "bottom", "toSide": "right", "via": [[300, 410], [690, 410], [690, 243]], "labelAt": [470, 418] },
+    { "id": "ai-finish", "from": "ocr-ai", "to": "finish", "role": "branch", "fromSide": "left", "toSide": "right", "via": [[570, 420], [700, 420], [700, 243]] },
+    { "id": "session-skip", "from": "session", "to": "skip", "label": "无引擎可用", "variant": "security", "role": "error", "fromSide": "bottom", "toSide": "left", "via": [[440, 269], [440, 302], [230, 302], [230, 491]], "labelAt": [470, 280] },
+    { "id": "skip-notices", "from": "skip", "to": "notices" },
+    { "id": "finish-output", "from": "finish", "to": "output", "label": "重组 Markdown", "variant": "emphasis" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "智能 PDF 路由",
+      "items": [
+        "pdf-inspector 约 10–50ms 分类四种 PDF 类型",
+        "仅标记为需 OCR 的页面才会离开本机",
+        "空文本提取的页面在启用 OCR 时自动补识别"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "五种 OCR 模式",
+      "items": [
+        "ForceLocal / ForceAi / NonTextLocal / NonTextAi / Disabled",
+        "本地 PaddleOCR 全程离线，无网络调用",
+        "AI 模式逐页渲染 PNG 上传，峰值内存仅单页",
+        "API Key 经 DPAPI 静态加密，前端永不可见"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "优雅降级",
+      "items": [
+        "无引擎可用时转换仍完成，跳过页标记注释",
+        "单页 OCR 失败降级为 <!-- OCR 失败 --> 注释",
+        "通知铃铛收集结构化通知：定位页面 + 重试"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "其余工作流",
+      "items": [
+        "Image → Markdown 与截图 OCR 共用引擎选择",
+        "Markdown → Excel 解析 GFM 表格并标注页码",
+        "批量队列并发 1–16，状态保持的标签页切换"
+      ]
+    }
+  ]
+}

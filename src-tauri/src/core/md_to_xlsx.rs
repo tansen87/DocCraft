@@ -119,7 +119,9 @@ fn read_file(path: &str) -> Result<String, String> {
   std::fs::read_to_string(path).map_err(|e| format!("Fail to read file: {e}"))
 }
 
-/// Analyze a Markdown file and return every table it contains (for preview).
+/// Analyze a Markdown file and return every table it contains (for preview),
+/// together with the raw file content so the frontend can render the markdown
+/// without a second read of the file.
 pub fn analyze_markdown(path: &str) -> Result<MdAnalyzeResult, String> {
   let content = read_file(path)?;
   let start = Instant::now();
@@ -129,7 +131,9 @@ pub fn analyze_markdown(path: &str) -> Result<MdAnalyzeResult, String> {
     table_count: tables.len(),
     tables,
     total_rows,
+    total_lines: content.lines().count(),
     processing_time_ms: start.elapsed().as_millis() as u64,
+    content,
   })
 }
 

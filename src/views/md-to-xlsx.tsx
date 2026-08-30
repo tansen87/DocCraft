@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import { DragOverlay } from "@/components/pdf2md/drag-overlay";
 import { DropZone } from "@/components/pdf2md/drop-zone";
 import { useFileDrop } from "@/components/pdf2md/use-pdf-drop";
-import { TablePreview } from "@/components/md2xlsx/table-preview";
+import { PreviewPane } from "@/components/pdf2md/preview-pane";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -37,7 +37,7 @@ import type { MdAnalyzeResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { GlassPanel } from "@/components/ui/glass-panel";
 
-type MdItemStatus = "queued" | "analyzing" | "ready" | "error";
+type MdItemStatus = "queued" | "analyzing" | "ready" | "done" | "error";
 
 interface MdItem {
   id: string;
@@ -179,6 +179,7 @@ export function MdToXlsxView() {
       });
       if (typeof target !== "string") return;
       const r = await exportMarkdownTables(item.path, target);
+      patchItem(item.id, { status: "done" });
       toast.success(t("toast.exported"), {
         description: t("table.tablesAndRows", {
           count: r.tableCount,
@@ -203,7 +204,7 @@ export function MdToXlsxView() {
   async function exportAll(): Promise<void> {
     const ready = itemsRef.current.filter(
       (it) =>
-        it.status === "ready" &&
+        (it.status === "ready" || it.status === "done") &&
         it.result &&
         (it.result.tableCount > 0 || !tablesOnly),
     );
@@ -232,6 +233,7 @@ export function MdToXlsxView() {
         const target = await join(dir, name);
         try {
           await exportMarkdownTables(it.path, target);
+          patchItem(it.id, { status: "done" });
           ok += 1;
         } catch (e) {
           toast.error(t("toast.exportFailedFile", { name: it.name }), {
@@ -270,10 +272,12 @@ export function MdToXlsxView() {
             {t("backToList")}
           </Button>
         </div>
-        <TablePreview
-          tableCount={activeItem.result?.tableCount ?? 0}
-          totalRows={activeItem.result?.totalRows ?? 0}
-          tables={activeItem.result?.tables ?? []}
+        <PreviewPane
+          markdown={activeItem.result?.content ?? ""}
+          processingTimeMs={activeItem.result?.processingTimeMs ?? 0}
+          onExport={() => exportItem(activeItem)}
+          showPageMarkers
+          exportHint={t("tooltip.exportExcel")}
           className="flex-1"
         />
       </div>
@@ -281,7 +285,9 @@ export function MdToXlsxView() {
   }
 
   if (items.length > 1) {
-    const readyCount = items.filter((it) => it.status === "ready").length;
+    const readyCount = items.filter(
+      (it) => it.status === "ready" || it.status === "done",
+    ).length;
     return (
       <div
         ref={rootRef}
@@ -345,13 +351,13 @@ export function MdToXlsxView() {
                     <th className="px-3 py-2 font-medium">
                       {t("table.fileName")}
                     </th>
-                    <th className="w-[120px] px-3 py-2 font-medium">
+                    <th className="w-[200px] px-3 py-2 font-medium">
                       {t("table.tables")}
                     </th>
-                    <th className="w-[110px] px-3 py-2 font-medium">
+                    <th className="w-[100px] px-3 py-2 font-medium">
                       {t("table.status")}
                     </th>
-                    <th className="w-[150px] px-3 py-2 text-right font-medium">
+                    <th className="w-[80px] px-3 py-2 text-right font-medium">
                       {t("table.actions")}
                     </th>
                   </tr>
@@ -365,11 +371,13 @@ export function MdToXlsxView() {
                       <td className="min-w-0 px-3 py-2">
                         <button
                           type="button"
-                          disabled={item.status !== "ready"}
+                          disabled={
+                            item.status !== "ready" && item.status !== "done"
+                          }
                           onClick={() => setActiveItem(item)}
                           className={cn(
                             "flex w-full min-w-0 items-center gap-2 text-left",
-                            item.status === "ready"
+                            item.status === "ready" || item.status === "done"
                               ? "cursor-pointer hover:underline"
                               : "cursor-default",
                           )}
@@ -377,7 +385,7 @@ export function MdToXlsxView() {
                           <span
                             className={cn(
                               "flex size-6 shrink-0 items-center justify-center rounded-md",
-                              item.status === "ready"
+                              item.status === "ready" || item.status === "done"
                                 ? "bg-success-muted text-success"
                                 : "bg-muted text-muted-foreground",
                             )}
@@ -393,16 +401,21 @@ export function MdToXlsxView() {
                         {item.result
                           ? t("table.tablesRows", {
                               count: item.result.tableCount,
-                              rows: item.result.totalRows,
+                              rows: item.result.totalLines,
                             })
                           : "-"}
                       </td>
                       <td className="px-3 py-2">
-                        <StatusBadge status={item.status} error={item.error} />
+                        <StatusBadge
+                          status={item.status}
+                          error={item.error}
+                          readyLabel={t("status.waiting")}
+                        />
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center justify-end gap-1">
-                          {item.status === "ready" &&
+                          {(item.status === "ready" ||
+                            item.status === "done") &&
                           item.result &&
                           (item.result.tableCount > 0 || !tablesOnly) ? (
                             <Tooltip>
@@ -491,13 +504,12 @@ export function MdToXlsxView() {
               {item.result
                 ? t("mdtoexcel.detected", {
                     count: item.result.tableCount,
-                    rows: item.result.totalRows,
+                    rows: item.result.totalLines,
                   })
                 : t("mdtoexcel.analyzing")}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <StatusBadge status={item.status} error={item.error} />
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -510,12 +522,15 @@ export function MdToXlsxView() {
               </TooltipTrigger>
               <TooltipContent>{t("tooltip.remove")}</TooltipContent>
             </Tooltip>
+            <Button variant="secondary" size="sm" onClick={pickMore}>
+              <ListPlus />
+              {t("batch.add")}
+            </Button>
             <Button
               size="sm"
               variant="secondary"
               onClick={() => void exportItem(item)}
               disabled={
-                item.status !== "ready" ||
                 !item.result ||
                 (tablesOnly && item.result.tableCount === 0) ||
                 exportingIds.has(item.id)
@@ -530,10 +545,12 @@ export function MdToXlsxView() {
             </Button>
           </div>
         </GlassPanel>
-        <TablePreview
-          tableCount={item.result?.tableCount ?? 0}
-          totalRows={item.result?.totalRows ?? 0}
-          tables={item.result?.tables ?? []}
+        <PreviewPane
+          markdown={item.result?.content ?? ""}
+          processingTimeMs={item.result?.processingTimeMs ?? 0}
+          onExport={() => exportItem(item)}
+          showPageMarkers
+          exportHint={t("tooltip.exportExcel")}
           className="flex-1"
         />
       </div>

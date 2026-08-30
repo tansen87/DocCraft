@@ -165,7 +165,11 @@ export interface MdAnalyzeResult {
   tableCount: number;
   tables: MdTable[];
   totalRows: number;
+  /** Total number of lines in the whole file (tables, prose and blanks). */
+  totalLines: number;
   processingTimeMs: number;
+  /** Full raw markdown content of the file (for the rendered/raw preview). */
+  content: string;
 }
 
 /** Result of exporting Markdown tables to an xlsx workbook. */

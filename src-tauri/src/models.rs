@@ -189,7 +189,12 @@ pub struct MdAnalyzeResult {
   pub table_count: usize,
   pub tables: Vec<MdTable>,
   pub total_rows: usize,
+  /// Total number of lines in the whole file (tables, prose and blanks).
+  pub total_lines: usize,
   pub processing_time_ms: u64,
+  /// Full raw markdown content of the file, returned so the frontend can show
+  /// a rendered/raw markdown preview without reading the file a second time.
+  pub content: String,
 }
 
 /// Result of exporting tables from Markdown to a `.xlsx` workbook.
