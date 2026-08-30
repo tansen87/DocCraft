@@ -62,14 +62,17 @@ and Simplified Chinese - switchable at runtime.
 - **Whole-window drag & drop** - drop any PDF anywhere in the window; a drag
   overlay confirms the drop target; auto-detect runs immediately on select.
 - **Markdown → Excel** - batch-analyze `.md` files, auto-detect tables
-  (count + rows), preview each table, and export to `.xlsx` (single file or
-  export-all into a chosen directory). A **tables-only** mode (configurable in
-  Settings) exports only GFM tables; when off, the whole document content is
-  written into the workbook. The preview lazy-mounts table sections and
-  windows rows as you scroll, so even files with hundreds of tables /
-  thousands of rows stay responsive. Each table in the workbook is labeled
-  with its source PDF page (`Page N`) when the file was produced by this app's
-  PDF conversion; otherwise it falls back to `Table N`.
+  (count + lines), preview each file as a rendered/raw **markdown preview**
+  (the same `PreviewPane` used by PDF → Markdown, with an "Export to Excel"
+  action), and export to `.xlsx` (single file or export-all into a chosen
+  directory). A **tables-only** mode (configurable in Settings) exports only
+  GFM tables; when off, the whole document content is written into the
+  workbook. Because the preview reuses the paginated, lazy-rendered pane and
+  the backend returns the file content up front, even files with hundreds of
+  tables / thousands of lines stay responsive without a second read of the
+  file. Each table in the workbook is labeled with its source PDF page
+  (`Page N`) when the file was produced by this app's PDF conversion;
+  otherwise it falls back to `Table N`.
 - **Draw-a-table extraction** - in the PDF workspace, manually draw vertical
   separators over a rendered page to define table regions, then extract them
   into the Markdown output (undo/redo, per-page lines, Enter to extract).
@@ -180,7 +183,7 @@ doccraft/
 │  │  │  ├─ drag-overlay.tsx     # Whole-window drag overlay
 │  │  │  ├─ use-pdf-drop.ts      # Whole-window drag & drop hook
 │  │  │  ├─ pdf-preview.tsx      # pdf.js inline preview (ScrollArea + dark mode)
-│  │  │  ├─ preview-pane.tsx     # Markdown preview (render / raw toggle, paginated + lazy)
+│  │  │  ├─ preview-pane.tsx     # Markdown preview (render / raw toggle, paginated + lazy; line-chunked for marker-less docs)
 │  │  │  ├─ render-pdf-pages.ts  # Renders OCR pages to PNG base64 for the backend
 │  │  │  └─ status-bar.tsx       # Bottom status (type / pages / confidence / OCR)
 │  │  ├─ draw-table/             # Manual "draw-a-table" extraction
@@ -188,7 +191,6 @@ doccraft/
 │  │  │  ├─ draw-table-panel.tsx # Overlay + per-page lines + undo/redo
 │  │  │  ├─ canvas-overlay.tsx   # Draw/edit vertical separator lines
 │  │  │  └─ pdf-preview-with-draw.tsx
-│  │  ├─ md2xlsx/table-preview.tsx # Lazy table preview of parsed .md (IO-windowed rows)
 │  │  ├─ snip/snip-overlay.tsx    # Per-monitor region-selection overlay (magnifier + color picker)
 │  │  ├─ image-table/             # Draw-a-table extraction on imported images
 │  │  │  └─ image-table-overlay.tsx
@@ -261,7 +263,7 @@ Commands (invoked from `src/lib/ipc.ts`):
 | `export_config`      | `{ path, includeSecrets }`              | `usize` - vendors written; keys plaintext only when opted in |
 | `import_config`      | `{ path }`                              | `ImportResult` (`vendorsImported`, `settingsApplied`); merges by id, applies settings with full side effects |
 | `check_for_update`   | -                                       | `UpdateInfo \| null` (`version`, `notes`, `downloadUrl`, `releasePage`) |
-| `analyze_markdown`   | `{ path }`                              | `MdAnalyzeResult` (`tableCount`, `tables[]` with columns/rows/page, `totalRows`, `processingTimeMs`) |
+| `analyze_markdown`   | `{ path }`                              | `MdAnalyzeResult` (`tableCount`, `tables[]` with columns/rows/page, `totalRows`, `totalLines`, `content`, `processingTimeMs`) |
 | `export_markdown_tables` | `{ mdPath, xlsxPath }`              | `MdExportResult` (`tableCount`, `totalRows`, `processingTimeMs`) |
 | `extract_draw_table` | `{ path, drawData }` - `drawData` may carry `totalPages`, `onlyPages` (batching) and `pageImages[]` (`{page, imagePng, renderScale}`) for the mode-selected OCR fallback (local PaddleOCR or remote AI vision) | `DrawTableResult` (`tableCount`, `tables[]`, `regions[]`, `totalRows`, `ocrPages`, `emptyTextPages`, `processingTimeMs`) |
 | `extract_draw_table_to_markdown` | `{ path, drawData, existingMarkdown? }` | `string` - merged markdown with extracted tables appended |
@@ -365,16 +367,19 @@ cargo check --manifest-path src-tauri/Cargo.toml
   concurrency limit (settings → Concurrent threads, default 1), retry / remove /
   export-all. (Live progress events & per-file OCR cancellation still optional.)
 - **M3.5 (done)** - **Markdown → Excel**: batch `.md` analysis, auto table
-  detection, table-by-table preview, and `.xlsx` export (single or all) with
+  detection, markdown preview (reusing the PDF → Markdown `PreviewPane` with
+  rendered/raw toggles and lazy rendering, now including line-based chunking
+  for marker-less documents), and `.xlsx` export (single or all) with
   configurable **tables-only** mode. Plus manual **draw-a-table** extraction
   for scanned PDF regions (vertical-line-only mode, "apply to all pages" with
   page limit, page-filtered text extraction, extraction caching, and a local
   PaddleOCR fallback for pages without a text layer).
 - **M4 (mostly done)** - Polish: **bilingual i18n (en/zh, runtime toggle)**
-  and dark mode. **Large-document performance**: the Markdown preview and the
-  Excel table preview both render lazily (page / table sections + windowed
-  rows via IntersectionObserver, real-height placeholders), so big files no
-  longer freeze the UI. **Settings page** restructured into a scrollable
+  and dark mode. **Large-document performance**: the Markdown preview renders
+  lazily and paginated (per-page markers, plus line-based chunking for
+  marker-less documents, via IntersectionObserver with real-height
+  placeholders), so big files no longer freeze the UI. **Settings page**
+  restructured into a scrollable
   waterfall layout with seven sections (OCR, Screenshot, Text Separator,
   Cache, Excel, Threads, Tray) in a grouped-panel design
   (design/00002_settings-ui-redesign.md).
