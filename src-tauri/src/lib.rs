@@ -256,11 +256,12 @@ fn apply_app_settings(app: &tauri::AppHandle, settings: AppSettings) -> Result<(
   if settings_now.enable_tray != before.enable_tray {
     update_tray(app, settings_now.enable_tray);
   }
-  // Inference-parameter changes (precision / model tier) invalidate the
-  // resident engines so the next use rebuilds them with the new settings
-  // (docs/design/00005_snip-local-ocr-latency.md S-1).
+  // Inference-parameter changes (precision / model tier / OCR threads)
+  // invalidate the resident engines so the next use rebuilds them with the new
+  // settings (docs/design/00005_snip-local-ocr-latency.md S-1).
   let engine_params_changed = settings_now.ocr_low_precision != before.ocr_low_precision
-    || settings_now.ocr_model_size != before.ocr_model_size;
+    || settings_now.ocr_model_size != before.ocr_model_size
+    || settings_now.local_ocr_threads != before.local_ocr_threads;
   if engine_params_changed {
     app.state::<core::ocr::OcrEngineCache>().clear();
     app.state::<core::ocr::SnipEngineCache>().clear();

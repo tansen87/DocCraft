@@ -416,7 +416,7 @@ export function SnipResultWindow() {
             {durationMs != null ? (
               <span
                 data-tauri-drag-region
-                className="shrink-0 rounded-full bg-muted/70 px-1.5 py-0.5 text-[10px] leading-none tabular-nums text-muted-foreground"
+                className="shrink-0 rounded-full bg-muted/70 px-1.5 py-0.5 text-xs leading-none tabular-nums text-muted-foreground"
               >
                 {formatDuration(durationMs)}
               </span>
@@ -425,7 +425,7 @@ export function SnipResultWindow() {
               <span
                 data-tauri-drag-region
                 className={cn(
-                  "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none tabular-nums",
+                  "shrink-0 rounded-full px-1.5 py-0.5 text-xs leading-none tabular-nums",
                   ocrConfidence < 0.5
                     ? "bg-destructive/15 text-destructive"
                     : ocrConfidence < 0.7

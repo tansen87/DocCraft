@@ -189,6 +189,7 @@ export function SettingsView() {
   const [vendors, setVendors] = useState<VendorForm[]>([]);
   const [ocrMode, setOcrMode] = useState<OcrMode>("disabled");
   const [maxConcurrent, setMaxConcurrent] = useState(1);
+  const [localOcrThreads, setLocalOcrThreads] = useState(0);
   const [cacheExtracted, setCacheExtracted] = useState(true);
   const [drawTableHighPrecision, setDrawTableHighPrecision] = useState(false);
   const [excelTablesOnly, setExcelTablesOnly] = useState(true);
@@ -221,6 +222,7 @@ export function SettingsView() {
         setVendors(ocrVendors.map(toForm));
         setOcrMode(settings.ocrMode);
         setMaxConcurrent(clampThread(settings.maxConcurrent));
+        setLocalOcrThreads(settings.localOcrThreads ?? 0);
         setCacheExtracted(settings.cacheExtractedText);
         setDrawTableHighPrecision(settings.drawTableHighPrecision ?? false);
         setExcelTablesOnly(settings.excelTablesOnly);
@@ -282,6 +284,9 @@ export function SettingsView() {
       maxConcurrent: clampThread(
         Number.isFinite(maxConcurrent) ? maxConcurrent : 1,
       ),
+      localOcrThreads: clampOcrThreads(
+        Number.isFinite(localOcrThreads) ? localOcrThreads : 0,
+      ),
       cacheExtractedText: cacheExtracted,
       drawTableHighPrecision,
       excelTablesOnly,
@@ -305,6 +310,7 @@ export function SettingsView() {
         saveOcrConfig(entries.map((e) => e.input)),
       ]);
       setMaxConcurrent(settings.maxConcurrent);
+      setLocalOcrThreads(settings.localOcrThreads ?? 0);
       applyRuntimeConcurrency(settings.maxConcurrent);
       setVendors(
         entries.map((e) => ({
@@ -590,6 +596,11 @@ export function SettingsView() {
                   value={maxConcurrent}
                   onChange={(n) => {
                     setMaxConcurrent(n);
+                    markDirty();
+                  }}
+                  localOcrThreads={localOcrThreads}
+                  onLocalOcrThreadsChange={(n) => {
+                    setLocalOcrThreads(n);
                     markDirty();
                   }}
                   disabled={loading}
@@ -1094,13 +1105,22 @@ function clampThread(n: number): number {
   return Math.min(THREAD_MAX, Math.max(THREAD_MIN, Math.round(n)));
 }
 
+/** OCR threads allows 0 (= auto-detect) in addition to 1–16. */
+function clampOcrThreads(n: number): number {
+  return Math.min(THREAD_MAX, Math.max(0, Math.round(n)));
+}
+
 function ThreadSettingsPanel({
   value,
   onChange,
+  localOcrThreads,
+  onLocalOcrThreadsChange,
   disabled,
 }: {
   value: number;
   onChange: (n: number) => void;
+  localOcrThreads: number;
+  onLocalOcrThreadsChange: (n: number) => void;
   disabled?: boolean;
 }) {
   const { t } = useI18n();
@@ -1123,6 +1143,25 @@ function ThreadSettingsPanel({
           onChange={(e) => onChange(e.target.valueAsNumber)}
           disabled={disabled}
           placeholder={t("settings.threadPlaceholder")}
+          className="w-24 text-right"
+        />
+      </SettingRow>
+      <SettingRow
+        label={t("settings.localOcrThreads")}
+        description={t("settings.localOcrThreadsHint")}
+        htmlFor="settings-ocr-threads-input"
+      >
+        <Input
+          id="settings-ocr-threads-input"
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={THREAD_MAX}
+          step={1}
+          value={Number.isFinite(localOcrThreads) ? localOcrThreads : ""}
+          onChange={(e) => onLocalOcrThreadsChange(e.target.valueAsNumber)}
+          disabled={disabled}
+          placeholder={t("settings.localOcrThreadsPlaceholder")}
           className="w-24 text-right"
         />
       </SettingRow>

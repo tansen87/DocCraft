@@ -440,6 +440,11 @@ pub struct AppSettings {
   /// non-structural lines of a page.
   #[serde(default)]
   pub paragraph_mode: ParagraphMode,
+  /// Number of inference threads for the local PaddleOCR engine (MNN).
+  /// `0` means auto-detect from `available_parallelism` (clamped to 1–16),
+  /// matching the pre-setting behaviour. Positive values use the user's choice.
+  #[serde(default)]
+  pub local_ocr_threads: u32,
 }
 
 /// How extracted text lines are joined into paragraphs (PDF text pages and
@@ -804,6 +809,7 @@ impl Default for AppSettings {
       ai_ocr_prompt: String::new(),
       draw_table_prompt: String::new(),
       paragraph_mode: ParagraphMode::default(),
+      local_ocr_threads: 0,
     }
   }
 }

@@ -222,6 +222,10 @@ const en = {
   "settings.addModel": "Add model",
   "settings.maxConcurrent": "Max batch conversion concurrency",
   "settings.threadPlaceholder": "Enter thread count (e.g. 1)",
+  "settings.localOcrThreads": "Local OCR threads",
+  "settings.localOcrThreadsHint":
+    "Inference threads for the local PaddleOCR engine (MNN). 0 = auto-detect from CPU cores",
+  "settings.localOcrThreadsPlaceholder": "0 = auto",
   "settings.save": "Save",
   "settings.unsavedChanges": "Unsaved changes",
   "settings.threadsHint2":
@@ -598,6 +602,10 @@ const zh: Record<TranslationKey, string> = {
   "settings.addModel": "添加模型",
   "settings.maxConcurrent": "批量转换最大并发数",
   "settings.threadPlaceholder": "请输入线程数(e.g. 1)",
+  "settings.localOcrThreads": "本地 OCR 线程数",
+  "settings.localOcrThreadsHint":
+    "本地 PaddleOCR 引擎(MNN)的推理线程数,0 = 自动检测 CPU 核心数",
+  "settings.localOcrThreadsPlaceholder": "0 = 自动",
   "settings.save": "保存",
   "settings.unsavedChanges": "有未保存的更改",
   "settings.threadsHint2":

@@ -149,6 +149,12 @@ export interface AppSettings {
    * extraction). Empty string falls back to the built-in default prompt.
    */
   drawTablePrompt?: string;
+  /**
+   * Number of inference threads for the local PaddleOCR engine (MNN).
+   * 0 = auto-detect from available parallelism (default).
+   * Positive values use the user's explicit choice (clamped to 1–16).
+   */
+  localOcrThreads?: number;
 }
 
 export type OcrMode =

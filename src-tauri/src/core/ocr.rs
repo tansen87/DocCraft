@@ -230,13 +230,18 @@ fn ocr_resource_dir(_app: &AppHandle) -> Result<PathBuf, String> {
 
 /// Build the MNN engine configuration from the current settings
 /// (docs/design/00005_snip-local-ocr-latency.md S-1):
-/// - thread count adapts to the machine instead of the crate's fixed default 4;
+/// - thread count: when `local_ocr_threads` is 0, adapt to the machine instead
+///   of the crate's fixed default 4; otherwise use the user's explicit value.
 /// - low-precision (f16) inference per the `ocr_low_precision` setting.
-fn engine_config_for(low_precision: bool) -> OcrEngineConfig {
-  let threads = std::thread::available_parallelism()
-    .map(|n| n.get() as i32)
-    .unwrap_or(4)
-    .clamp(1, 16);
+fn engine_config_for(low_precision: bool, local_ocr_threads: u32) -> OcrEngineConfig {
+  let threads = if local_ocr_threads > 0 {
+    local_ocr_threads as i32
+  } else {
+    std::thread::available_parallelism()
+      .map(|n| n.get() as i32)
+      .unwrap_or(4)
+      .clamp(1, 16)
+  };
   let mut config = OcrEngineConfig::new().with_threads(threads);
   if low_precision {
     config = config.with_precision(PrecisionMode::Low);
@@ -286,7 +291,7 @@ pub fn create_local_ocr_engine(app: &AppHandle) -> Result<LocalOcrEngine, String
     &det.to_string_lossy(),
     &rec.to_string_lossy(),
     &keys.to_string_lossy(),
-    engine_config_for(s.ocr_low_precision),
+    engine_config_for(s.ocr_low_precision, s.local_ocr_threads),
   )
 }
 
