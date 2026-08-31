@@ -315,9 +315,11 @@ export function ImageToMdView() {
           }
         }
         if (settings?.snipResultPopup ?? true) {
-          void showSnipResultWindow(result.markdown, result.durationMs).catch(
-            () => {},
-          );
+          void showSnipResultWindow(
+            result.markdown,
+            result.durationMs,
+            result.ocrConfidence,
+          ).catch(() => {});
         }
       } catch (e) {
         mutate((prev) =>
@@ -884,7 +886,7 @@ export function ImageToMdView() {
                       else rowRefs.current.delete(item.id);
                     }}
                     className={cn(
-                      "mb-2 flex cursor-pointer items-center gap-3 rounded-lg border p-2 transition-all last:mb-0",
+                      "mb-2 flex cursor-pointer items-center gap-2 rounded-lg border p-1 transition-all last:mb-0",
                       highlightId === item.id &&
                         "border-primary bg-primary/5 ring-2 ring-primary/40",
                       highlightId !== item.id &&
@@ -927,6 +929,20 @@ export function ImageToMdView() {
                         ? formatDuration(item.result.durationMs)
                         : ""}
                     </span>
+                    {item.result?.ocrConfidence != null ? (
+                      <span
+                        className={cn(
+                          "shrink-0 text-xs tabular-nums",
+                          item.result.ocrConfidence < 0.5
+                            ? "text-destructive"
+                            : item.result.ocrConfidence < 0.7
+                              ? "text-warning"
+                              : "text-success",
+                        )}
+                      >
+                        {Math.round(item.result.ocrConfidence * 100)}%
+                      </span>
+                    ) : null}
                     <span className="shrink-0">
                       <StatusBadge status={item.status} error={item.error} />
                     </span>

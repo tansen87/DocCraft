@@ -257,6 +257,24 @@ interface StatusBarProps {
    * that have no PDF context (e.g. image conversion).
    */
   hidePdfStats?: boolean;
+  /** Average local-OCR confidence (0..1); `null`/`undefined` hides the stat. */
+  ocrConfidence?: number | null;
+}
+
+/** Confidence below this is flagged as a warning (amber). */
+const LOW_CONFIDENCE = 0.7;
+/** Confidence below this is flagged as an error (red). */
+const VERY_LOW_CONFIDENCE = 0.5;
+
+/**
+ * Color class for a local-OCR confidence score. `null` when the score is
+ * acceptable (>= [`LOW_CONFIDENCE`]) or absent.
+ */
+function confidenceColorClass(confidence?: number | null): string | null {
+  if (confidence == null) return null;
+  if (confidence < VERY_LOW_CONFIDENCE) return "text-destructive";
+  if (confidence < LOW_CONFIDENCE) return "text-warning";
+  return "text-success";
 }
 
 export function StatusBar({
@@ -266,6 +284,7 @@ export function StatusBar({
   notices,
   progress,
   hidePdfStats = false,
+  ocrConfidence,
 }: StatusBarProps) {
   const { t } = useI18n();
   const meta = result ? pdfTypeMeta[result.pdfType] : null;
@@ -379,6 +398,18 @@ export function StatusBar({
           )}
         </Stat>
       )}
+
+      {ocrConfidence != null ? (
+        <>
+          <span className="hidden h-4 w-px bg-border sm:block" />
+          <Stat
+            label={t("status.ocrConfidence")}
+            className={confidenceColorClass(ocrConfidence) ?? undefined}
+          >
+            {`${Math.round(ocrConfidence * 100)}%`}
+          </Stat>
+        </>
+      ) : null}
 
       {extra ? (
         <>

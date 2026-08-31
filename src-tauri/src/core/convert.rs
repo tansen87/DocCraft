@@ -97,6 +97,7 @@ pub fn convert_pdf(
     processing_time_ms: start.elapsed().as_millis() as u64,
     skipped_pages,
     failed_pages: Vec::new(),
+    ocr_confidence: None,
   })
 }
 

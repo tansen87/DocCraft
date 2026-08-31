@@ -25,10 +25,14 @@ export const SNIP_RESULT_KEY = "doccraft-snip-result";
 /** localStorage stash of the recognition duration (ms, empty when unknown). */
 const SNIP_RESULT_DURATION_KEY = "doccraft-snip-result-duration";
 
+/** localStorage stash of the local-OCR confidence (0..1, empty when unknown). */
+const SNIP_RESULT_CONFIDENCE_KEY = "doccraft-snip-result-confidence";
+
 /** Payload pushed to an already-open result window. */
 interface SnipResultPayload {
   markdown: string;
   durationMs?: number;
+  ocrConfidence?: number | null;
 }
 
 /** localStorage stash of the last user-chosen window position (physical px). */
@@ -115,17 +119,23 @@ async function placeAtRememberedOrDefault(win: WebviewWindow) {
 export async function showSnipResultWindow(
   markdown: string,
   durationMs?: number,
+  ocrConfidence?: number | null,
 ): Promise<void> {
   localStorage.setItem(SNIP_RESULT_KEY, markdown);
   localStorage.setItem(
     SNIP_RESULT_DURATION_KEY,
     durationMs != null ? String(durationMs) : "",
   );
+  localStorage.setItem(
+    SNIP_RESULT_CONFIDENCE_KEY,
+    ocrConfidence != null ? String(ocrConfidence) : "",
+  );
 
   const notify = () =>
     emitTo(WINDOW_LABEL, "snip:result", {
       markdown,
       durationMs,
+      ocrConfidence,
     } satisfies SnipResultPayload).catch(() => {});
 
   const existing = await WebviewWindow.getByLabel(WINDOW_LABEL).catch(
@@ -183,6 +193,10 @@ export function SnipResultWindow() {
   );
   const [durationMs, setDurationMs] = useState<number | null>(() => {
     const raw = localStorage.getItem(SNIP_RESULT_DURATION_KEY);
+    return raw ? Number(raw) || null : null;
+  });
+  const [ocrConfidence, setOcrConfidence] = useState<number | null>(() => {
+    const raw = localStorage.getItem(SNIP_RESULT_CONFIDENCE_KEY);
     return raw ? Number(raw) || null : null;
   });
   const [pinned, setPinned] = useState(false);
@@ -287,6 +301,11 @@ export function SnipResultWindow() {
       setDurationMs(
         typeof e.payload.durationMs === "number" ? e.payload.durationMs : null,
       );
+      setOcrConfidence(
+        typeof e.payload.ocrConfidence === "number"
+          ? e.payload.ocrConfidence
+          : null,
+      );
       setCopied(false);
       reloadOpacity();
       reveal();
@@ -374,7 +393,7 @@ export function SnipResultWindow() {
           className="pointer-events-none absolute inset-0 z-50 rounded-xl border border-border/30"
         />
 
-        {/* Header（拖拽区域） */}
+        {/* Header(拖拽区域) */}
         <div
           data-tauri-drag-region
           onPointerDown={() => {
@@ -386,7 +405,7 @@ export function SnipResultWindow() {
         >
           <div
             data-tauri-drag-region
-            className="flex min-w-0 items-center gap-2"
+            className="flex min-w-0 items-center gap-2 select-none"
           >
             <span
               data-tauri-drag-region
@@ -395,8 +414,26 @@ export function SnipResultWindow() {
               DocCraft
             </span>
             {durationMs != null ? (
-              <span className="shrink-0 rounded-full bg-muted/70 px-1.5 py-0.5 text-[10px] leading-none tabular-nums text-muted-foreground">
+              <span
+                data-tauri-drag-region
+                className="shrink-0 rounded-full bg-muted/70 px-1.5 py-0.5 text-[10px] leading-none tabular-nums text-muted-foreground"
+              >
                 {formatDuration(durationMs)}
+              </span>
+            ) : null}
+            {ocrConfidence != null ? (
+              <span
+                data-tauri-drag-region
+                className={cn(
+                  "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] leading-none tabular-nums",
+                  ocrConfidence < 0.5
+                    ? "bg-destructive/15 text-destructive"
+                    : ocrConfidence < 0.7
+                      ? "bg-warning/15 text-warning"
+                      : "bg-success/15 text-success",
+                )}
+              >
+                {Math.round(ocrConfidence * 100)}%
               </span>
             ) : null}
           </div>

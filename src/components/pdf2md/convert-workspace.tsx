@@ -121,6 +121,10 @@ export function ConvertWorkspace({
   const [pageRange, setPageRange] = useState("");
   /** Elapsed time (ms) of the last draw-table extraction, shown in the preview header. */
   const [extractTimeMs, setExtractTimeMs] = useState(0);
+  /** Average local-OCR confidence of the last draw-table extraction (0..1). */
+  const [drawOcrConfidence, setDrawOcrConfidence] = useState<number | null>(
+    null,
+  );
   const [pageSize, setPageSize] = useState<{
     pageWidth: number;
     pageHeight: number;
@@ -504,9 +508,14 @@ export function ConvertWorkspace({
   }, [excludeMode]);
 
   const handleMergeToMarkdown = useCallback(
-    (markdown: string, processingTimeMs?: number) => {
+    (
+      markdown: string,
+      processingTimeMs?: number,
+      ocrConfidence?: number | null,
+    ) => {
       setMergedMarkdown(markdown);
       setExtractTimeMs(processingTimeMs ?? 0);
+      setDrawOcrConfidence(ocrConfidence ?? null);
       // If we already have a converted result, merge the table markdown into it
       if (result) {
         const merged =
@@ -558,6 +567,21 @@ export function ConvertWorkspace({
         text: t("notice.skippedPages", { count: skipped.length }),
         pages: skipped,
         onPageClick: jumpToPage,
+      });
+    }
+    // Local OCR with a low average confidence: flag the whole conversion so
+    // the user knows the recognized text may need review.
+    if (
+      !drawMode &&
+      result?.ocrConfidence != null &&
+      result.ocrConfidence < 0.7
+    ) {
+      list.push({
+        id: "ocr-low-confidence",
+        level: result.ocrConfidence < 0.5 ? "error" : "warning",
+        text: t("notice.ocrLowConfidence", {
+          pct: Math.round(result.ocrConfidence * 100),
+        }),
       });
     }
     // Draw mode: pages without a text layer will go through the OCR fallback
@@ -726,6 +750,9 @@ export function ConvertWorkspace({
           }
           notices={notices}
           progress={activity}
+          ocrConfidence={
+            drawMode ? drawOcrConfidence : (result?.ocrConfidence ?? null)
+          }
         />
       </div>
     </>

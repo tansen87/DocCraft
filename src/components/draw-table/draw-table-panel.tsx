@@ -86,8 +86,13 @@ interface DrawTablePanelProps {
   /** Open the exclusion-region editor (called when the exclude tool is picked). */
   onOpenExclusionEditor?: () => void;
   /** Called when tables are extracted and ready to merge into Markdown. The
-   * second argument is the total backend extraction time in milliseconds. */
-  onMergeToMarkdown?: (markdown: string, processingTimeMs?: number) => void;
+   * second argument is the total backend extraction time in milliseconds; the
+   * third is the average local-OCR confidence (0..1), absent for non-local OCR. */
+  onMergeToMarkdown?: (
+    markdown: string,
+    processingTimeMs?: number,
+    ocrConfidence?: number | null,
+  ) => void;
   /**
    * Reports long-running phases (text extraction / OCR recognition) so the
    * status bar can show a progress indicator. `null` means "finished".
@@ -158,7 +163,28 @@ function mergeDrawResults(
     emptyTextPages: Array.from(
       new Set([...a.emptyTextPages, ...b.emptyTextPages]),
     ),
+    ocrConfidence: mergeConfidence(
+      a.ocrConfidence,
+      a.ocrPages.length,
+      b.ocrConfidence,
+      b.ocrPages.length,
+    ),
   };
+}
+
+/** Weighted-average two per-run OCR confidences by their OCR page counts. */
+function mergeConfidence(
+  a: number | null | undefined,
+  aPages: number,
+  b: number | null | undefined,
+  bPages: number,
+): number | null | undefined {
+  if (a == null && b == null) return undefined;
+  if (a == null) return b;
+  if (b == null) return a;
+  const total = aPages + bPages;
+  if (total === 0) return undefined;
+  return (a * aPages + b * bPages) / total;
 }
 
 export function DrawTablePanel({
@@ -559,7 +585,11 @@ export function DrawTablePanel({
             : "";
 
         if (md.trim()) {
-          onMergeToMarkdown?.(md, result.processingTimeMs);
+          onMergeToMarkdown?.(
+            md,
+            result.processingTimeMs,
+            result.ocrConfidence,
+          );
           if (result.ocrPages.length > 0) {
             toast.success(
               t("toast.extractDoneOcr", { count: result.ocrPages.length }),

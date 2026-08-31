@@ -23,6 +23,8 @@ export interface ConvertResult extends DetectResult {
   skippedPages: number[];
   /** 1-indexed pages whose OCR request failed (degraded to a placeholder comment). */
   failedPages: number[];
+  /** Average confidence (0..1) of the local PaddleOCR results; absent for pure-text / AI / disabled conversions. */
+  ocrConfidence?: number | null;
 }
 
 export interface OcrModel {
@@ -315,6 +317,8 @@ export interface DrawTableResult {
   ocrPages: number[];
   /** 1-indexed pages that had no text layer and no usable OCR result. */
   emptyTextPages: number[];
+  /** Average confidence (0..1) of the local PaddleOCR fallback; absent for pure text / AI / disabled. */
+  ocrConfidence?: number | null;
 }
 
 // ─── Frontend-only types for the canvas overlay ──────────────────────────
@@ -423,6 +427,8 @@ export interface OcrImageResult {
   cropMs?: number;
   inferMs?: number;
   saveMs?: number;
+  /** Average confidence (0..1) of the local PaddleOCR recognition; absent for AI vision. */
+  ocrConfidence?: number | null;
 }
 
 /** One captured monitor snapshot offered to the snip overlay windows. */

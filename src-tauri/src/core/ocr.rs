@@ -52,36 +52,48 @@ impl LocalOcrEngine {
     Ok(Self { engine })
   }
 
-  /// Recognize text in an image from PNG bytes and return the text.
-  /// Sorts text blocks by reading order: top-to-bottom, then left-to-right
-  /// within each line, and joins same-line blocks with spaces.
-  pub fn recognize_from_png(&self, png_data: &[u8], separator: &str) -> Result<String, String> {
-    self.recognize_bytes(png_data, separator)
-  }
-
   /// Recognize text in an image from encoded bytes (PNG or JPEG) and return
-  /// the text. Block ordering matches [`Self::recognize_image`].
-  pub fn recognize_bytes(&self, image_data: &[u8], separator: &str) -> Result<String, String> {
+  /// the text plus the average block confidence (0..1). Block ordering matches
+  /// [`Self::recognize_image_with_confidence`].
+  pub fn recognize_bytes_with_confidence(
+    &self,
+    image_data: &[u8],
+    separator: &str,
+  ) -> Result<(String, f32), String> {
     let image =
       image::load_from_memory(image_data).map_err(|e| format!("Failed to load image: {e}"))?;
-    self.recognize_image(&image, separator)
+    self.recognize_image_with_confidence(&image, separator)
   }
 
-  /// Recognize text in an already-decoded image. Lets in-memory pipelines
-  /// (e.g. screenshots) skip an encode > write > read > decode round-trip.
-  pub fn recognize_image(
+  /// Like [`Self::recognize_image_with_confidence`] but also returns the
+  /// average recognition confidence (0..1) across the non-empty text blocks.
+  /// An empty result reports `0.0`.
+  pub fn recognize_image_with_confidence(
     &self,
     image: &image::DynamicImage,
     separator: &str,
-  ) -> Result<String, String> {
+  ) -> Result<(String, f32), String> {
     let results = self
       .engine
       .recognize(image)
       .map_err(|e| format!("Local OCR recognition failed: {e}"))?;
 
     if results.is_empty() {
-      return Ok(String::new());
+      return Ok((String::new(), 0.0));
     }
+
+    // Average confidence over the blocks that actually produced text. Blocks
+    // whose text is blank (rare) are excluded so they don't drag the score.
+    let conf_blocks: Vec<f32> = results
+      .iter()
+      .filter(|r| !r.text.trim().is_empty())
+      .map(|r| r.confidence)
+      .collect();
+    let avg_confidence = if conf_blocks.is_empty() {
+      0.0
+    } else {
+      conf_blocks.iter().sum::<f32>() / conf_blocks.len() as f32
+    };
 
     // Adaptive threshold: ~1.5% of image height, or at least 8px.
     let line_threshold = (image.height() as f64 * 0.015).max(8.0);
@@ -132,7 +144,7 @@ impl LocalOcrEngine {
       .collect::<Vec<_>>()
       .join("\n");
 
-    Ok(output)
+    Ok((output, avg_confidence))
   }
 }
 
@@ -153,13 +165,16 @@ pub struct OcrBlock {
 pub struct OcrRecognition {
   pub blocks: Vec<OcrBlock>,
   pub height_px: u32,
+  /// Average confidence (0..1) across the recognized non-empty blocks. `0.0`
+  /// when no blocks were produced.
+  pub confidence: f32,
 }
 
 impl LocalOcrEngine {
   /// Recognize text blocks **with positions** from PNG bytes. Unlike
-  /// [`recognize_from_png`] this keeps every block's bounding box instead of
-  /// merging blocks into lines, which lets the draw-table extraction cut
-  /// recognized text by user-drawn column boundaries.
+  /// [`Self::recognize_from_png_with_confidence`] this keeps every block's
+  /// bounding box instead of merging blocks into lines, which lets the
+  /// draw-table extraction cut recognized text by user-drawn column boundaries.
   pub fn recognize_png_blocks(&self, png_data: &[u8]) -> Result<OcrRecognition, String> {
     let image =
       image::load_from_memory(png_data).map_err(|e| format!("Failed to load image: {e}"))?;
@@ -179,11 +194,24 @@ impl LocalOcrEngine {
         width: r.bbox.rect.width() as f64,
         height: r.bbox.rect.height() as f64,
       })
+      .collect::<Vec<_>>();
+
+    // Average confidence over the non-empty blocks (same filter as `blocks`).
+    let confidences: Vec<f32> = results
+      .iter()
+      .filter(|r| !r.text.trim().is_empty())
+      .map(|r| r.confidence)
       .collect();
+    let confidence = if confidences.is_empty() {
+      0.0
+    } else {
+      confidences.iter().sum::<f32>() / confidences.len() as f32
+    };
 
     Ok(OcrRecognition {
       blocks,
       height_px: image.height(),
+      confidence,
     })
   }
 }
@@ -616,6 +644,11 @@ pub struct HybridSession {
   pub skipped_pages: Vec<u32>,
   /// Pages whose OCR request failed (degraded to a placeholder comment).
   pub failed_pages: Vec<u32>,
+  /// Sum of per-page local-OCR confidence (0..1 each) for the pages recognized
+  /// by the local engine, used to compute the average at finish.
+  pub ocr_confidence_sum: f64,
+  /// Number of pages that contributed to [`Self::ocr_confidence_sum`].
+  pub ocr_confidence_count: u32,
   /// Reason shown in the skip comment for skipped OCR pages.
   pub skip_reason: &'static str,
   pub start: Instant,
@@ -781,6 +814,8 @@ pub fn start_session(
     ocr_results: HashMap::new(),
     skipped_pages,
     failed_pages: Vec::new(),
+    ocr_confidence_sum: 0.0,
+    ocr_confidence_count: 0,
     skip_reason,
     start,
     ocr_mode,
@@ -833,7 +868,14 @@ pub async fn ocr_page_in_session(
   let md = if ocr_mode.is_local() {
     // Use local OCR engine
     match local_ocr_page(app, page, image_png) {
-      Ok(m) => m,
+      Ok((m, confidence)) => {
+        let mut map = store.lock();
+        if let Some(session) = map.get_mut(session_id) {
+          session.ocr_confidence_sum += confidence as f64;
+          session.ocr_confidence_count += 1;
+        }
+        m
+      }
       Err(e) => {
         let mut map = store.lock();
         if let Some(session) = map.get_mut(session_id) {
@@ -876,8 +918,9 @@ pub async fn ocr_page_in_session(
   Ok(md)
 }
 
-/// Run one page through the local OCR engine.
-fn local_ocr_page(app: &AppHandle, page: u32, image_png: &str) -> Result<String, String> {
+/// Run one page through the local OCR engine, returning the markdown plus the
+/// page's average recognition confidence (0..1).
+fn local_ocr_page(app: &AppHandle, page: u32, image_png: &str) -> Result<(String, f32), String> {
   use tauri::Manager;
   // Decode the PNG image from base64
   let image_data = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, image_png)
@@ -891,16 +934,16 @@ fn local_ocr_page(app: &AppHandle, page: u32, image_png: &str) -> Result<String,
   let sep = settings::get_app_settings(app)?.text_separator;
 
   // Run OCR
-  let text = {
+  let (text, confidence) = {
     let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
-    eng.recognize_from_png(&image_data, &sep)?
+    eng.recognize_bytes_with_confidence(&image_data, &sep)?
   };
 
   if text.trim().is_empty() {
     return Err(format!("Local OCR returned no content (page {page})"));
   }
 
-  Ok(text.trim().to_string())
+  Ok((text.trim().to_string(), confidence))
 }
 
 /// Reassemble text + OCR pages in document order and drop the session.
@@ -940,6 +983,8 @@ pub fn finish_session(store: &HybridStore, session_id: &str) -> Result<ConvertRe
     processing_time_ms: session.start.elapsed().as_millis() as u64,
     skipped_pages: session.skipped_pages,
     failed_pages: session.failed_pages,
+    ocr_confidence: (session.ocr_confidence_count > 0)
+      .then(|| (session.ocr_confidence_sum / session.ocr_confidence_count as f64) as f32),
   })
 }
 
@@ -977,7 +1022,7 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
     return Err("OCR is disabled in settings".to_string());
   }
 
-  let markdown = if mode.is_local() {
+  let (markdown, ocr_confidence) = if mode.is_local() {
     // Local PaddleOCR is CPU-bound model inference - run it off the async
     // runtime so concurrent conversions never block each other's futures.
     use tauri::Manager;
@@ -991,14 +1036,14 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
     tauri::async_runtime::spawn_blocking(move || {
       let image_data =
         std::fs::read(&path).map_err(|e| format!("Failed to read image file: {e}"))?;
-      let text = {
+      let (text, confidence) = {
         let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
-        eng.recognize_bytes(&image_data, &sep)?
+        eng.recognize_bytes_with_confidence(&image_data, &sep)?
       };
       if text.trim().is_empty() {
         return Err("Local OCR returned no content".to_string());
       }
-      Ok(text.trim().to_string())
+      Ok((text.trim().to_string(), confidence))
     })
     .await
     .map_err(|e| format!("Local OCR task failed: {e}"))??
@@ -1029,7 +1074,8 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
       mime,
       &encoded,
     )
-    .await?
+    .await
+    .map(|md| (md, 0.0))?
   };
 
   Ok(OcrImageResult {
@@ -1041,6 +1087,11 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
     crop_ms: None,
     infer_ms: None,
     save_ms: None,
+    ocr_confidence: (if mode.is_local() {
+      Some(ocr_confidence)
+    } else {
+      None
+    }),
   })
 }
 

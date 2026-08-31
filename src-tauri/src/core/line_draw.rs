@@ -105,11 +105,12 @@ fn ocr_blocks_to_elements(recognition: &OcrRecognition, render_scale: f64) -> Ve
 }
 
 /// Run local PaddleOCR on one rendered page image and return positioned text
-/// elements ready for the column-cutting pipeline.
+/// elements ready for the column-cutting pipeline, plus the page's average
+/// recognition confidence (0..1).
 fn ocr_text_elements(
   engine: &LocalOcrEngine,
   payload: &PageImagePayload,
-) -> Result<Vec<TextElement>, String> {
+) -> Result<(Vec<TextElement>, f32), String> {
   let png = base64::Engine::decode(
     &base64::engine::general_purpose::STANDARD,
     &payload.image_png,
@@ -119,7 +120,9 @@ fn ocr_text_elements(
     return Err("Invalid render scale for OCR page image".to_string());
   }
   let recognition = engine.recognize_png_blocks(&png)?;
-  Ok(ocr_blocks_to_elements(&recognition, payload.render_scale))
+  let confidence = recognition.confidence;
+  let elements = ocr_blocks_to_elements(&recognition, payload.render_scale);
+  Ok((elements, confidence))
 }
 
 /// Convert point-space line positions into percentages of the rendered
@@ -746,6 +749,7 @@ pub fn extract_tables_from_draw_lines(
       total_rows: 0,
       ocr_pages: Vec::new(),
       empty_text_pages: Vec::new(),
+      ocr_confidence: None,
     });
   }
 
@@ -842,6 +846,8 @@ pub fn extract_tables_from_draw_lines(
   let mut regions = Vec::new();
   let mut ocr_pages = Vec::new();
   let mut empty_text_pages = Vec::new();
+  let mut ocr_confidence_sum = 0.0f64;
+  let mut ocr_confidence_count = 0u32;
 
   for page_draw in &effective_pages {
     let page_num = page_draw.page;
@@ -874,10 +880,12 @@ pub fn extract_tables_from_draw_lines(
       if let Some(img) = page_images.get(&page_num) {
         if let Some(engines) = ocr_engines {
           if let Some(engine) = engines.local {
-            if let Ok(ocr_elements) = ocr_text_elements(engine, img) {
+            if let Ok((ocr_elements, confidence)) = ocr_text_elements(engine, img) {
               if !ocr_elements.is_empty() {
                 elements = ocr_elements;
                 ocr_pages.push(page_num);
+                ocr_confidence_sum += confidence as f64;
+                ocr_confidence_count += 1;
               }
             }
           }
@@ -1005,6 +1013,8 @@ pub fn extract_tables_from_draw_lines(
     total_rows,
     ocr_pages,
     empty_text_pages,
+    ocr_confidence: (ocr_confidence_count > 0)
+      .then(|| (ocr_confidence_sum / ocr_confidence_count as f64) as f32),
   })
 }
 
@@ -1453,6 +1463,7 @@ mod tests {
         },
       ],
       height_px: 500,
+      confidence: 0.9,
     };
     let elements = ocr_blocks_to_elements(&recognition, 2.5);
     assert_eq!(elements.len(), 2);
@@ -1504,6 +1515,7 @@ mod tests {
         },
       ],
       height_px: 750,
+      confidence: 0.85,
     };
 
     let elements = ocr_blocks_to_elements(&recognition, 2.5);

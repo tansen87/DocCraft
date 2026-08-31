@@ -257,6 +257,7 @@ const en = {
   "status.unknown": "Unknown",
   "status.notDetected": "Not detected",
   "status.confidence": "Confidence",
+  "status.ocrConfidence": "OCR confidence",
   "status.ocrNeed": "OCR needed",
   "status.none": "None",
   "status.mode": "Mode",
@@ -283,6 +284,8 @@ const en = {
   "notice.ocrFallbackPages":
     "{count} page(s) have no text layer and will be recognized via OCR.",
   "notice.failedImages": "{count} image(s) failed to recognize",
+  "notice.ocrLowConfidence":
+    "Local OCR finished with {pct}% average confidence — the recognized text may need review.",
 
   "pdfmeta.text": "Text",
   "pdfmeta.mixed": "Mixed",
@@ -619,6 +622,7 @@ const zh: Record<TranslationKey, string> = {
   "status.unknown": "未知",
   "status.notDetected": "未检测",
   "status.confidence": "置信度",
+  "status.ocrConfidence": "OCR 置信度",
   "status.ocrNeed": "OCR 需求",
   "status.none": "无",
   "status.mode": "模式",
@@ -642,6 +646,8 @@ const zh: Record<TranslationKey, string> = {
   "notice.skippedPages": "{count} 页因未配置 OCR 服务而被跳过",
   "notice.ocrFallbackPages": "{count} 页无文本层, 将通过 OCR 识别",
   "notice.failedImages": "{count} 张图片识别失败",
+  "notice.ocrLowConfidence":
+    "本地 OCR 平均置信度仅 {pct}%, 识别文本可能需要人工复核",
 
   "pdfmeta.text": "文本型",
   "pdfmeta.mixed": "混合型",

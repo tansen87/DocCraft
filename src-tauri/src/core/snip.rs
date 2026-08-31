@@ -319,21 +319,21 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
   let crop_ms = crop_start.elapsed().as_millis() as u64;
   let infer_start = Instant::now();
 
-  let (markdown, save_ms) = if mode.is_local() {
+  let (markdown, confidence, save_ms) = if mode.is_local() {
     let app = app.clone();
     let saved_path = path.clone();
     let sep = settings::get_app_settings(&app)?.text_separator;
     // Screenshot-dedicated engine (S-2): never queues behind batch OCR tasks.
     // Acquired inside spawn_blocking so a cold model load cannot stall the
     // async runtime (S-4).
-    tauri::async_runtime::spawn_blocking(move || -> Result<(String, u64), String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(String, Option<f32>, u64), String> {
       let engine = crate::core::ocr::acquire_snip_ocr_engine(&app)?;
       // Feed the in-memory crop straight to the engine - no PNG encode >
       // write > read > decode round-trip on the hot path (S-3).
       let image = image::DynamicImage::ImageRgba8(cropped.clone());
-      let text = {
+      let (text, confidence) = {
         let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
-        eng.recognize_image(&image, &sep)?
+        eng.recognize_image_with_confidence(&image, &sep)?
       };
       // Persist the full-resolution copy after recognition so retry / export
       // behave exactly like an imported file.
@@ -344,7 +344,7 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
       if text.trim().is_empty() {
         return Err("Local OCR returned no content".to_string());
       }
-      Ok((text.trim().to_string(), save_ms))
+      Ok((text.trim().to_string(), Some(confidence), save_ms))
     })
     .await
     .map_err(|e| format!("Local OCR task failed: {e}"))??
@@ -362,7 +362,7 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
       .ok_or_else(|| "No available OCR supplier configured".to_string())?;
     let prompt = crate::core::ocr::effective_ai_ocr_prompt(app)?;
     let markdown = crate::core::ocr::ai_recognize_image(&provider, &png_b64, &prompt).await?;
-    (markdown, save_start.elapsed().as_millis() as u64)
+    (markdown, None, save_start.elapsed().as_millis() as u64)
   };
   let infer_ms = infer_start.elapsed().as_millis() as u64 - save_ms;
 
@@ -375,6 +375,7 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
     crop_ms: Some(crop_ms),
     infer_ms: Some(infer_ms),
     save_ms: Some(save_ms),
+    ocr_confidence: confidence,
   })
 }
 
@@ -747,6 +748,7 @@ mod tests {
         block("28", 60.0, 50.0, 20.0, 10.0),
       ],
       height_px: 100,
+      confidence: 0.9,
     };
     let md = extract_table_from_ocr_blocks(&recognition, &[50.0], &[], 100.0, 100.0, " ");
     assert!(md.contains("| 姓名 | 年龄 |"));
@@ -765,6 +767,7 @@ mod tests {
         block("28", 60.0, 55.0, 20.0, 10.0),
       ],
       height_px: 100,
+      confidence: 0.85,
     };
     let md = extract_table_from_ocr_blocks(&recognition, &[50.0], &[30.0], 100.0, 100.0, " ");
     // Topmost band is the header; the lower band merges stacked blocks.

@@ -81,6 +81,11 @@ pub struct ConvertResult {
   /// 1-indexed pages whose OCR request failed (degraded to a placeholder
   /// comment in the markdown).
   pub failed_pages: Vec<u32>,
+  /// Average confidence of the local PaddleOCR results (0..1). `None` when the
+  /// conversion used no local OCR (pure text, remote AI vision, or OCR
+  /// disabled), since those paths expose no meaningful confidence score.
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub ocr_confidence: Option<f32>,
 }
 
 impl From<&PdfProcessResult> for ConvertResult {
@@ -91,6 +96,7 @@ impl From<&PdfProcessResult> for ConvertResult {
       processing_time_ms: r.processing_time_ms,
       skipped_pages: Vec::new(),
       failed_pages: Vec::new(),
+      ocr_confidence: None,
     }
   }
 }
@@ -352,6 +358,11 @@ pub struct DrawTableResult {
   /// 1-indexed pages that had no text layer and no usable OCR result - they
   /// were processed but produced nothing.
   pub empty_text_pages: Vec<u32>,
+  /// Average confidence (0..1) of the local PaddleOCR fallback across the
+  /// pages that went through it. `None` when no page used local OCR (pure
+  /// text-layer extraction, remote AI vision, or OCR disabled).
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub ocr_confidence: Option<f32>,
 }
 
 /// Global application settings (persisted in `app-settings.json`).
@@ -514,6 +525,10 @@ pub struct OcrImageResult {
   /// Stage timing: full-resolution PNG encode + persist to disk.
   #[serde(skip_serializing_if = "Option::is_none")]
   pub save_ms: Option<u64>,
+  /// Average confidence of the local PaddleOCR recognition (0..1). `None` for
+  /// the remote AI vision path, which exposes no per-token confidence.
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub ocr_confidence: Option<f32>,
 }
 
 /// Request to extract a table from an image using drawn lines.
