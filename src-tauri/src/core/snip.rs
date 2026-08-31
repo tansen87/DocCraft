@@ -9,9 +9,10 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use xcap::Monitor;
 
-use crate::core::settings;
+use crate::core::{paragraph, settings};
 use crate::models::{
-  ImageTableRequest, ImageTableResult, MonitorSnapshot, OcrImageResult, ShotRegion, WindowInfo,
+  ImageTableRequest, ImageTableResult, MonitorSnapshot, OcrImageResult, ParagraphMode, ShotRegion,
+  WindowInfo,
 };
 
 /// Managed cache of full-monitor snapshots between `screenshot_begin` and the
@@ -277,7 +278,9 @@ fn screenshots_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 /// dropped afterwards by [`end_screenshot_session`] (invoked by the command
 /// layer regardless of success).
 pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrImageResult, String> {
-  let mode = settings::get_app_settings(app)?.ocr_mode;
+  let settings = settings::get_app_settings(app)?;
+  let mode = settings.ocr_mode;
+  let paragraph_mode = settings.paragraph_mode;
   if !mode.is_enabled() {
     return Err("OCR is disabled in settings".to_string());
   }
@@ -344,6 +347,9 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
       if text.trim().is_empty() {
         return Err("Local OCR returned no content".to_string());
       }
+      // Screenshot OCR has no geometry - run the textual heuristics so the
+      // output matches the user's paragraph policy (same as PDF batch OCR).
+      let text = paragraph::apply_text(&text, paragraph_mode);
       Ok((text.trim().to_string(), Some(confidence), save_ms))
     })
     .await
@@ -362,6 +368,9 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
       .ok_or_else(|| "No available OCR supplier configured".to_string())?;
     let prompt = crate::core::ocr::effective_ai_ocr_prompt(app)?;
     let markdown = crate::core::ocr::ai_recognize_image(&provider, &png_b64, &prompt).await?;
+    // Deterministic post-processing on top of the prompt-level merge, matching
+    // the chosen paragraph policy (same as PDF batch AI OCR).
+    let markdown = paragraph::apply_text(&markdown, paragraph_mode);
     (markdown, None, save_start.elapsed().as_millis() as u64)
   };
   let infer_ms = infer_start.elapsed().as_millis() as u64 - save_ms;
@@ -476,6 +485,7 @@ pub async fn ocr_image_table(
         .map(|p| *p * img_height / 100.0)
         .collect();
       let sep = settings::get_app_settings(&app)?.text_separator;
+      let paragraph_mode = settings::get_app_settings(&app)?.paragraph_mode;
       // Shared/resident engine.
       let cache = app.state::<crate::core::ocr::OcrEngineCache>();
       let engine = crate::core::ocr::acquire_local_ocr_engine(&app, &cache)?;
@@ -493,6 +503,7 @@ pub async fn ocr_image_table(
           img_width,
           img_height,
           &sep,
+          paragraph_mode,
         ))
       }
     })
@@ -545,6 +556,7 @@ fn extract_table_from_ocr_blocks(
   img_width: f64,
   img_height: f64,
   separator: &str,
+  paragraph_mode: ParagraphMode,
 ) -> String {
   // Column boundaries: 0 + user lines + image width.
   let mut col_bounds: Vec<f64> = vec![0.0];
@@ -592,12 +604,23 @@ fn extract_table_from_ocr_blocks(
   };
 
   let data_rows: Vec<Vec<String>> = if horizontal_px.is_empty() {
-    // Legacy auto-detection: group into visual text lines; each becomes one
-    // row and the first is the header.
-    group_blocks_into_lines(&blocks)
+    // No horizontal row bands: each visual text line is one row start, but a
+    // cell that wraps over several visual lines must fold back into its record
+    // in smart/none mode - exactly like the PDF draw-table path (00014). In
+    // keep mode every visual line stays a separate GFM row. The first row is
+    // the header.
+    let visual_rows: Vec<(Vec<String>, f64, f64)> = group_blocks_into_lines(&blocks)
       .iter()
-      .map(|line| cut_line_by_columns(line))
-      .collect()
+      .map(|line| {
+        // cells of the visual line + representative vertical centre and font
+        // size (max block height) for the fold gap check.
+        let cells = cut_line_by_columns(line);
+        let y = line.iter().map(|b| b.top + b.height / 2.0).sum::<f64>() / line.len() as f64;
+        let font = line.iter().map(|b| b.height).fold(0.0_f64, f64::max);
+        (cells, y, font)
+      })
+      .collect();
+    fold_continuation_rows(visual_rows, paragraph_mode)
   } else {
     // Grid mode: the drawn horizontal lines define row bands. Every band
     // emits exactly one row (empty bands become blank cells); inside a band,
@@ -638,7 +661,14 @@ fn extract_table_from_ocr_blocks(
           }
         }
       }
-      rows.push(merged.into_iter().map(|parts| parts.join(" ")).collect());
+      rows.push(
+        merged
+          .into_iter()
+          .map(|parts| {
+            paragraph::join_fragments(&parts.iter().map(String::as_str).collect::<Vec<_>>())
+          })
+          .collect(),
+      );
     }
     rows
   };
@@ -675,6 +705,84 @@ fn extract_table_from_ocr_blocks(
     ));
   }
   out
+}
+
+/// A vertical gap at least this wide (in units of the record's line height)
+/// separates two records rather than marking a wrapped continuation line.
+const ROW_GAP_EM: f64 = 2.5;
+
+/// Index of the first cell holding visible text, if any.
+fn first_content_col(cells: &[String]) -> Option<usize> {
+  cells.iter().position(|c| !c.trim().is_empty())
+}
+
+/// Fold wrapped cell continuations back into their record when only vertical
+/// separators are drawn (no horizontal row bands).
+///
+/// ```text
+/// | idx | desc |        | idx | desc      |
+/// | 1   | this |   →    | 1   | this is…  |
+/// |     | is   |        |     | …test     |
+/// |     | test |
+/// ```
+///
+/// A wrapped remainder is recognised by where it starts: it leaves the columns
+/// to its left empty and its first non-empty column sits right of the record's
+/// first one, with content directly above in that column and no block gap. The
+/// rule stays narrow so a record that genuinely has an empty leading column
+/// keeps its own row. `Keep` disables the whole pass - every visual line stays
+/// a separate GFM row (mirrors the PDF draw-table `merge_continuation_rows`).
+fn fold_continuation_rows(
+  rows: Vec<(Vec<String>, f64, f64)>,
+  mode: ParagraphMode,
+) -> Vec<Vec<String>> {
+  if mode == ParagraphMode::Keep || rows.is_empty() {
+    return rows.into_iter().map(|(cells, _, _)| cells).collect();
+  }
+  // (cells, y of last line, leading font, first_content_col, continues)
+  let mut out: Vec<(Vec<String>, f64, f64, Option<usize>, bool)> = Vec::with_capacity(rows.len());
+  for (cells, y, font) in rows {
+    let Some(col) = first_content_col(&cells) else {
+      continue;
+    };
+    let is_continuation = match out.last() {
+      // A gap this wide separates two records - block break, not a wrap.
+      Some((_, prev_y, prev_font, _, _)) if y - *prev_y > *prev_font * ROW_GAP_EM => false,
+      Some((prev_cells, _, _, prev_first, prev_continues)) => match prev_first {
+        // Starts further right than the record above: the wrapped remainder of
+        // a cell, provided that column holds visible text directly above.
+        Some(p) if p < &col => {
+          col > 0
+            && cells[..col].iter().all(|c| c.trim().is_empty())
+            && prev_cells.get(col).is_some_and(|c| !c.trim().is_empty())
+        }
+        // Same column as a known continuation: another line of that wrap.
+        Some(p) if p == &col => col > 0 && *prev_continues,
+        _ => false,
+      },
+      None => false,
+    };
+    if is_continuation {
+      // `is_continuation` is only true when `out.last()` matched a `Some`,
+      // so a record always exists here.
+      if let Some(prev) = out.last_mut() {
+        for (i, cell) in cells.iter().enumerate() {
+          if cell.trim().is_empty() {
+            continue;
+          }
+          if let Some(slot) = prev.0.get_mut(i) {
+            *slot = paragraph::join_fragments(&[slot.as_str(), cell.as_str()]);
+          }
+        }
+        prev.1 = y;
+        prev.3 = Some(col);
+        prev.4 = true;
+      }
+    } else {
+      out.push((cells, y, font, Some(col), false));
+    }
+  }
+  out.into_iter().map(|(cells, _, _, _, _)| cells).collect()
 }
 
 /// Group OCR blocks into visual text lines using the same conservative
@@ -750,9 +858,80 @@ mod tests {
       height_px: 100,
       confidence: 0.9,
     };
-    let md = extract_table_from_ocr_blocks(&recognition, &[50.0], &[], 100.0, 100.0, " ");
+    let md = extract_table_from_ocr_blocks(
+      &recognition,
+      &[50.0],
+      &[],
+      100.0,
+      100.0,
+      " ",
+      ParagraphMode::Smart,
+    );
     assert!(md.contains("| 姓名 | 年龄 |"));
     assert!(md.contains("| 张三 | 28 |"));
+  }
+
+  #[test]
+  fn ocr_blocks_vertical_only_folds_wrapped_cell_in_smart_mode() {
+    let recognition = crate::core::ocr::OcrRecognition {
+      blocks: vec![
+        // Header line.
+        block("序号", 10.0, 10.0, 20.0, 10.0),
+        block("说明", 70.0, 10.0, 30.0, 10.0),
+        // Record line + two wrapped continuations of the last column.
+        block("1", 10.0, 40.0, 10.0, 10.0),
+        block("This is a", 70.0, 40.0, 40.0, 10.0),
+        block("wrapped", 80.0, 55.0, 40.0, 10.0),
+        block("cell", 80.0, 70.0, 30.0, 10.0),
+      ],
+      height_px: 150,
+      confidence: 0.9,
+    };
+    let md = extract_table_from_ocr_blocks(
+      &recognition,
+      &[50.0],
+      &[],
+      150.0,
+      150.0,
+      " ",
+      ParagraphMode::Smart,
+    );
+    let lines: Vec<&str> = md.lines().filter(|l| l.starts_with('|')).collect();
+    // Header + delimiter + one folded data row (no per-line rows).
+    assert_eq!(lines.len(), 3);
+    assert_eq!(lines[0], "| 序号 | 说明 |");
+    assert!(lines[1].starts_with("| -"));
+    assert_eq!(lines[2], "| 1 | This is a wrapped cell |");
+  }
+
+  #[test]
+  fn ocr_blocks_vertical_only_keeps_each_line_in_keep_mode() {
+    let recognition = crate::core::ocr::OcrRecognition {
+      blocks: vec![
+        block("序号", 10.0, 10.0, 20.0, 10.0),
+        block("说明", 70.0, 10.0, 30.0, 10.0),
+        block("1", 10.0, 40.0, 10.0, 10.0),
+        block("This is a", 70.0, 40.0, 40.0, 10.0),
+        block("wrapped", 80.0, 55.0, 40.0, 10.0),
+        block("cell", 80.0, 70.0, 30.0, 10.0),
+      ],
+      height_px: 150,
+      confidence: 0.9,
+    };
+    let md = extract_table_from_ocr_blocks(
+      &recognition,
+      &[50.0],
+      &[],
+      150.0,
+      150.0,
+      " ",
+      ParagraphMode::Keep,
+    );
+    let lines: Vec<&str> = md.lines().filter(|l| l.starts_with('|')).collect();
+    // Header + delimiter + one GFM row per visual line (wrapped cell un-merged).
+    assert_eq!(lines.len(), 5);
+    assert!(lines[3].contains("|  | wrapped |"));
+    assert!(lines[4].contains("|  | cell |"));
   }
 
   #[test]
@@ -769,12 +948,21 @@ mod tests {
       height_px: 100,
       confidence: 0.85,
     };
-    let md = extract_table_from_ocr_blocks(&recognition, &[50.0], &[30.0], 100.0, 100.0, " ");
+    let md = extract_table_from_ocr_blocks(
+      &recognition,
+      &[50.0],
+      &[30.0],
+      100.0,
+      100.0,
+      " ",
+      ParagraphMode::Smart,
+    );
     // Topmost band is the header; the lower band merges stacked blocks.
     let mut lines = md.lines().filter(|l| l.starts_with('|'));
     assert_eq!(lines.next().unwrap(), "| 姓名 | 年龄 |");
     assert!(lines.next().unwrap().starts_with("| -")); // GFM delimiter row
-    assert_eq!(lines.next().unwrap(), "| 张三 张三 2 | 28 |");
+    // `join_fragments` joins the stacked CJK fragments without an extra space.
+    assert_eq!(lines.next().unwrap(), "| 张三张三 2 | 28 |");
   }
 
   #[test]
@@ -803,5 +991,64 @@ mod tests {
     assert_eq!(clamp_region(&region(0, 0, 0, 0), 1920, 1080), None);
     // Fully outside the frame.
     assert_eq!(clamp_region(&region(5000, 5000, 10, 10), 1920, 1080), None);
+  }
+
+  // ── §7.1 (00014): screenshot OCR has no geometry, so it reuses the same
+  //    `paragraph::apply_text` textual policy as the PDF OCR channels. These
+  //    are pure-function tests - no OCR engine or image mock is involved.
+
+  #[test]
+  fn screenshot_policy_merges_latin_soft_breaks() {
+    use crate::models::ParagraphMode;
+    let src = "This document specifies\nthe interface.";
+    assert_eq!(
+      crate::core::paragraph::apply_text(src, ParagraphMode::Smart),
+      "This document specifies the interface."
+    );
+  }
+
+  #[test]
+  fn screenshot_policy_merges_cjk_soft_breaks() {
+    use crate::models::ParagraphMode;
+    let src = "本文档规定了接口规范\n接入方应当完成鉴权\n未按要求调用自行承担";
+    assert_eq!(
+      crate::core::paragraph::apply_text(src, ParagraphMode::Smart),
+      "本文档规定了接口规范接入方应当完成鉴权未按要求调用自行承担"
+    );
+  }
+
+  #[test]
+  fn screenshot_policy_keeps_list_items() {
+    use crate::models::ParagraphMode;
+    let src = "- 项目一\n- 项目二";
+    assert_eq!(
+      crate::core::paragraph::apply_text(src, ParagraphMode::Smart),
+      src
+    );
+  }
+
+  #[test]
+  fn screenshot_policy_keep_is_identity() {
+    use crate::models::ParagraphMode;
+    let src = "本文档规定了XX。\n接入方应当鉴权。\n未按要求调用。";
+    assert_eq!(
+      crate::core::paragraph::apply_text(src, ParagraphMode::Keep),
+      src
+    );
+  }
+
+  #[test]
+  fn screenshot_policy_sentence_end_starts_new_paragraph() {
+    use crate::models::ParagraphMode;
+    // 00013 §4.3 T1 keeps a hard break after sentence-ending punctuation in
+    // the no-geometry textual path. So in `smart`, OCR-derived text whose every
+    // visual line ends in '。' is preserved line-by-line - identical to the
+    // PDF OCR channels. (This differs from 00014 §7.1's illustrative example,
+    // which assumed those lines would merge.)
+    let src = "本文档规定了XX。\n接入方应当鉴权。\n未按要求调用。";
+    assert_eq!(
+      crate::core::paragraph::apply_text(src, ParagraphMode::Smart),
+      src
+    );
   }
 }
