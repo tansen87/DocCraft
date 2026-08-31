@@ -13,12 +13,50 @@ use crate::core::page_marker::page_marker;
 use crate::core::region_exclude;
 use crate::models::ExcludeRegions;
 
+/// Geometry of one rebuilt visual line, captured while grouping the positioned
+/// items. Consumed by the paragraph-join policy (`core/paragraph.rs`) to tell
+/// soft line breaks (same paragraph) apart from hard ones (paragraph boundary,
+/// heading, list item, ...). Coordinates are PDF user space (origin bottom-left).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LineMeta {
+  /// Vertical position of the line (PDF user-space y).
+  pub y: f32,
+  /// Font size in points, used to estimate the line height.
+  pub font_size: f32,
+  /// Leftmost x of the line's items.
+  pub x0: f32,
+  /// Rightmost edge (max item x + width).
+  pub x1: f32,
+}
+
+/// The rebuilt markdown of one page plus the per-line geometry it was built
+/// from. `line_meta` is `Some` only for pages whose markdown was reconstructed
+/// from positioned items (one entry per non-empty output line, aligned 1:1
+/// with `markdown.lines()`); table pages, OCR pages and empty pages keep their
+/// original markdown and carry `None` (no reliable geometry).
+#[derive(Debug, Clone)]
+pub struct PageText {
+  pub markdown: String,
+  pub line_meta: Option<Vec<LineMeta>>,
+}
+
+impl PageText {
+  /// A page whose markdown was not rebuilt from items (tables / OCR / empty).
+  pub fn untouched(markdown: String) -> Self {
+    Self {
+      markdown,
+      line_meta: None,
+    }
+  }
+}
+
 /// Rebuild the document markdown page by page, keeping every visual line on
-/// its own line, returning one markdown string per page (in document order).
+/// its own line, returning one [`PageText`] per page (in document order).
 ///
 /// * Pages that pdf-inspector already classified as containing a table
 ///   (`pages_with_tables`) or that need OCR are left untouched.
-/// * Every other page is rebuilt: each visual line is kept on its own line.
+/// * Every other page is rebuilt: each visual line is kept on its own line
+///   and its geometry is captured in [`PageText::line_meta`].
 ///
 /// `separator` joins the text items that share a visual line (the app's
 /// "text separator" setting, e.g. `"|"` for column layouts); an empty value
@@ -28,7 +66,7 @@ pub fn rebuild_pages(
   items: &[TextItem],
   pages_with_tables: &[u32],
   separator: &str,
-) -> Vec<String> {
+) -> Vec<PageText> {
   let mut parts = Vec::with_capacity(pages.len());
   for page in pages {
     let page_no = page.page + 1;
@@ -42,12 +80,16 @@ pub fn rebuild_pages(
       })
       .collect();
 
-    let markdown = if has_table || page.needs_ocr || page_items.is_empty() {
-      page.markdown.clone()
+    let text = if has_table || page.needs_ocr || page_items.is_empty() {
+      PageText::untouched(page.markdown.clone())
     } else {
-      lines_to_markdown(&page_items, separator)
+      let (markdown, meta) = lines_to_markdown_with_meta(&page_items, separator);
+      PageText {
+        markdown,
+        line_meta: Some(meta),
+      }
     };
-    parts.push(markdown);
+    parts.push(text);
   }
   parts
 }
@@ -66,14 +108,19 @@ pub fn rebuild_pages(
 /// A table page touched by an exclusion is rebuilt from the surviving items as
 /// a GFM table ([`lines_to_table_markdown`]) rather than plain text, so the
 /// page is still recognised as a table after the excluded content is removed.
+///
+/// `line_meta` (parallel to `page_markdowns`, from the original extraction) is
+/// carried through for untouched pages so their geometry survives an
+/// exclusion that does not touch them; rebuilt pages get fresh meta.
 pub fn rebuild_pages_excluding(
   page_markdowns: &[String],
+  line_meta: &[Vec<LineMeta>],
   items: &[TextItem],
   pages_with_tables: &[u32],
   needs_ocr_flags: &[bool],
   spec: &ExcludeRegions,
   separator: &str,
-) -> Vec<String> {
+) -> Vec<PageText> {
   let page_count = page_markdowns.len() as u32;
   let filters = region_exclude::page_filters(spec, page_count);
   let kept = region_exclude::filter_items(items, &filters);
@@ -99,16 +146,26 @@ pub fn rebuild_pages_excluding(
     } else {
       has_table || needs_ocr || page_items.is_empty()
     };
-    if keep_original {
-      parts.push(markdown.clone());
+    let text = if keep_original {
+      // Carry the original geometry through so paragraph joining still sees it.
+      let meta = line_meta.get(i).cloned().unwrap_or_default();
+      PageText {
+        markdown: markdown.clone(),
+        line_meta: if meta.is_empty() { None } else { Some(meta) },
+      }
     } else if has_table {
       // An excluded table page is rebuilt as a GFM table so it is still
       // recognised as a table (instead of collapsing to text_separator-joined
       // plain text). The excluded items are already gone from `page_items`.
-      parts.push(lines_to_table_markdown(&page_items));
+      PageText::untouched(lines_to_table_markdown(&page_items))
     } else {
-      parts.push(lines_to_markdown(&page_items, separator));
-    }
+      let (markdown, meta) = lines_to_markdown_with_meta(&page_items, separator);
+      PageText {
+        markdown,
+        line_meta: Some(meta),
+      }
+    };
+    parts.push(text);
   }
   parts
 }
@@ -188,11 +245,20 @@ pub fn parse_page_range(spec: Option<&str>, page_count: u32) -> Option<Vec<u32>>
 }
 
 /// Group positioned items into visual lines (top-to-bottom, then left-to-right).
+#[cfg(test)]
 fn group_lines<'a>(items: &[&'a TextItem]) -> Vec<Vec<&'a TextItem>> {
+  group_lines_with_meta(items).0
+}
+
+/// Like [`group_lines`] but also returns the geometry of every **non-empty**
+/// visual line, aligned 1:1 with the returned lines (empty lines carry no
+/// output, so they are skipped in both vectors).
+fn group_lines_with_meta<'a>(items: &[&'a TextItem]) -> (Vec<Vec<&'a TextItem>>, Vec<LineMeta>) {
   let mut sorted: Vec<&TextItem> = items.to_vec();
   sorted.sort_by(|a, b| b.y.total_cmp(&a.y).then_with(|| a.x.total_cmp(&b.x)));
 
   let mut lines: Vec<Vec<&TextItem>> = Vec::new();
+  let mut metas: Vec<LineMeta> = Vec::new();
   let mut line_y: Option<f32> = None;
   let mut line_font: f32 = 12.0;
   for item in sorted {
@@ -210,7 +276,23 @@ fn group_lines<'a>(items: &[&'a TextItem]) -> Vec<Vec<&'a TextItem>> {
   for line in &mut lines {
     line.sort_by(|a, b| a.x.total_cmp(&b.x));
   }
-  lines
+  for line in &lines {
+    let x0 = line.iter().map(|it| it.x).fold(f32::INFINITY, f32::min);
+    let x1 = line.iter().map(|it| it.x + it.width).fold(0.0f32, f32::max);
+    let font_size = line
+      .iter()
+      .map(|it| it.font_size)
+      .fold(0.0f32, f32::max)
+      .max(1.0);
+    let y = line.iter().map(|it| it.y).fold(f32::NEG_INFINITY, f32::max);
+    metas.push(LineMeta {
+      y,
+      font_size,
+      x0: if x0.is_finite() { x0 } else { 0.0 },
+      x1: x1.max(x0),
+    });
+  }
+  (lines, metas)
 }
 
 /// Group positioned items into rows of cells. Each visual line becomes a row;
@@ -222,9 +304,17 @@ fn group_lines<'a>(items: &[&'a TextItem]) -> Vec<Vec<&'a TextItem>> {
 /// [`lines_to_table_markdown`] (GFM table), so both produce the same row/cell
 /// structure from the same input.
 fn group_cells(items: &[&TextItem]) -> Vec<Vec<String>> {
-  let lines = group_lines(items);
+  group_cells_with_meta(items).0
+}
+
+/// Like [`group_cells`] but also returns the geometry of every non-empty row,
+/// aligned 1:1 with the returned rows (only rows that survive into the output
+/// get a [`LineMeta`], so `markdown.lines().count() == meta.len()` holds).
+fn group_cells_with_meta(items: &[&TextItem]) -> (Vec<Vec<String>>, Vec<LineMeta>) {
+  let (lines, line_metas) = group_lines_with_meta(items);
   let mut rows = Vec::with_capacity(lines.len());
-  for line in lines {
+  let mut metas = Vec::with_capacity(lines.len());
+  for (line, meta) in lines.into_iter().zip(line_metas) {
     let mut cells: Vec<String> = Vec::new();
     for it in line {
       let trimmed = it.text.trim();
@@ -236,9 +326,10 @@ fn group_cells(items: &[&TextItem]) -> Vec<Vec<String>> {
     cells.retain(|p| !p.is_empty());
     if !cells.is_empty() {
       rows.push(cells);
+      metas.push(meta);
     }
   }
-  rows
+  (rows, metas)
 }
 
 /// Render every visual line as its own markdown line, joining the line's cells
@@ -250,17 +341,27 @@ fn group_cells(items: &[&TextItem]) -> Vec<Vec<String>> {
 /// extra spaces. Those runs are split into cells here (`split_at_column_gaps`),
 /// so the separator appears between the columns of every row - not just rows
 /// whose cells happen to be separate items.
+#[cfg(test)]
 fn lines_to_markdown(items: &[&TextItem], separator: &str) -> String {
+  lines_to_markdown_with_meta(items, separator).0
+}
+
+/// Like [`lines_to_markdown`] but also returns the per-line geometry of every
+/// output line, aligned 1:1 with `markdown.lines()` (empty rows are skipped in
+/// both). Used to carry geometry into the paragraph-join policy.
+fn lines_to_markdown_with_meta(items: &[&TextItem], separator: &str) -> (String, Vec<LineMeta>) {
   let join = if separator.trim().is_empty() {
     " "
   } else {
     separator
   };
-  group_cells(items)
+  let (rows, metas) = group_cells_with_meta(items);
+  let markdown = rows
     .iter()
     .map(|cells| cells.join(join))
     .collect::<Vec<_>>()
-    .join("\n")
+    .join("\n");
+  (markdown, metas)
 }
 
 /// Rebuild a page as a GFM table from its positioned items, used when an
@@ -630,6 +731,7 @@ mod tests {
     };
     let out = rebuild_pages_excluding(
       &[original_md.to_string()],
+      &[Vec::new()],
       &items,
       &[1],     // page 1 is a table page
       &[false], // text page, no OCR
@@ -644,7 +746,7 @@ mod tests {
 | --- | --- |
 | 张三 | 28 |
 | 李四 | 35 |";
-    assert_eq!(out[0], expected);
+    assert_eq!(out[0].markdown, expected);
   }
 
   /// A non-table excluded page still degrades to plain-text lines (the existing
@@ -675,6 +777,7 @@ mod tests {
     };
     let out = rebuild_pages_excluding(
       &["hello\nworld".to_string()],
+      &[Vec::new()],
       &items,
       &[], // no table pages
       &[false],
@@ -682,7 +785,7 @@ mod tests {
       "|",
     );
     // "hello" was excluded; "world" survives as a plain line, not a table.
-    assert_eq!(out[0], "world");
+    assert_eq!(out[0].markdown, "world");
   }
 
   /// A table page that is NOT excluded keeps its original markdown verbatim
@@ -710,12 +813,13 @@ mod tests {
     };
     let out = rebuild_pages_excluding(
       &[original_md.to_string(), "page two".to_string()],
+      &[Vec::new(), Vec::new()],
       &items,
       &[1],
       &[false, false],
       &spec,
       "|",
     );
-    assert_eq!(out[0], original_md);
+    assert_eq!(out[0].markdown, original_md);
   }
 }

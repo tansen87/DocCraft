@@ -2,9 +2,8 @@ use std::time::Instant;
 
 use pdf_inspector::PdfError;
 
-use crate::core::extract_cache;
-use crate::core::grid_rebuild;
-use crate::models::{ConvertResult, DetectResult, ExcludeRegions};
+use crate::core::{extract_cache, grid_rebuild, paragraph};
+use crate::models::{ConvertResult, DetectResult, ExcludeRegions, ParagraphMode};
 
 /// Detect-only path: classification + per-page OCR routing signals.
 ///
@@ -45,12 +44,18 @@ pub fn detect_pdf(
 /// `text_separator` joins the text items on a rebuilt visual line - the app's
 /// "文本连接符" setting, kept consistent with the OCR engine (see
 /// [`grid_rebuild::rebuild_pages`]).
+///
+/// `paragraph_mode` decides how visual lines are joined into paragraphs after
+/// the (possibly excluded) page markdowns are rebuilt - see
+/// [`paragraph::apply`]. The policy runs on the cached line-per-visual-line
+/// form, so switching it never re-decodes the document.
 pub fn convert_pdf(
   path: &str,
   use_cache: bool,
   page_range: Option<&str>,
   exclusions: Option<&ExcludeRegions>,
   text_separator: &str,
+  paragraph_mode: ParagraphMode,
 ) -> Result<ConvertResult, PdfError> {
   let start = Instant::now();
 
@@ -78,17 +83,35 @@ pub fn convert_pdf(
   // Exclusions are applied last: the OCR routing above is decided from the
   // unfiltered extraction, so a page emptied by an exclusion is not mistaken
   // for an image-only page that needs OCR.
-  let page_markdowns = match exclusions {
-    Some(spec) if !spec.pages.is_empty() => grid_rebuild::rebuild_pages_excluding(
-      &ext.page_markdowns,
-      &ext.items,
-      &ext.pages_with_tables,
-      &ext.needs_ocr_flags,
-      spec,
-      text_separator,
-    ),
-    _ => ext.page_markdowns.clone(),
+  let (page_markdowns, line_meta) = match exclusions {
+    Some(spec) if !spec.pages.is_empty() => {
+      let texts = grid_rebuild::rebuild_pages_excluding(
+        &ext.page_markdowns,
+        &ext.line_meta,
+        &ext.items,
+        &ext.pages_with_tables,
+        &ext.needs_ocr_flags,
+        spec,
+        text_separator,
+      );
+      (
+        texts.iter().map(|t| t.markdown.clone()).collect::<Vec<_>>(),
+        texts
+          .iter()
+          .map(|t| t.line_meta.clone().unwrap_or_default())
+          .collect::<Vec<_>>(),
+      )
+    }
+    _ => (ext.page_markdowns.clone(), ext.line_meta.clone()),
   };
+  // Paragraph policy: a pure post-process on the per-page markdowns.
+  let page_markdowns = paragraph::apply(
+    &page_markdowns,
+    Some(&line_meta),
+    &ext.pages_with_tables,
+    &ext.pages_with_columns,
+    paragraph_mode,
+  );
   let markdown = grid_rebuild::rebuild_document_for_pages(&page_markdowns, &target_pages);
 
   Ok(ConvertResult {

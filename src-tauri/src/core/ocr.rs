@@ -10,14 +10,14 @@ use uuid::Uuid;
 
 use crate::core::page_marker::page_marker;
 use crate::core::settings;
-use crate::core::{extract_cache, get_resources_dir, grid_rebuild};
+use crate::core::{extract_cache, get_resources_dir, grid_rebuild, paragraph};
 use crate::models::{
   ConvertResult, DetectResult, ExcludeRegions, HybridSessionInfo, LayoutDto, OcrImageResult,
   OcrMode, OcrModelSize, OcrVendor, PdfTypeDto,
 };
 
 /// Prompt sent to the vision model for every OCR page.
-const OCR_PROMPT: &str = "你是一个专业的OCR引擎.请完整识别这张PDF页面图片中的内容,并转换为规范的Markdown输出: 保留标题层级(#、##)、段落、列表、表格(使用GFM表格语法)等结构.只输出识别后的Markdown内容,不要使用任何代码块或代码围栏包裹,不要添加任何解释或前言.";
+const OCR_PROMPT: &str = "你是一个专业的OCR引擎.请完整识别这张PDF页面图片中的内容,并转换为规范的Markdown输出: 保留标题层级(#、##)、段落、列表、表格(使用GFM表格语法)等结构.同一自然段内的换行请合并为一行,不要还原页面上的视觉折行,仅在段落、标题、列表项、表格行之间保留换行.只输出识别后的Markdown内容,不要使用任何代码块或代码围栏包裹,不要添加任何解释或前言.";
 
 /// Resolve the effective AI document-OCR prompt: the user's custom prompt
 /// from settings when non-empty, otherwise the built-in [`OCR_PROMPT`].
@@ -430,7 +430,7 @@ pub struct RemoteOcrProvider {
 
 /// Prompt for draw-table AI recognition: the model must cut the table by the
 /// user-drawn separator positions and answer with a bare GFM table.
-const DRAW_TABLE_PROMPT: &str = "你是一个专业的表格识别引擎.这张PDF页面图片中的表格带有用户标注的列分隔线.请严格按照下方给出的分隔线位置把页面内容切分成列,识别表格的所有行(第一行为表头),输出为规范的GFM(GitHub Flavored Markdown)表格.只输出Markdown表格本身,不要输出任何解释、前言或代码块围栏.";
+const DRAW_TABLE_PROMPT: &str = "你是一个专业的表格识别引擎.这张PDF页面图片中的表格带有用户标注的列分隔线.请严格按照下方给出的分隔线位置把页面内容切分成列,识别表格的所有行(第一行为表头),输出为规范的GFM(GitHub Flavored Markdown)表格.若某个单元格的文字因列宽不足而折行,请把它合并成该单元格内的一行文本,不要拆成多行;中日韩文字之间不要插入空格.只输出Markdown表格本身,不要输出任何解释、前言或代码块围栏.";
 
 /// Resolve the effective draw-table AI prompt: the user's custom prompt from
 /// settings when non-empty, otherwise the built-in [`DRAW_TABLE_PROMPT`].
@@ -715,6 +715,7 @@ pub fn start_session(
   const NO_PROVIDER_REASON: &str = "no OCR provider configured";
   let app_settings = settings::get_app_settings(app)?;
   let ocr_mode = app_settings.ocr_mode;
+  let paragraph_mode = app_settings.paragraph_mode;
   let mut resolved: Option<(String, String, String)> = None;
 
   // Force modes: add every page in the target range to the OCR set.
@@ -757,17 +758,37 @@ pub fn start_session(
   // for an image-only page that needs OCR. OCR pages keep their markdown -
   // their content comes from the page image, where the frontend has already
   // masked the excluded rects.
-  let page_markdowns: Vec<String> = match exclusions {
-    Some(spec) if !spec.pages.is_empty() => grid_rebuild::rebuild_pages_excluding(
-      page_markdowns,
-      &ext.items,
-      &ext.pages_with_tables,
-      &ext.needs_ocr_flags,
-      spec,
-      &text_separator,
-    ),
-    _ => page_markdowns.clone(),
-  };
+  let (page_markdowns, line_meta): (Vec<String>, Vec<Vec<grid_rebuild::LineMeta>>) =
+    match exclusions {
+      Some(spec) if !spec.pages.is_empty() => {
+        let texts = grid_rebuild::rebuild_pages_excluding(
+          page_markdowns,
+          &ext.line_meta,
+          &ext.items,
+          &ext.pages_with_tables,
+          &ext.needs_ocr_flags,
+          spec,
+          &text_separator,
+        );
+        (
+          texts.iter().map(|t| t.markdown.clone()).collect(),
+          texts
+            .iter()
+            .map(|t| t.line_meta.clone().unwrap_or_default())
+            .collect(),
+        )
+      }
+      _ => (page_markdowns.clone(), ext.line_meta.clone()),
+    };
+  // Paragraph policy: a pure post-process on the per-page markdowns (the
+  // extraction cache stays in the canonical line-per-visual-line form).
+  let page_markdowns = paragraph::apply(
+    &page_markdowns,
+    Some(&line_meta),
+    &ext.pages_with_tables,
+    &ext.pages_with_columns,
+    paragraph_mode,
+  );
 
   let (resolved, skipped_pages, skip_reason): (
     Option<(String, String, String)>,
@@ -900,7 +921,10 @@ pub async fn ocr_page_in_session(
     )
     .await
     {
-      Ok(m) => m,
+      // The prompt already asks the model to join paragraph-internal line
+      // breaks; the textual heuristics run again as a deterministic fallback
+      // so the output matches the chosen policy exactly.
+      Ok(m) => paragraph::apply_text(&m, settings::get_app_settings(app)?.paragraph_mode),
       Err(e) => {
         let mut map = store.lock();
         if let Some(session) = map.get_mut(session_id) {
@@ -930,8 +954,10 @@ fn local_ocr_page(app: &AppHandle, page: u32, image_png: &str) -> Result<(String
   let cache = app.state::<OcrEngineCache>();
   let engine = acquire_local_ocr_engine(app, &cache)?;
 
-  // Use the configured text separator.
-  let sep = settings::get_app_settings(app)?.text_separator;
+  // Use the configured text separator and paragraph policy.
+  let settings = settings::get_app_settings(app)?;
+  let sep = settings.text_separator;
+  let paragraph_mode = settings.paragraph_mode;
 
   // Run OCR
   let (text, confidence) = {
@@ -943,6 +969,9 @@ fn local_ocr_page(app: &AppHandle, page: u32, image_png: &str) -> Result<(String
     return Err(format!("Local OCR returned no content (page {page})"));
   }
 
+  // Local OCR has no geometry - the textual heuristics decide which visual
+  // lines belong to the same paragraph.
+  let text = paragraph::apply_text(&text, paragraph_mode);
   Ok((text.trim().to_string(), confidence))
 }
 
@@ -1017,7 +1046,9 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
     .and_then(|e| e.to_str())
     .unwrap_or("");
   let mime = image_mime_for_ext(ext)?;
-  let mode = settings::get_app_settings(app)?.ocr_mode;
+  let app_settings = settings::get_app_settings(app)?;
+  let mode = app_settings.ocr_mode;
+  let paragraph_mode = app_settings.paragraph_mode;
   if !mode.is_enabled() {
     return Err("OCR is disabled in settings".to_string());
   }
@@ -1043,6 +1074,8 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
       if text.trim().is_empty() {
         return Err("Local OCR returned no content".to_string());
       }
+      // Images have no geometry - the textual heuristics apply.
+      let text = paragraph::apply_text(&text, paragraph_mode);
       Ok((text.trim().to_string(), confidence))
     })
     .await
@@ -1075,7 +1108,7 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
       &encoded,
     )
     .await
-    .map(|md| (md, 0.0))?
+    .map(|md| (paragraph::apply_text(&md, paragraph_mode), 0.0))?
   };
 
   Ok(OcrImageResult {

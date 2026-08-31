@@ -126,6 +126,7 @@ async fn convert_pdf(
   let settings = core::settings::get_app_settings(&app)?;
   let use_cache = settings.cache_extracted_text;
   let text_separator = settings.text_separator;
+  let paragraph_mode = settings.paragraph_mode;
   tauri::async_runtime::spawn_blocking(move || {
     core::convert::convert_pdf(
       &path,
@@ -133,6 +134,7 @@ async fn convert_pdf(
       page_range.as_deref(),
       exclusions.as_ref(),
       &text_separator,
+      paragraph_mode,
     )
   })
   .await
@@ -442,6 +444,7 @@ async fn extract_draw_table(
     let use_cache = settings.cache_extracted_text;
     let high_precision = settings.draw_table_high_precision;
     let text_separator = settings.text_separator;
+    let paragraph_mode = settings.paragraph_mode;
     let (local, remote) = resolve_draw_ocr(&app, &draw_data)?;
     let remote_prompt = core::ocr::effective_draw_table_prompt(&app)?;
     let engines = core::line_draw::DrawOcrEngines {
@@ -456,6 +459,7 @@ async fn extract_draw_table(
       high_precision,
       Some(&engines),
       &text_separator,
+      paragraph_mode,
     )
   })
   .await
@@ -475,6 +479,7 @@ async fn extract_draw_table_to_markdown(
     let use_cache = settings.cache_extracted_text;
     let high_precision = settings.draw_table_high_precision;
     let text_separator = settings.text_separator;
+    let paragraph_mode = settings.paragraph_mode;
     let (local, remote) = resolve_draw_ocr(&app, &draw_data)?;
     let remote_prompt = core::ocr::effective_draw_table_prompt(&app)?;
     let engines = core::line_draw::DrawOcrEngines {
@@ -490,6 +495,7 @@ async fn extract_draw_table_to_markdown(
       high_precision,
       Some(&engines),
       &text_separator,
+      paragraph_mode,
     )
   })
   .await

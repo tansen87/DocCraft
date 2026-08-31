@@ -6,6 +6,7 @@ pub mod line_draw;
 pub mod md_to_xlsx;
 pub mod ocr;
 pub mod page_marker;
+pub mod paragraph;
 pub mod region_exclude;
 pub mod secret;
 pub mod settings;

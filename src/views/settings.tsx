@@ -47,7 +47,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { GlassPanel } from "@/components/ui/glass-panel";
-import type { OcrMode, OcrModelSize } from "@/lib/types";
+import type { OcrMode, OcrModelSize, ParagraphMode } from "@/lib/types";
 import {
   Tooltip,
   TooltipContent,
@@ -72,6 +72,7 @@ import {
 } from "@/lib/ipc";
 import { setMaxConcurrent as applyRuntimeConcurrency } from "@/lib/concurrency";
 import { useI18n } from "@/i18n";
+import type { TranslationKey } from "@/i18n/translations";
 import { formatDuration } from "@/lib/format-duration";
 import { localDate } from "@/lib/usage";
 import type {
@@ -101,7 +102,7 @@ const SECTIONS: {
     | "settings.ocr"
     | "settings.threads"
     | "snip.capture"
-    | "settings.textSeparator"
+    | "settings.textAndLineBreak"
     | "settings.tray"
     | "settings.drawTable"
     | "settings.excel"
@@ -121,7 +122,7 @@ const SECTIONS: {
   },
   {
     id: "textSep",
-    labelKey: "settings.textSeparator",
+    labelKey: "settings.textAndLineBreak",
     icon: SeparatorHorizontal,
   },
   {
@@ -195,6 +196,7 @@ export function SettingsView() {
   const [ocrLowPrecision, setOcrLowPrecision] = useState(true);
   const [ocrModelSize, setOcrModelSize] = useState<OcrModelSize>("small");
   const [textSeparator, setTextSeparator] = useState("|");
+  const [paragraphMode, setParagraphMode] = useState<ParagraphMode>("smart");
   const [aiOcrPrompt, setAiOcrPrompt] = useState("");
   const [drawTablePrompt, setDrawTablePrompt] = useState("");
   const [enableTray, setEnableTray] = useState(true);
@@ -226,6 +228,7 @@ export function SettingsView() {
         setOcrLowPrecision(settings.ocrLowPrecision ?? true);
         setOcrModelSize(settings.ocrModelSize ?? "small");
         setTextSeparator(settings.textSeparator);
+        setParagraphMode(settings.paragraphMode ?? "smart");
         setAiOcrPrompt(settings.aiOcrPrompt ?? "");
         setDrawTablePrompt(settings.drawTablePrompt ?? "");
         setEnableTray(settings.enableTray);
@@ -288,6 +291,7 @@ export function SettingsView() {
       ocrLowPrecision,
       ocrModelSize,
       textSeparator,
+      paragraphMode,
       aiOcrPrompt,
       drawTablePrompt,
       snipResultPopup,
@@ -535,7 +539,15 @@ export function SettingsView() {
                 />
               </section>
               <section id="settings-textSep" className="scroll-mt-3">
-                <SectionHeader title={t("settings.textSeparator")} />
+                <SectionHeader title={t("settings.textAndLineBreak")} />
+                <ParagraphModeSettingsPanel
+                  value={paragraphMode}
+                  onChange={(v) => {
+                    setParagraphMode(v);
+                    markDirty();
+                  }}
+                  disabled={loading}
+                />
                 <TextSepSettingsPanel
                   value={textSeparator}
                   onChange={(v) => {
@@ -1230,6 +1242,69 @@ function SnipSettingsPanel({
         </SettingRow>
       </Panel>
     </>
+  );
+}
+
+function ParagraphModeSettingsPanel({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: ParagraphMode;
+  onChange: (v: ParagraphMode) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useI18n();
+
+  const MODE_OPTIONS: {
+    value: ParagraphMode;
+    labelKey: TranslationKey;
+    descKey: TranslationKey;
+  }[] = [
+    {
+      value: "keep",
+      labelKey: "settings.paragraphMode.keep",
+      descKey: "settings.paragraphMode.keepDesc",
+    },
+    {
+      value: "smart",
+      labelKey: "settings.paragraphMode.smart",
+      descKey: "settings.paragraphMode.smartDesc",
+    },
+    {
+      value: "none",
+      labelKey: "settings.paragraphMode.none",
+      descKey: "settings.paragraphMode.noneDesc",
+    },
+  ];
+
+  return (
+    <Panel>
+      <SettingRow
+        label={t("settings.paragraphMode")}
+        description={t(
+          MODE_OPTIONS.find((o) => o.value === value)?.descKey ??
+            MODE_OPTIONS[0].descKey,
+        )}
+      >
+        <Select
+          value={value}
+          onValueChange={(v) => onChange(v as ParagraphMode)}
+          disabled={disabled}
+        >
+          <SelectTrigger className="w-48">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {MODE_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {t(opt.labelKey)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingRow>
+    </Panel>
   );
 }
 

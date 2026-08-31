@@ -434,6 +434,42 @@ pub struct AppSettings {
   /// extraction). Empty string falls back to the built-in default prompt.
   #[serde(default)]
   pub draw_table_prompt: String,
+  /// How PDF text pages and OCR pages join visual lines into paragraphs.
+  /// `Keep` keeps one Markdown line per visual line (the original behaviour),
+  /// `Smart` merges soft line breaks inside a paragraph, `None` merges all
+  /// non-structural lines of a page.
+  #[serde(default)]
+  pub paragraph_mode: ParagraphMode,
+}
+
+/// How extracted text lines are joined into paragraphs (PDF text pages and
+/// OCR pages share the same policy). Serialized as a lowercase string
+/// (`"keep"` / `"smart"` / `"none"`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase", try_from = "String")]
+pub enum ParagraphMode {
+  /// Merge soft line breaks inside a paragraph; keep paragraph boundaries,
+  /// tables, lists, headings and code blocks intact.
+  #[default]
+  Smart,
+  /// One Markdown line per visual line - the original behaviour.
+  Keep,
+  /// Merge every line of a page into one (tables and code blocks are still
+  /// kept as-is).
+  None,
+}
+
+impl TryFrom<String> for ParagraphMode {
+  type Error = std::convert::Infallible;
+  fn try_from(s: String) -> Result<Self, Self::Error> {
+    Ok(match s.trim().to_ascii_lowercase().as_str() {
+      "smart" | "unwrap" | "paragraph" => Self::Smart,
+      "none" | "single" | "nolinebreak" => Self::None,
+      // Unknown values / pre-existing configs fall back to the original
+      // line-per-visual-line behaviour - never crash on a corrupt setting.
+      _ => Self::Keep,
+    })
+  }
 }
 
 /// Local PaddleOCR model tier. Tiny is the fastest with the lowest accuracy,
@@ -767,6 +803,7 @@ impl Default for AppSettings {
       draw_table_high_precision: true,
       ai_ocr_prompt: String::new(),
       draw_table_prompt: String::new(),
+      paragraph_mode: ParagraphMode::default(),
     }
   }
 }

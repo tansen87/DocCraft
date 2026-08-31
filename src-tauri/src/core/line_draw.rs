@@ -8,10 +8,11 @@ use crate::core::extract_cache;
 use crate::core::md_to_xlsx::parse_md_tables;
 use crate::core::ocr::{LocalOcrEngine, OcrRecognition, RemoteOcrProvider};
 use crate::core::page_marker::page_marker;
+use crate::core::paragraph;
 use crate::core::region_exclude;
 use crate::models::{
   DrawTableRegion, DrawTableRequest, DrawTableResult, MdTable, PageDrawTable, PageImagePayload,
-  RegionRect, TableRegionInfo,
+  ParagraphMode, RegionRect, TableRegionInfo,
 };
 
 /// OCR engines available for the draw-table fallback. The caller resolves at
@@ -383,6 +384,7 @@ fn extract_table_from_vertical_lines(
   page_width: f64,
   _page_height: f64,
   high_precision: bool,
+  mode: ParagraphMode,
 ) -> MdTable {
   let col_bounds = build_col_boundaries(vertical_lines, page_width);
   let ncols = col_bounds.len().saturating_sub(1);
@@ -406,23 +408,27 @@ fn extract_table_from_vertical_lines(
   }
 
   // For each text line, cut its characters by the column boundaries.
-  let mut data_rows: Vec<Vec<String>> = Vec::new();
+  let visual_rows: Vec<VisualRow> = text_lines
+    .iter()
+    .map(|line| {
+      let cells: Vec<String> = (0..ncols)
+        .map(|col| extract_line_segment(line, col_bounds[col], col_bounds[col + 1], high_precision))
+        .collect();
+      VisualRow::new(
+        // PDF y points up, so the largest y is the top of the line.
+        line.iter().map(|e| e.y).fold(f64::NEG_INFINITY, f64::max),
+        line.iter().map(|e| e.font_size).fold(0.0f64, f64::max),
+        cells,
+      )
+    })
+    .collect();
 
-  for line in &text_lines {
-    let mut row_cells = Vec::with_capacity(ncols);
-    for col in 0..ncols {
-      row_cells.push(extract_line_segment(
-        line,
-        col_bounds[col],
-        col_bounds[col + 1],
-        high_precision,
-      ));
-    }
-    data_rows.push(row_cells);
-  }
+  // Fold wrapped rows back into their logical record when paragraph merging
+  // is on (see [`merge_continuation_rows`]).
+  let data_rows = merge_continuation_rows(visual_rows, mode);
 
   // First line is the header
-  let columns = data_rows[0].clone();
+  let columns = data_rows.first().cloned().unwrap_or_default();
   let rows = if data_rows.len() > 1 {
     data_rows[1..].to_vec()
   } else {
@@ -434,6 +440,114 @@ fn extract_table_from_vertical_lines(
     rows,
     page: None,
   }
+}
+
+/// One visual text line already cut into table cells, kept with just enough
+/// geometry to tell a wrapped remainder from a new record.
+struct VisualRow {
+  /// Top of the line in PDF user space (y points up).
+  y: f64,
+  /// Largest font size on the line; the row gap is measured in these units.
+  font_size: f64,
+  cells: Vec<String>,
+  /// Column index of the first non-empty cell of the **last** visual line
+  /// folded into this record. Continuation detection compares the next line
+  /// against it, not against the record's own (possibly flush-left) content.
+  last_first_col: usize,
+  /// Whether the last folded visual line was itself a continuation. A wrapped
+  /// cell can span several lines, and only a line following a *known*
+  /// continuation may join at the same column.
+  continues: bool,
+}
+
+impl VisualRow {
+  fn new(y: f64, font_size: f64, cells: Vec<String>) -> Self {
+    let last_first_col = first_content_col(&cells).unwrap_or(0);
+    Self {
+      y,
+      font_size,
+      cells,
+      last_first_col,
+      continues: false,
+    }
+  }
+}
+
+/// Vertical gap (in units of the line's font size) above which two rows are
+/// treated as separate records rather than one wrapped row. A wrapped line
+/// sits one line height below (~1.2em), while the padding between records
+/// pushes the gap well past this value.
+const ROW_GAP_EM: f64 = 2.5;
+
+/// Index of the first cell holding visible text, if any.
+fn first_content_col(cells: &[String]) -> Option<usize> {
+  cells.iter().position(|c| !c.trim().is_empty())
+}
+
+/// Fold the wrapped remainder of a cell back into its record.
+///
+/// With only vertical lines drawn there is no row band, so a cell whose text
+/// wraps over several visual lines currently produces one GFM row per line:
+///
+/// ```text
+/// | idx | desc |        | idx | desc      |
+/// | 1   | this |   →    | 1   | this is…  |
+/// |     | is   |        |     | …test     |
+/// |     | test |
+/// ```
+///
+/// A wrapped remainder is recognised by where it starts: it leaves the columns
+/// to its left empty, so its first non-empty column sits right of the record's
+/// first one. The rule is deliberately narrow - continuation is only claimed
+/// when there is content directly above in that column, so a record that
+/// genuinely has an empty leading column keeps its own row.
+///
+/// `Keep` disables the whole pass: one GFM row per visual line, as before.
+fn merge_continuation_rows(rows: Vec<VisualRow>, mode: ParagraphMode) -> Vec<Vec<String>> {
+  if mode == ParagraphMode::Keep || rows.is_empty() {
+    return rows.into_iter().map(|r| r.cells).collect();
+  }
+
+  let mut out: Vec<VisualRow> = Vec::with_capacity(rows.len());
+  for row in rows {
+    // A line with no content at all carries nothing to fold or to start.
+    let Some(col) = first_content_col(&row.cells) else {
+      continue;
+    };
+
+    let is_continuation = match out.last() {
+      // A gap this wide separates two records even when the lower one happens
+      // to start in a later column - it is a block break, not a wrap.
+      Some(prev) if prev.y - row.y > prev.font_size * ROW_GAP_EM => false,
+      Some(prev) => match prev.last_first_col {
+        // Starts further right than the record above: wrapped remainder.
+        p if p < col => col > 0 && !prev.cells.get(col).is_some_and(|c| c.trim().is_empty()),
+        // Same column as a known continuation: the next line of a wrapped cell.
+        p if p == col => col > 0 && prev.continues,
+        _ => false,
+      },
+      None => false,
+    };
+
+    if is_continuation {
+      let prev = out.last_mut().expect("checked above");
+      for (i, cell) in row.cells.iter().enumerate() {
+        if cell.trim().is_empty() {
+          continue;
+        }
+        if let Some(slot) = prev.cells.get_mut(i) {
+          *slot = paragraph::join_fragments(&[slot.as_str(), cell.as_str()]);
+        }
+      }
+      prev.last_first_col = col;
+      prev.continues = true;
+      prev.y = row.y;
+    } else {
+      out.push(row);
+    }
+  }
+
+  out.into_iter().map(|r| r.cells).collect()
 }
 
 // ─── Legacy extraction functions (kept for backward compatibility) ────────
@@ -517,7 +631,16 @@ fn extract_table_from_grid(
         }
       }
     }
-    row_outputs.push(merged.into_iter().map(|parts| parts.join(" ")).collect());
+    // Fragments of the same cell are joined with the paragraph connector so
+    // CJK text is not sprinkled with spaces and split words are re-joined.
+    row_outputs.push(
+      merged
+        .into_iter()
+        .map(|parts| {
+          paragraph::join_fragments(&parts.iter().map(String::as_str).collect::<Vec<_>>())
+        })
+        .collect(),
+    );
   }
 
   // Topmost band is the header, the rest are data rows.
@@ -726,6 +849,7 @@ pub fn extract_tables_from_draw_lines(
   high_precision: bool,
   ocr_engines: Option<&DrawOcrEngines>,
   text_separator: &str,
+  paragraph_mode: ParagraphMode,
 ) -> Result<DrawTableResult, String> {
   let start = Instant::now();
 
@@ -967,6 +1091,7 @@ pub fn extract_tables_from_draw_lines(
           page_width,
           page_height,
           high_precision,
+          paragraph_mode,
         );
         if !table.columns.is_empty() {
           tables.push(table);
@@ -1027,6 +1152,7 @@ pub fn extract_tables_and_merge(
   high_precision: bool,
   ocr_engines: Option<&DrawOcrEngines>,
   text_separator: &str,
+  paragraph_mode: ParagraphMode,
 ) -> Result<String, String> {
   let result = extract_tables_from_draw_lines(
     path,
@@ -1035,6 +1161,7 @@ pub fn extract_tables_and_merge(
     high_precision,
     ocr_engines,
     text_separator,
+    paragraph_mode,
   )?;
 
   if result.tables.is_empty() {
@@ -1176,7 +1303,14 @@ mod tests {
   }
 
   fn cut_into_columns(elements: Vec<TextElement>) -> MdTable {
-    extract_table_from_vertical_lines(&elements, &[200.0, 330.0], 595.0, 842.0, false)
+    extract_table_from_vertical_lines(
+      &elements,
+      &[200.0, 330.0],
+      595.0,
+      842.0,
+      false,
+      ParagraphMode::Keep,
+    )
   }
 
   fn band(x: f64, y: f64, width: f64, height: f64) -> Vec<RegionRect> {
@@ -1306,6 +1440,98 @@ mod tests {
     assert_eq!(lines[1][0].text, "C");
   }
 
+  /// A borderless two-column table whose second column wraps over three
+  /// visual lines, cut by a single vertical line at x=200:
+  ///
+  /// ```text
+  /// idx  desc          idx  desc
+  /// 1    this     →    1    this is test
+  ///      is
+  ///      test
+  /// ```
+  fn wrapped_cell_elements() -> Vec<TextElement> {
+    vec![
+      el("idx", 20.0, 800.0),
+      el("desc", 220.0, 800.0),
+      el("1", 20.0, 785.0),
+      el("this", 220.0, 785.0),
+      el("is", 220.0, 770.0),
+      el("test", 220.0, 755.0),
+    ]
+  }
+
+  fn cut_wrapped_cell(elements: &[TextElement], mode: ParagraphMode) -> MdTable {
+    extract_table_from_vertical_lines(elements, &[200.0], 600.0, 842.0, false, mode)
+  }
+
+  #[test]
+  fn wrapped_cell_merges_into_one_row_in_smart_mode() {
+    let table = cut_wrapped_cell(&wrapped_cell_elements(), ParagraphMode::Smart);
+    assert_eq!(table.columns, vec!["idx", "desc"]);
+    assert_eq!(table.rows, vec![vec!["1", "this is test"]]);
+  }
+
+  #[test]
+  fn wrapped_cell_keeps_every_visual_line_in_keep_mode() {
+    let table = cut_wrapped_cell(&wrapped_cell_elements(), ParagraphMode::Keep);
+    assert_eq!(table.rows.len(), 3);
+    assert_eq!(table.rows[0], vec!["1", "this"]);
+    assert_eq!(table.rows[1], vec!["", "is"]);
+    assert_eq!(table.rows[2], vec!["", "test"]);
+  }
+
+  #[test]
+  fn wrapped_cell_does_not_bleed_into_the_next_record() {
+    let mut elements = wrapped_cell_elements();
+    elements.push(el("2", 20.0, 740.0));
+    elements.push(el("that", 220.0, 740.0));
+    let table = cut_wrapped_cell(&elements, ParagraphMode::Smart);
+    assert_eq!(table.rows.len(), 2);
+    assert_eq!(table.rows[0], vec!["1", "this is test"]);
+    assert_eq!(table.rows[1], vec!["2", "that"]);
+  }
+
+  #[test]
+  fn a_wide_gap_starts_a_new_record_even_when_indented() {
+    let mut elements = wrapped_cell_elements();
+    // Far below the wrapped block: a block break, not a wrap.
+    elements.push(el("note", 220.0, 700.0));
+    let table = cut_wrapped_cell(&elements, ParagraphMode::Smart);
+    assert_eq!(table.rows.len(), 2);
+    assert_eq!(table.rows[0], vec!["1", "this is test"]);
+    assert_eq!(table.rows[1], vec!["", "note"]);
+  }
+
+  #[test]
+  fn cjk_wrapped_cell_merges_without_an_extra_space() {
+    let elements = vec![
+      el("名称", 20.0, 800.0),
+      el("说明", 220.0, 800.0),
+      el("甲", 20.0, 785.0),
+      el("这是", 220.0, 785.0),
+      el("一段", 220.0, 770.0),
+      el("说明", 220.0, 755.0),
+    ];
+    let table = cut_wrapped_cell(&elements, ParagraphMode::Smart);
+    assert_eq!(table.rows, vec![vec!["甲", "这是一段说明"]]);
+  }
+
+  #[test]
+  fn a_table_whose_first_column_is_always_empty_keeps_its_rows() {
+    // No record ever writes into column 0, so there is no flush-left anchor:
+    // folding on the indent alone would collapse the whole table into one row.
+    let elements = vec![
+      el("value", 220.0, 800.0),
+      el("a", 220.0, 785.0),
+      el("b", 220.0, 770.0),
+    ];
+    let table = cut_wrapped_cell(&elements, ParagraphMode::Smart);
+    assert_eq!(table.columns, vec!["", "value"]);
+    assert_eq!(table.rows.len(), 2);
+    assert_eq!(table.rows[0], vec!["", "a"]);
+    assert_eq!(table.rows[1], vec!["", "b"]);
+  }
+
   #[test]
   fn test_extract_table_from_vertical_lines_merged_rows() {
     // Header cells are separate items (e.g. bold, so pdf-inspector won't merge
@@ -1350,7 +1576,14 @@ mod tests {
       },
     ];
 
-    let table = extract_table_from_vertical_lines(&elements, &[40.0, 76.0], 120.0, 150.0, false);
+    let table = extract_table_from_vertical_lines(
+      &elements,
+      &[40.0, 76.0],
+      120.0,
+      150.0,
+      false,
+      ParagraphMode::Keep,
+    );
     assert_eq!(table.columns, vec!["姓名", "年龄", "城市"]);
     assert_eq!(table.rows.len(), 2);
     assert_eq!(table.rows[0], vec!["张三", "28", "北京"]);
@@ -1429,7 +1662,14 @@ mod tests {
     ];
 
     // Vertical lines at x=80 (between 姓名 and 年龄), x=180 (between 年龄 and 城市)
-    let table = extract_table_from_vertical_lines(&elements, &[80.0, 180.0], 300.0, 150.0, false);
+    let table = extract_table_from_vertical_lines(
+      &elements,
+      &[80.0, 180.0],
+      300.0,
+      150.0,
+      false,
+      ParagraphMode::Keep,
+    );
     assert_eq!(table.columns.len(), 3);
     assert_eq!(table.columns[0], "姓名");
     assert_eq!(table.columns[1], "年龄");
@@ -1519,7 +1759,14 @@ mod tests {
     };
 
     let elements = ocr_blocks_to_elements(&recognition, 2.5);
-    let table = extract_table_from_vertical_lines(&elements, &[80.0, 180.0], 300.0, 300.0, true);
+    let table = extract_table_from_vertical_lines(
+      &elements,
+      &[80.0, 180.0],
+      300.0,
+      300.0,
+      true,
+      ParagraphMode::Keep,
+    );
     assert_eq!(table.columns.len(), 3);
     assert_eq!(table.columns[0], "姓名");
     assert_eq!(table.columns[1], "年龄");
@@ -1545,13 +1792,27 @@ mod tests {
     // Column boundary between the digits (weighted center 95) and the
     // trailing cell (weighted centers >= 105). The single text line becomes
     // the table's header row.
-    let table = extract_table_from_vertical_lines(&elements, &[97.0], 200.0, 150.0, true);
+    let table = extract_table_from_vertical_lines(
+      &elements,
+      &[97.0],
+      200.0,
+      150.0,
+      true,
+      ParagraphMode::Keep,
+    );
     assert_eq!(table.columns[0], "姓名 128");
     assert_eq!(table.columns[1], "年龄");
 
     // The uniform-advance estimate drifts the same row across the boundary
     // (documents the regression the weighted mode fixes).
-    let uniform = extract_table_from_vertical_lines(&elements, &[97.0], 200.0, 150.0, false);
+    let uniform = extract_table_from_vertical_lines(
+      &elements,
+      &[97.0],
+      200.0,
+      150.0,
+      false,
+      ParagraphMode::Keep,
+    );
     assert_ne!(
       (uniform.columns[0].as_str(), uniform.columns[1].as_str()),
       ("姓名 128", "年龄"),
@@ -1647,8 +1908,9 @@ mod tests {
 
     let table = extract_table_from_grid(&elements, &[100.0], &[45.0], 100.0, 150.0, false);
     // Header merges the two stacked lines of its band; the leaking element
-    // never reaches the data row.
-    assert_eq!(table.columns, vec!["表头 跨带", "H2"]);
+    // never reaches the data row. CJK fragments take no connector, so the
+    // wrapped header reads as one continuous phrase.
+    assert_eq!(table.columns, vec!["表头跨带", "H2"]);
     assert_eq!(table.rows.len(), 1);
     assert_eq!(table.rows[0], vec!["数据", "D2"]);
   }

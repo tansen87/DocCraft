@@ -143,6 +143,16 @@ const en = {
   "settings.textSeparator": "Text separator",
   "settings.textSeparatorDesc":
     "Character used to join OCR blocks within a single line",
+  "settings.textAndLineBreak": "Text & Line Breaks",
+  "settings.paragraphMode": "Paragraph line breaks",
+  "settings.paragraphMode.keep": "Keep lines",
+  "settings.paragraphMode.keepDesc": "One Markdown line per visual line",
+  "settings.paragraphMode.smart": "Smart merge",
+  "settings.paragraphMode.smartDesc":
+    "Merge line breaks inside a paragraph; tables, lists and headings stay intact",
+  "settings.paragraphMode.none": "Merge all",
+  "settings.paragraphMode.noneDesc":
+    "Merge every non-structural line of a page into one",
   "settings.tray": "System Tray",
   "settings.trayDesc": "When enabled, show the system tray icon",
   "settings.hotkeyPlaceholder": "Click to record",
@@ -514,6 +524,15 @@ const zh: Record<TranslationKey, string> = {
   "settings.screenshotHotkeyHint": "全局触发截图识别的按键",
   "settings.textSeparator": "文本连接符",
   "settings.textSeparatorDesc": "用于连接同一行内 OCR 文本块的字符",
+  "settings.textAndLineBreak": "文本与换行",
+  "settings.paragraphMode": "段落换行模式",
+  "settings.paragraphMode.keep": "保留换行",
+  "settings.paragraphMode.keepDesc": "每个视觉行对应一个 Markdown 行",
+  "settings.paragraphMode.smart": "智能合并",
+  "settings.paragraphMode.smartDesc":
+    "合并段落内部的换行;表格,列表,标题保持原样",
+  "settings.paragraphMode.none": "全部合并",
+  "settings.paragraphMode.noneDesc": "将页面内所有非结构行合并为一行",
   "settings.tray": "系统托盘",
   "settings.trayDesc": "开启时,显示系统托盘图标",
   "settings.hotkeyPlaceholder": "点击录入快捷键",

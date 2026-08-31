@@ -3,12 +3,18 @@ use std::sync::Mutex;
 use pdf_inspector::{PdfError, TextItem};
 
 use crate::core::grid_rebuild;
+use crate::core::grid_rebuild::LineMeta;
 
 /// The reusable result of a full-document extraction.
 #[derive(Debug, Clone)]
 pub struct FullExtraction {
   /// Rebuilt markdown per page (1-indexed order), with visual line recovery.
   pub page_markdowns: Vec<String>,
+  /// Per-page line geometry, parallel to `page_markdowns` (one [`LineMeta`]
+  /// per non-empty output line; empty for pages whose markdown was not rebuilt
+  /// from items, i.e. table pages / OCR pages). Feeds the paragraph-join
+  /// policy (`core/paragraph.rs`) so switching the policy never re-decodes.
+  pub line_meta: Vec<Vec<LineMeta>>,
   /// Per-page `needs_ocr` flags from pdf-inspector, in document order.
   pub needs_ocr_flags: Vec<bool>,
   /// 1-indexed pages where tables were detected.
@@ -88,10 +94,16 @@ pub fn peek_items(path: &str) -> Option<Vec<TextItem>> {
 fn extract_fresh(path: &str, separator: &str) -> Result<FullExtraction, PdfError> {
   let pages = pdf_inspector::extract_pages_markdown(path, None)?;
   let items = pdf_inspector::extract_text_with_positions(path)?;
-  let page_markdowns =
+  let page_texts =
     grid_rebuild::rebuild_pages(&pages.pages, &items, &pages.pages_with_tables, separator);
+  let page_markdowns = page_texts.iter().map(|t| t.markdown.clone()).collect();
+  let line_meta = page_texts
+    .iter()
+    .map(|t| t.line_meta.clone().unwrap_or_default())
+    .collect();
   Ok(FullExtraction {
     page_markdowns,
+    line_meta,
     needs_ocr_flags: pages.pages.iter().map(|p| p.needs_ocr).collect(),
     pages_with_tables: pages.pages_with_tables,
     pages_with_columns: pages.pages_with_columns,

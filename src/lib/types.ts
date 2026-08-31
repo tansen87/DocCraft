@@ -118,6 +118,13 @@ export interface AppSettings {
   drawTableHighPrecision?: boolean;
   /** Separator between text blocks within a single OCR line. */
   textSeparator: string;
+  /**
+   * Paragraph line-break policy for PDF text pages and OCR pages:
+   *  - "keep": one Markdown line per visual line (original behaviour).
+   *  - "smart": merge soft line breaks inside a paragraph (recommended).
+   *  - "none": merge every non-structural line of a page into one.
+   */
+  paragraphMode?: ParagraphMode;
   /** Show a result popup after every screenshot recognition (default true). */
   snipResultPopup?: boolean;
   /** Auto-copy the screenshot recognition result to the clipboard (default true). */
@@ -153,6 +160,14 @@ export type OcrMode =
 
 /** Local PaddleOCR model tier (files bundled under resources/ppocr). */
 export type OcrModelSize = "tiny" | "small" | "medium";
+
+/**
+ * Paragraph line-break policy (backend `ParagraphMode`):
+ *  - "keep": one Markdown line per visual line (original behaviour).
+ *  - "smart": merge soft line breaks inside a paragraph.
+ *  - "none": merge every non-structural line of a page into one.
+ */
+export type ParagraphMode = "keep" | "smart" | "none";
 
 /** A single GitHub-Flavored Markdown table parsed by the backend. */
 export interface MdTable {
