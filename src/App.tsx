@@ -1,7 +1,13 @@
-import { memo, useCallback, useEffect, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useState,
+  type CSSProperties,
+} from "react";
 import { Toaster } from "sonner";
 import { useTheme } from "next-themes";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Effect, getCurrentWindow } from "@tauri-apps/api/window";
 
 import { AppHeader, type WorkspaceTab } from "@/components/layout/app-header";
 import { BatchView } from "@/views/pdf-to-md";
@@ -34,6 +40,7 @@ function App() {
   const [tab, setTabState] = useState<WorkspaceTab>(initialTab);
   const { resolvedTheme } = useTheme();
   const [glassOpacity, setGlassOpacity] = useState(100);
+  const [glassBlurEnabled, setGlassBlurEnabled] = useState(true);
 
   const setTab = useCallback((next: WorkspaceTab) => {
     setTabState(next);
@@ -48,12 +55,62 @@ function App() {
     void win.setShadow(false).catch(() => {});
   }, []);
 
-  // Load glass opacity from settings and refresh on settings change.
+  // CSS backdrop-filter cannot sample the desktop behind a transparent
+  // WebView2 window on Windows (especially Win11), which is why the glass-blur
+  // panels lose their blur there. Apply the native DWM acrylic effect so the
+  // frosted-glass blur works on both Win10/11. The `color` tint only takes
+  // effect on Win10 v1903+ (ignored on Win11); it follows the app theme.
+  //
+  // Acrylic makes dragging/resizing laggy (DWM recomposites the effect every
+  // frame), so the effect is cleared while the window is moving/resizing and
+  // re-applied shortly after the gesture settles.
+  //
+  // The user-controlled blur toggle is `glassBlurEnabled`; when it is off the
+  // acrylic is removed too so "no blur" is honest on every platform.
+  useEffect(() => {
+    if (!navigator.userAgent.includes("Windows") || !resolvedTheme) return;
+    const win = getCurrentWindow();
+    if (!glassBlurEnabled) {
+      void win.clearEffects().catch(() => {});
+      return;
+    }
+    const tint: [number, number, number, number] =
+      resolvedTheme === "dark" ? [30, 32, 36, 120] : [245, 245, 247, 120];
+    const apply = () => {
+      void win
+        .setEffects({ effects: [Effect.Acrylic], color: tint })
+        .catch(() => {});
+    };
+    let moving = false;
+    let settle: ReturnType<typeof setTimeout> | undefined;
+    const onMove = () => {
+      if (!moving) {
+        moving = true;
+        void win.clearEffects().catch(() => {});
+      }
+      if (settle) clearTimeout(settle);
+      settle = setTimeout(() => {
+        moving = false;
+        apply();
+      }, 150);
+    };
+    apply();
+    const unlistenMove = win.onMoved(onMove);
+    const unlistenResize = win.onResized(onMove);
+    return () => {
+      void unlistenMove.then((fn) => fn());
+      void unlistenResize.then((fn) => fn());
+      if (settle) clearTimeout(settle);
+    };
+  }, [resolvedTheme, glassBlurEnabled]);
+
+  // Load glass opacity/blur from settings and refresh on settings change.
   useEffect(() => {
     const load = () =>
       getAppSettings()
         .then((s) => {
           setGlassOpacity(s.mainWindowOpacity ?? 100);
+          setGlassBlurEnabled(s.glassBlurEnabled ?? true);
         })
         .catch(() => {});
     void load();
@@ -63,6 +120,9 @@ function App() {
       const detail = (e as CustomEvent).detail;
       if (typeof detail?.mainWindow === "number") {
         setGlassOpacity(detail.mainWindow);
+      }
+      if (typeof detail?.blur === "boolean") {
+        setGlassBlurEnabled(detail.blur);
       }
     };
     window.addEventListener("doccraft:opacity-preview", onPreview);
@@ -89,10 +149,13 @@ function App() {
     <GlassOpacityContext value={glassOpacity}>
       <div
         className="relative flex h-screen flex-col overflow-hidden text-foreground"
-        style={{
-          clipPath: "inset(0 round 0.75rem)",
-          backgroundColor: `color-mix(in srgb, var(--background) ${glassOpacity}%, transparent)`,
-        }}
+        style={
+          {
+            clipPath: "inset(0 round 0.75rem)",
+            backgroundColor: `color-mix(in srgb, var(--background) ${glassOpacity}%, transparent)`,
+            "--glass-blur": `${glassBlurEnabled ? 20 : 0}px`,
+          } as CSSProperties
+        }
       >
         <Toaster
           position="bottom-right"

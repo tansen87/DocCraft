@@ -140,6 +140,11 @@ export interface AppSettings {
    */
   mainWindowOpacity?: number;
   /**
+   * Enable the frosted-glass blur effect on the main and result windows
+   * (default true).
+   */
+  glassBlurEnabled?: boolean;
+  /**
    * Custom prompt for the remote AI document-OCR path (PDF pages, images,
    * screenshots). Empty string falls back to the built-in default prompt.
    */

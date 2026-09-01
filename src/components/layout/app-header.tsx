@@ -25,34 +25,32 @@ export function AppHeader({ activeTab, onTabChange }: AppHeaderProps) {
     null,
   );
 
-  const onDragPointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      if (e.button !== 0) return;
-      dragRef.current = { x: e.clientX, y: e.clientY, dragging: false };
-    },
-    [],
-  );
+  const onDragPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    dragRef.current = { x: e.clientX, y: e.clientY, dragging: false };
+  }, []);
 
-  const onDragPointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      const d = dragRef.current;
-      if (!d || d.dragging) return;
-      const dx = Math.abs(e.clientX - d.x);
-      const dy = Math.abs(e.clientY - d.y);
-      if (dx > 3 || dy > 3) {
-        d.dragging = true;
-        void getCurrentWindow().startDragging().catch(() => {});
-      }
-    },
-    [],
-  );
+  const onDragPointerMove = useCallback((e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d || d.dragging) return;
+    const dx = Math.abs(e.clientX - d.x);
+    const dy = Math.abs(e.clientY - d.y);
+    if (dx > 3 || dy > 3) {
+      d.dragging = true;
+      void getCurrentWindow()
+        .startDragging()
+        .catch(() => {});
+    }
+  }, []);
 
   const onDragPointerUp = useCallback(() => {
     dragRef.current = null;
   }, []);
 
   const onDragDoubleClick = useCallback(() => {
-    void getCurrentWindow().toggleMaximize().catch(() => {});
+    void getCurrentWindow()
+      .toggleMaximize()
+      .catch(() => {});
   }, []);
 
   return (
@@ -64,11 +62,31 @@ export function AppHeader({ activeTab, onTabChange }: AppHeaderProps) {
         value={activeTab}
         onValueChange={(v) => onTabChange(v as WorkspaceTab)}
       >
-        <TabsList>
-          <TabsTrigger value="pdftomd">{t("tabs.pdftomd")}</TabsTrigger>
-          <TabsTrigger value="imgtomd">{t("tabs.imgtomd")}</TabsTrigger>
-          <TabsTrigger value="mdtoexcel">{t("tabs.mdtoexcel")}</TabsTrigger>
-          <TabsTrigger value="settings">{t("tabs.settings")}</TabsTrigger>
+        <TabsList className="glass-surface border border-border/50 bg-transparent">
+          <TabsTrigger
+            value="pdftomd"
+            className="data-active:glass-surface data-active:bg-transparent dark:data-active:bg-transparent"
+          >
+            {t("tabs.pdftomd")}
+          </TabsTrigger>
+          <TabsTrigger
+            value="imgtomd"
+            className="data-active:glass-surface data-active:bg-transparent dark:data-active:bg-transparent"
+          >
+            {t("tabs.imgtomd")}
+          </TabsTrigger>
+          <TabsTrigger
+            value="mdtoexcel"
+            className="data-active:glass-surface data-active:bg-transparent dark:data-active:bg-transparent"
+          >
+            {t("tabs.mdtoexcel")}
+          </TabsTrigger>
+          <TabsTrigger
+            value="settings"
+            className="data-active:glass-surface data-active:bg-transparent dark:data-active:bg-transparent"
+          >
+            {t("tabs.settings")}
+          </TabsTrigger>
         </TabsList>
       </Tabs>
 

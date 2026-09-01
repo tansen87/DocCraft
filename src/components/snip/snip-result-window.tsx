@@ -202,6 +202,7 @@ export function SnipResultWindow() {
   const [pinned, setPinned] = useState(false);
   const [copied, setCopied] = useState(false);
   const [glassOpacity, setGlassOpacity] = useState(60);
+  const [glassBlurEnabled, setGlassBlurEnabled] = useState(true);
   // Tooltip open state for each button - closed on pointer-down so dragging
   // the header never leaves a stale tooltip visible.
   const [pinTipOpen, setPinTipOpen] = useState(false);
@@ -217,11 +218,12 @@ export function SnipResultWindow() {
       .catch(() => {});
   }, []);
 
-  // Load the glassmorphism opacity setting.
+  // Load the glassmorphism opacity/blur settings.
   useEffect(() => {
     getAppSettings()
       .then((s) => {
         setGlassOpacity(s.snipResultOpacity ?? 60);
+        setGlassBlurEnabled(s.glassBlurEnabled ?? true);
       })
       .catch(() => {});
   }, []);
@@ -288,6 +290,7 @@ export function SnipResultWindow() {
     getAppSettings()
       .then((s) => {
         setGlassOpacity(s.snipResultOpacity ?? 60);
+        setGlassBlurEnabled(s.glassBlurEnabled ?? true);
       })
       .catch(() => {});
   }
@@ -315,14 +318,22 @@ export function SnipResultWindow() {
     };
   }, []);
 
-  // Real-time opacity update when settings are saved in the main window.
+  // Real-time opacity/blur update when settings are saved in the main window.
   useEffect(() => {
-    const unlisten = listen<{ opacity?: number }>(
+    const unlisten = listen<{ opacity?: number; blur?: boolean }>(
       "snip:settings-changed",
       (e) => {
-        if (typeof e.payload?.opacity === "number") {
-          // Live preview: use the value sent directly from the slider.
-          setGlassOpacity(e.payload.opacity);
+        const live =
+          typeof e.payload?.opacity === "number" ||
+          typeof e.payload?.blur === "boolean";
+        if (live) {
+          // Live preview: use the values sent directly from the sliders.
+          if (typeof e.payload?.opacity === "number") {
+            setGlassOpacity(e.payload.opacity);
+          }
+          if (typeof e.payload?.blur === "boolean") {
+            setGlassBlurEnabled(e.payload.blur);
+          }
         } else {
           // Saved: reload from backend.
           reloadOpacity();
@@ -382,10 +393,10 @@ export function SnipResultWindow() {
       style={{ clipPath: "inset(0 round 0.75rem)" }}
     >
       <div
-        className="relative flex h-full w-full flex-col text-foreground backdrop-blur-2xl"
+        className="relative flex h-full w-full flex-col text-foreground"
         style={{
           backgroundColor: `color-mix(in srgb, var(--background) ${glassOpacity}%, transparent)`,
-          backdropFilter: "blur(24px)",
+          backdropFilter: glassBlurEnabled ? "blur(20px)" : "none",
         }}
       >
         <div

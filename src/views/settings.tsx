@@ -23,6 +23,7 @@ import {
   ScanText,
   SeparatorHorizontal,
   ShieldCheck,
+  Sparkles,
   Star,
   Trash2,
   Upload,
@@ -89,6 +90,7 @@ type SettingsSection =
   | "ocr"
   | "threads"
   | "snip"
+  | "glass"
   | "textSep"
   | "tray"
   | "draw"
@@ -102,6 +104,7 @@ const SECTIONS: {
     | "settings.ocr"
     | "settings.threads"
     | "snip.capture"
+    | "settings.glass"
     | "settings.textAndLineBreak"
     | "settings.tray"
     | "settings.drawTable"
@@ -119,6 +122,11 @@ const SECTIONS: {
     id: "snip",
     labelKey: "snip.capture",
     icon: Camera,
+  },
+  {
+    id: "glass",
+    labelKey: "settings.glass",
+    icon: Sparkles,
   },
   {
     id: "textSep",
@@ -205,6 +213,7 @@ export function SettingsView() {
   const [snipAutoCopy, setSnipAutoCopy] = useState(true);
   const [snipResultOpacity, setSnipResultOpacity] = useState(60);
   const [mainWindowOpacity, setMainWindowOpacity] = useState(100);
+  const [glassBlurEnabled, setGlassBlurEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -238,6 +247,7 @@ export function SettingsView() {
         setSnipAutoCopy(settings.snipAutoCopy ?? true);
         setSnipResultOpacity(settings.snipResultOpacity ?? 60);
         setMainWindowOpacity(settings.mainWindowOpacity ?? 100);
+        setGlassBlurEnabled(settings.glassBlurEnabled ?? true);
         setUsageStats(usage);
         setLoaded(true);
       })
@@ -303,6 +313,7 @@ export function SettingsView() {
       snipAutoCopy,
       snipResultOpacity,
       mainWindowOpacity,
+      glassBlurEnabled,
     };
     try {
       await Promise.all([
@@ -520,6 +531,26 @@ export function SettingsView() {
                   onAutoCopyChange={(v) => {
                     setSnipAutoCopy(v);
                     markDirty();
+                  }}
+                  disabled={loading}
+                />
+              </section>
+              <section id="settings-glass" className="scroll-mt-3">
+                <SectionHeader title={t("settings.glass")} />
+                <GlassSettingsPanel
+                  blurEnabled={glassBlurEnabled}
+                  onBlurEnabledChange={(v) => {
+                    setGlassBlurEnabled(v);
+                    markDirty();
+                    // Live preview: update both windows without saving.
+                    window.dispatchEvent(
+                      new CustomEvent("doccraft:opacity-preview", {
+                        detail: { blur: v },
+                      }),
+                    );
+                    emitTo("snip-result", "snip:settings-changed", {
+                      blur: v,
+                    }).catch(() => {});
                   }}
                   resultOpacity={snipResultOpacity}
                   onResultOpacityChange={(v) => {
@@ -1182,10 +1213,6 @@ function SnipSettingsPanel({
   onResultPopupChange,
   autoCopy,
   onAutoCopyChange,
-  resultOpacity,
-  onResultOpacityChange,
-  mainOpacity,
-  onMainOpacityChange,
   disabled,
 }: {
   value: string;
@@ -1194,10 +1221,6 @@ function SnipSettingsPanel({
   onResultPopupChange: (v: boolean) => void;
   autoCopy: boolean;
   onAutoCopyChange: (v: boolean) => void;
-  resultOpacity: number;
-  onResultOpacityChange: (v: number) => void;
-  mainOpacity: number;
-  onMainOpacityChange: (v: number) => void;
   disabled?: boolean;
 }) {
   const { t } = useI18n();
@@ -1231,56 +1254,95 @@ function SnipSettingsPanel({
             disabled={disabled}
           />
         </SettingRow>
-        <SettingRow
-          label={t("settings.snipResultOpacity")}
-          description={t("settings.snipResultOpacityDesc")}
-        >
-          <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={5}
-              value={resultOpacity}
-              onChange={(e) => onResultOpacityChange(Number(e.target.value))}
-              disabled={disabled}
-              className="h-2 w-32 cursor-pointer appearance-none rounded-full bg-border accent-primary
-                [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4
-                [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full
-                [&::-webkit-slider-thumb]:bg-[#6FCF97] [&::-webkit-slider-thumb]:shadow-sm
-                [&::-webkit-slider-thumb]:dark:bg-[#446351]"
-            />
-            <span className="w-8 text-right text-sm tabular-nums text-muted-foreground">
-              {resultOpacity}%
-            </span>
-          </div>
-        </SettingRow>
-        <SettingRow
-          label={t("settings.mainWindowOpacity")}
-          description={t("settings.mainWindowOpacityDesc")}
-        >
-          <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={5}
-              value={mainOpacity}
-              onChange={(e) => onMainOpacityChange(Number(e.target.value))}
-              disabled={disabled}
-              className="h-2 w-32 cursor-pointer appearance-none rounded-full bg-border accent-primary
-                [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4
-                [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full
-                [&::-webkit-slider-thumb]:bg-[#6FCF97] [&::-webkit-slider-thumb]:shadow-sm
-                [&::-webkit-slider-thumb]:dark:bg-[#446351]"
-            />
-            <span className="w-8 text-right text-sm tabular-nums text-muted-foreground">
-              {mainOpacity}%
-            </span>
-          </div>
-        </SettingRow>
       </Panel>
     </>
+  );
+}
+
+/**
+ * Glassmorphism appearance of the two translucent windows. The blur toggle is
+ * shared by the main and result windows; each window keeps its own background
+ * opacity slider (independent settings).
+ */
+function GlassSettingsPanel({
+  blurEnabled,
+  onBlurEnabledChange,
+  resultOpacity,
+  onResultOpacityChange,
+  mainOpacity,
+  onMainOpacityChange,
+  disabled,
+}: {
+  blurEnabled: boolean;
+  onBlurEnabledChange: (v: boolean) => void;
+  resultOpacity: number;
+  onResultOpacityChange: (v: number) => void;
+  mainOpacity: number;
+  onMainOpacityChange: (v: number) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useI18n();
+
+  const rangeClass =
+    "h-2 w-32 cursor-pointer appearance-none rounded-full bg-border accent-primary " +
+    "[&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 " +
+    "[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full " +
+    "[&::-webkit-slider-thumb]:bg-[#6FCF97] [&::-webkit-slider-thumb]:shadow-sm " +
+    "[&::-webkit-slider-thumb]:dark:bg-[#446351]";
+
+  return (
+    <Panel>
+      <SettingRow
+        label={t("settings.glassBlur")}
+        description={t("settings.glassBlurDesc")}
+      >
+        <Switch
+          checked={blurEnabled}
+          onCheckedChange={onBlurEnabledChange}
+          disabled={disabled}
+        />
+      </SettingRow>
+      <SettingRow
+        label={t("settings.mainWindowOpacity")}
+        description={t("settings.mainWindowOpacityDesc")}
+      >
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={mainOpacity}
+            onChange={(e) => onMainOpacityChange(Number(e.target.value))}
+            disabled={disabled}
+            className={rangeClass}
+          />
+          <span className="w-8 text-right text-sm tabular-nums text-muted-foreground">
+            {mainOpacity}%
+          </span>
+        </div>
+      </SettingRow>
+      <SettingRow
+        label={t("settings.snipResultOpacity")}
+        description={t("settings.snipResultOpacityDesc")}
+      >
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={resultOpacity}
+            onChange={(e) => onResultOpacityChange(Number(e.target.value))}
+            disabled={disabled}
+            className={rangeClass}
+          />
+          <span className="w-8 text-right text-sm tabular-nums text-muted-foreground">
+            {resultOpacity}%
+          </span>
+        </div>
+      </SettingRow>
+    </Panel>
   );
 }
 

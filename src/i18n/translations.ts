@@ -138,6 +138,9 @@ const en = {
   "settings.mainWindowOpacity": "Main window opacity",
   "settings.mainWindowOpacityDesc":
     "Background transparency of the main window (0 = fully transparent, 100 = fully opaque)",
+  "settings.glass": "Glass appearance",
+  "settings.glassBlur": "Blur effect",
+  "settings.glassBlurDesc": "Frosted-glass blur on the main and result windows",
   "settings.screenshotHotkey": "Screenshot hotkey",
   "settings.screenshotHotkeyHint": "Global key that opens region capture",
   "settings.textSeparator": "Text separator",
@@ -530,6 +533,9 @@ const zh: Record<TranslationKey, string> = {
   "settings.mainWindowOpacity": "主窗口透明度",
   "settings.mainWindowOpacityDesc":
     "主窗口背景的透明度 (0 = 完全透明, 100 = 完全不透明)",
+  "settings.glass": "玻璃外观",
+  "settings.glassBlur": "模糊效果",
+  "settings.glassBlurDesc": "主窗口与识别窗口的毛玻璃模糊效果",
   "settings.screenshotHotkey": "截图识别快捷键",
   "settings.screenshotHotkeyHint": "全局触发截图识别的按键",
   "settings.textSeparator": "文本连接符",

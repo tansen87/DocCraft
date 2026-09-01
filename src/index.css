@@ -71,7 +71,9 @@ body {
   min-height: 100vh;
   background: transparent;
 }
-html, body, #root {
+html,
+body,
+#root {
   background: transparent;
 }
 
@@ -301,6 +303,25 @@ html, body, #root {
   margin-right: 6px;
 }
 
+/* Glass-tinted surface for elements that should follow the window's glass
+   opacity/blur (e.g. the header tab buttons). Mirrors .glass-panel::before,
+   but painted on the element itself so it works with variants (data-active:).
+   Reads --glass-bg-opacity (inherited from the header) and --glass-blur
+   (inherited from the app root). */
+@utility glass-surface {
+  background-image: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--background) var(--glass-bg-opacity), transparent),
+    color-mix(
+      in srgb,
+      var(--background) calc(var(--glass-bg-opacity) * 0.92),
+      transparent
+    )
+  );
+  backdrop-filter: blur(var(--glass-blur, 20px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px));
+}
+
 @layer components {
   .glass-panel {
     position: relative;
@@ -314,15 +335,23 @@ html, body, #root {
     border-radius: inherit;
     background-image: linear-gradient(
       to bottom,
-      color-mix(in srgb, var(--background) var(--glass-bg-opacity), transparent),
-      color-mix(in srgb, var(--background) calc(var(--glass-bg-opacity) * 0.92), transparent)
+      color-mix(
+        in srgb,
+        var(--background) var(--glass-bg-opacity),
+        transparent
+      ),
+      color-mix(
+        in srgb,
+        var(--background) calc(var(--glass-bg-opacity) * 0.92),
+        transparent
+      )
     );
     z-index: -1;
   }
 
   .glass-blur {
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(var(--glass-blur, 20px));
+    -webkit-backdrop-filter: blur(var(--glass-blur, 20px));
   }
 
   .glass-hover {
