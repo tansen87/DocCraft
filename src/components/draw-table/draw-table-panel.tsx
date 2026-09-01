@@ -104,6 +104,8 @@ interface DrawTablePanelProps {
 interface PageDrawState {
   verticalLines: DrawLine[];
   horizontalLines: DrawLine[];
+  /** 0-based column indices chosen to merge their wrapped lines (00015). */
+  mergeColumns: number[];
 }
 
 type HistoryEntry = PageDrawState;
@@ -111,6 +113,7 @@ type HistoryEntry = PageDrawState;
 const EMPTY_DRAW_STATE: PageDrawState = {
   verticalLines: [],
   horizontalLines: [],
+  mergeColumns: [],
 };
 
 /** Render extracted tables as GFM markdown, prefixed with `<!-- Page N -->` markers. */
@@ -216,6 +219,8 @@ export function DrawTablePanel({
   }));
   /** Which tool a click on the canvas uses (line direction or exclusion). */
   const [mode, setMode] = useState<DrawTool>("vertical");
+  /** Whether the `guided` paragraph mode is active (00015). */
+  const [guided, setGuided] = useState(false);
 
   const pageCanvasRef = useRef<HTMLCanvasElement>(null);
   // Cache the loaded PDF document so page switches reuse the parsed doc
@@ -397,9 +402,10 @@ export function DrawTablePanel({
 
   const handleLineRemove = useCallback(
     (id: string) => {
-      const newState = {
+      const newState: PageDrawState = {
         verticalLines: drawState.verticalLines.filter((l) => l.id !== id),
         horizontalLines: drawState.horizontalLines.filter((l) => l.id !== id),
+        mergeColumns: drawState.mergeColumns,
       };
       setDrawState(newState);
       pushHistory(newState);
@@ -416,6 +422,7 @@ export function DrawTablePanel({
         horizontalLines: prev.horizontalLines.map((l) =>
           l.id === id ? { ...l, canvasValue, pdfValue } : l,
         ),
+        mergeColumns: prev.mergeColumns,
       }));
     },
     [],
@@ -449,6 +456,43 @@ export function DrawTablePanel({
       if (next === "exclude") onOpenExclusionEditor?.();
     },
     [onOpenExclusionEditor],
+  );
+
+  // 00015: enable the guided merge tool only when the paragraph mode is
+  // `guided`.
+  useEffect(() => {
+    let active = true;
+    void getAppSettings()
+      .then((s) => {
+        if (active) setGuided((s?.paragraphMode ?? "smart") === "guided");
+      })
+      .catch(() => {
+        if (active) setGuided(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  /**
+   * Toggle whether the column under a canvas click merges its wrapped lines.
+   * `canvasX` is in canvas (CSS) pixels, matching `DrawLine.canvasValue`.
+   */
+  const toggleMergeColumn = useCallback(
+    (canvasX: number) => {
+      const sortedV = drawState.verticalLines
+        .map((l) => l.canvasValue)
+        .sort((a, b) => a - b);
+      // Column index = number of vertical separators left of the click.
+      const col = sortedV.filter((v) => v < canvasX).length;
+      setDrawState((prev) => ({
+        ...prev,
+        mergeColumns: prev.mergeColumns.includes(col)
+          ? prev.mergeColumns.filter((c) => c !== col)
+          : [...prev.mergeColumns, col],
+      }));
+    },
+    [drawState.verticalLines],
   );
 
   // If the exclusion editor is closed (Esc / toolbar toggle) while the
@@ -549,6 +593,7 @@ export function DrawTablePanel({
           page,
           horizontalLines: state.horizontalLines.map((l) => l.pdfValue),
           verticalLines: state.verticalLines.map((l) => l.pdfValue),
+          mergeColumns: state.mergeColumns,
           pageX,
           pageY,
           pageWidth,
@@ -682,6 +727,7 @@ export function DrawTablePanel({
         onClear={handleClear}
         mode={mode}
         onModeChange={handleModeChange}
+        guided={guided}
         onExtract={handleExtract}
         onExtractFirst5={handleExtractFirst5}
         extracting={extracting}
@@ -711,6 +757,8 @@ export function DrawTablePanel({
               mode={mode === "exclude" ? "vertical" : mode}
               verticalLines={drawState.verticalLines}
               horizontalLines={drawState.horizontalLines}
+              mergeColumns={drawState.mergeColumns}
+              onMergeToggle={toggleMergeColumn}
               onLineAdd={handleLineAdd}
               onLineRemove={handleLineRemove}
               onLineUpdate={handleLineUpdate}

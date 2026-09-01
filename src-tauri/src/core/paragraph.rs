@@ -47,6 +47,7 @@ pub fn apply(
       if pages_with_tables.contains(&page_no)
         || pages_with_columns.contains(&page_no)
         || mode == ParagraphMode::Keep
+        || mode == ParagraphMode::Guided
       {
         return md.clone();
       }
@@ -59,7 +60,10 @@ pub fn apply(
 /// Single-page helper for OCR results (no geometry available): runs the
 /// textual heuristics. `Keep` returns the text unchanged.
 pub fn apply_text(text: &str, mode: ParagraphMode) -> String {
-  if mode == ParagraphMode::Keep {
+  // `Guided` needs column context (drawn vertical lines), which a bare string
+  // cannot carry - so outside the image-table extractor it degrades to `keep`
+  // (00015 §2.3).
+  if mode == ParagraphMode::Keep || mode == ParagraphMode::Guided {
     return text.to_string();
   }
   join_page(text, None, mode)

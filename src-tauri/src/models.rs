@@ -242,6 +242,11 @@ pub struct PageDrawTable {
   pub horizontal_lines: Vec<f64>,
   pub vertical_lines: Vec<f64>,
   pub rectangles: Option<Vec<RegionRect>>,
+  /// Column indices (0-based, left→right) whose wrapped text lines merge into
+  /// one cell in `guided` paragraph mode (00015). Empty = no guided merge on
+  /// this page.
+  #[serde(default)]
+  pub merge_columns: Vec<usize>,
   /// Page origin (x, y of lower-left corner) in PDF points, from pdfjs rawDims.
   pub page_x: f64,
   pub page_y: f64,
@@ -453,15 +458,18 @@ pub struct AppSettings {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", try_from = "String")]
 pub enum ParagraphMode {
+  /// One Markdown line per visual line - the original behaviour.
+  #[default]
+  Keep,
   /// Merge soft line breaks inside a paragraph; keep paragraph boundaries,
   /// tables, lists, headings and code blocks intact.
-  #[default]
   Smart,
-  /// One Markdown line per visual line - the original behaviour.
-  Keep,
   /// Merge every line of a page into one (tables and code blocks are still
   /// kept as-is).
   None,
+  /// Guided: only merge the text lines inside the user-selected table columns
+  /// that sit between the drawn vertical lines. See 00015.
+  Guided,
 }
 
 impl TryFrom<String> for ParagraphMode {
@@ -470,11 +478,35 @@ impl TryFrom<String> for ParagraphMode {
     Ok(match s.trim().to_ascii_lowercase().as_str() {
       "smart" | "unwrap" | "paragraph" => Self::Smart,
       "none" | "single" | "nolinebreak" => Self::None,
+      // Guided - a user draws vertical column separators and explicitly picks
+      // which columns merge their wrapped text.
+      "guided" | "manual" | "columns" => Self::Guided,
       // Unknown values / pre-existing configs fall back to the original
       // line-per-visual-line behaviour - never crash on a corrupt setting.
       _ => Self::Keep,
     })
   }
+}
+
+/// User-specified column merge configuration for `ParagraphMode::Guided`
+/// (docs/design/00015_guided-paragraph-mode.md). All quantities are in page
+/// pixels; `vertical_lines` is optional because the request may reuse the
+/// lines already sent in `ImageTableRequest`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GuidedMergeConfig {
+  /// Vertical line x-coordinates (page pixels, ascending). May be empty when
+  /// the caller already supplies `vertical_lines` in the request.
+  #[serde(default)]
+  pub vertical_lines: Vec<f64>,
+  /// Record boundaries (y-coordinates, ascending); same semantics as the
+  /// horizontal row bands of the draw-table flow. Optional.
+  #[serde(default)]
+  pub horizontal_lines: Vec<f64>,
+  /// Indices (0-based, left→right) of the columns whose wrapped lines must be
+  /// merged into one cell. Columns not listed stay line-by-line.
+  #[serde(default)]
+  pub merge_columns: Vec<usize>,
 }
 
 /// Local PaddleOCR model tier. Tiny is the fastest with the lowest accuracy,
@@ -586,6 +618,11 @@ pub struct ImageTableRequest {
   /// header. Absent / empty keeps the legacy auto-detection behavior.
   #[serde(default)]
   pub horizontal_lines: Option<Vec<f64>>,
+  /// Optional guided column-merge configuration (multi-column merges from
+  /// docs/design/00015). Present only when the user selected the `guided`
+  /// paragraph mode and drew vertical lines + picked merge columns.
+  #[serde(default)]
+  pub guided: Option<GuidedMergeConfig>,
 }
 
 /// Result of extracting a table from an image with drawn lines.

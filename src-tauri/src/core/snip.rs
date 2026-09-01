@@ -11,8 +11,8 @@ use xcap::Monitor;
 
 use crate::core::{paragraph, settings};
 use crate::models::{
-  ImageTableRequest, ImageTableResult, MonitorSnapshot, OcrImageResult, ParagraphMode, ShotRegion,
-  WindowInfo,
+  GuidedMergeConfig, ImageTableRequest, ImageTableResult, MonitorSnapshot, OcrImageResult,
+  ParagraphMode, ShotRegion, WindowInfo,
 };
 
 /// Managed cache of full-monitor snapshots between `screenshot_begin` and the
@@ -504,6 +504,7 @@ pub async fn ocr_image_table(
           img_height,
           &sep,
           paragraph_mode,
+          request.guided.as_ref(),
         ))
       }
     })
@@ -557,6 +558,7 @@ fn extract_table_from_ocr_blocks(
   img_height: f64,
   separator: &str,
   paragraph_mode: ParagraphMode,
+  guided: Option<&GuidedMergeConfig>,
 ) -> String {
   // Column boundaries: 0 + user lines + image width.
   let mut col_bounds: Vec<f64> = vec![0.0];
@@ -620,7 +622,15 @@ fn extract_table_from_ocr_blocks(
         (cells, y, font)
       })
       .collect();
-    fold_continuation_rows(visual_rows, paragraph_mode)
+    if paragraph_mode == ParagraphMode::Guided {
+      // 00015: fold only the user-selected columns. Empty merge_columns
+      // degrades to per-line (== `keep`); the UI should prompt when nothing
+      // is selected.
+      let cols = guided.map(|g| g.merge_columns.as_slice()).unwrap_or(&[]);
+      guided_merge_rows(visual_rows, cols)
+    } else {
+      fold_continuation_rows(visual_rows, paragraph_mode)
+    }
   } else {
     // Grid mode: the drawn horizontal lines define row bands. Every band
     // emits exactly one row (empty bands become blank cells); inside a band,
@@ -785,6 +795,86 @@ fn fold_continuation_rows(
   out.into_iter().map(|(cells, _, _, _, _)| cells).collect()
 }
 
+/// Guided (00015) column merge: split the visual lines into records on
+/// `ROW_GAP_EM` block breaks, then fold each *user-selected* column's wrapped
+/// lines back into its record cell via `join_fragments`. Columns not listed in
+/// `merge_columns` keep the first line's cell (per-record, line-by-line).
+///
+/// ```text
+/// | Account | ... | description           |
+/// |         | ... | New balance           |   ← record 1
+/// | 1969... | ... | Purchase on stock     |   ← record 2
+/// |         | ... | MANULIFE              |   ← folds into record 2 desc
+/// ```
+fn guided_merge_rows(
+  rows: Vec<(Vec<String>, f64, f64)>,
+  merge_columns: &[usize],
+) -> Vec<Vec<String>> {
+  // Empty merge_columns == `keep`: every visual line stays its own row
+  // (00015 §2.3 / §6.1). Nothing is merged, so skip the whole pass.
+  if merge_columns.is_empty() {
+    return rows.into_iter().map(|(cells, _, _)| cells).collect();
+  }
+  // Separate consecutive lines into records. A line starts a **new record**
+  // when it is the first line (the header), when it follows the header (the
+  // header never accepts a fold - otherwise a first data row with an empty
+  // leading column would be glued onto the header), when its first non-empty
+  // column is column 0 (a flush-left top-level row), or when the gap from the
+  // previous line exceeds `ROW_GAP_EM`. Otherwise it is a wrapped continuation.
+  let mut records: Vec<Vec<(Vec<String>, f64, f64)>> = Vec::new();
+  for (cells, y, font) in rows {
+    let col = first_content_col(&cells);
+    let starts_new = records.len() <= 1
+      || col == Some(0)
+      || records
+        .last()
+        .and_then(|r| r.last())
+        .map_or(true, |(_, prev_y, prev_font)| y - *prev_y > *prev_font * ROW_GAP_EM);
+    if starts_new {
+      records.push(vec![(cells, y, font)]);
+    } else {
+      records
+        .last_mut()
+        .expect("records non-empty when pushing")
+        .push((cells, y, font));
+    }
+  }
+
+  records
+    .into_iter()
+    .map(|rec| {
+      let ncols = rec
+        .first()
+        .map(|(cells, _, _)| cells.len())
+        .unwrap_or(0);
+      let mut out: Vec<String> = Vec::with_capacity(ncols);
+      for col in 0..ncols {
+        // Merge columns: join every non-empty line across the record. Other
+        // columns: keep the first line's cell only.
+        let mut acc: Option<String> = None;
+        if merge_columns.contains(&col) {
+          let parts: Vec<&str> = rec
+            .iter()
+            .flat_map(|(cells, _, _)| {
+              cells.get(col).filter(|c| !c.trim().is_empty()).map(|c| c.trim())
+            })
+            .collect();
+          if !parts.is_empty() {
+            acc = Some(paragraph::join_fragments(&parts));
+          }
+        } else {
+          let first = rec.iter().find_map(|(cells, _, _)| {
+            cells.get(col).filter(|c| !c.trim().is_empty()).map(|c| c.trim())
+          });
+          acc = first.map(|s| s.to_string());
+        }
+        out.push(acc.unwrap_or_default());
+      }
+      out
+    })
+    .collect()
+}
+
 /// Group OCR blocks into visual text lines using the same conservative
 /// y-overlap threshold as the rest of the pipeline.
 fn group_blocks_into_lines<'a>(
@@ -866,6 +956,7 @@ mod tests {
       100.0,
       " ",
       ParagraphMode::Smart,
+      None,
     );
     assert!(md.contains("| 姓名 | 年龄 |"));
     assert!(md.contains("| 张三 | 28 |"));
@@ -895,6 +986,7 @@ mod tests {
       150.0,
       " ",
       ParagraphMode::Smart,
+      None,
     );
     let lines: Vec<&str> = md.lines().filter(|l| l.starts_with('|')).collect();
     // Header + delimiter + one folded data row (no per-line rows).
@@ -926,6 +1018,7 @@ mod tests {
       150.0,
       " ",
       ParagraphMode::Keep,
+      None,
     );
     let lines: Vec<&str> = md.lines().filter(|l| l.starts_with('|')).collect();
     // Header + delimiter + one GFM row per visual line (wrapped cell un-merged).
@@ -956,6 +1049,7 @@ mod tests {
       100.0,
       " ",
       ParagraphMode::Smart,
+      None,
     );
     // Topmost band is the header; the lower band merges stacked blocks.
     let mut lines = md.lines().filter(|l| l.starts_with('|'));
@@ -1050,5 +1144,145 @@ mod tests {
       crate::core::paragraph::apply_text(src, ParagraphMode::Smart),
       src
     );
+  }
+
+  // ── 00015 Guided mode: merge only the user-picked columns ──────────────
+  // Acceptance sample from the doc: only `description` (col 3) wraps; the
+  // `value date` / `acc date` columns must stay line-by-line, and separate
+  // records (New balance vs Purchase on stock) must not be fused.
+
+  fn guided_config(merge_columns: Vec<usize>) -> GuidedMergeConfig {
+    GuidedMergeConfig {
+      vertical_lines: vec![],
+      horizontal_lines: vec![],
+      merge_columns,
+    }
+  }
+
+  #[test]
+  fn guided_merges_only_selected_column_across_records() {
+    // 4 columns: Account | value date | acc date | description. vertical
+    // separators at x = 25 / 50 / 75 (% width). font height 10 → ROW_GAP_EM
+    // break at 25px, so records ~30px apart split, a wrapped continuation
+    // ~15px below merges into its record.
+    let recognition = crate::core::ocr::OcrRecognition {
+      blocks: vec![
+        // header
+        block("Account", 2.0, 10.0, 20.0, 10.0),
+        block("value date", 28.0, 10.0, 20.0, 10.0),
+        block("acc date", 53.0, 10.0, 20.0, 10.0),
+        block("description", 78.0, 10.0, 20.0, 10.0),
+        // record 1
+        block("31/03/2025", 28.0, 40.0, 20.0, 10.0),
+        block("31/03/2025", 53.0, 40.0, 20.0, 10.0),
+        block("New balance", 78.0, 40.0, 20.0, 10.0),
+        // record 2 (account filled)
+        block("1969BO1027", 2.0, 70.0, 20.0, 10.0),
+        block("31/07/2024", 28.0, 70.0, 20.0, 10.0),
+        block("01/08/2024", 53.0, 70.0, 20.0, 10.0),
+        block("Purchase on stock", 78.0, 70.0, 20.0, 10.0),
+        // wrapped continuation of record 2's description
+        block("MANULIFE", 78.0, 85.0, 20.0, 10.0),
+      ],
+      height_px: 100,
+      confidence: 0.9,
+    };
+    let md = extract_table_from_ocr_blocks(
+      &recognition,
+      &[25.0, 50.0, 75.0],
+      &[],
+      100.0,
+      100.0,
+      " ",
+      ParagraphMode::Guided,
+      Some(&guided_config(vec![3])),
+    );
+    let lines: Vec<&str> = md.lines().filter(|l| l.starts_with('|')).collect();
+    assert_eq!(lines.len(), 4); // header + delimiter + 2 data rows
+    assert_eq!(lines[0], "| Account | value date | acc date | description |");
+    assert!(lines[1].starts_with("| -"));
+    // record 1: non-merge columns keep their single cell; desc is its own cell.
+    assert_eq!(
+      lines[2],
+      "|  | 31/03/2025 | 31/03/2025 | New balance |"
+    );
+    // record 2: description folded the wrapped "MANULIFE" into one cell.
+    assert_eq!(
+      lines[3],
+      "| 1969BO1027 | 31/07/2024 | 01/08/2024 | Purchase on stock MANULIFE |"
+    );
+  }
+
+  #[test]
+  fn guided_respects_record_boundary_within_merge_column() {
+    // Two records sharing the same description column must NOT fuse. Gaps are
+    // ~30px (> 2.5×10=25 break); no wrapped continuation present.
+    let recognition = crate::core::ocr::OcrRecognition {
+      blocks: vec![
+        block("Account", 2.0, 10.0, 20.0, 10.0),
+        block("value date", 28.0, 10.0, 20.0, 10.0),
+        block("acc date", 53.0, 10.0, 20.0, 10.0),
+        block("description", 78.0, 10.0, 20.0, 10.0),
+        block("31/03/2025", 28.0, 40.0, 20.0, 10.0),
+        block("31/03/2025", 53.0, 40.0, 20.0, 10.0),
+        block("New balance", 78.0, 40.0, 20.0, 10.0),
+        block("1969BO1027", 2.0, 70.0, 20.0, 10.0),
+        block("31/07/2024", 28.0, 70.0, 20.0, 10.0),
+        block("01/08/2024", 53.0, 70.0, 20.0, 10.0),
+        block("Purchase on stock", 78.0, 70.0, 20.0, 10.0),
+      ],
+      height_px: 100,
+      confidence: 0.9,
+    };
+    let md = extract_table_from_ocr_blocks(
+      &recognition,
+      &[25.0, 50.0, 75.0],
+      &[],
+      100.0,
+      100.0,
+      " ",
+      ParagraphMode::Guided,
+      Some(&guided_config(vec![3])),
+    );
+    let lines: Vec<&str> = md.lines().filter(|l| l.starts_with('|')).collect();
+    assert_eq!(lines.len(), 4);
+    // "New balance" and "Purchase on stock" are separate description cells.
+    assert_eq!(lines[2], "|  | 31/03/2025 | 31/03/2025 | New balance |");
+    assert_eq!(
+      lines[3],
+      "| 1969BO1027 | 31/07/2024 | 01/08/2024 | Purchase on stock |"
+    );
+  }
+
+  #[test]
+  fn guided_empty_merge_columns_degrades_to_keep() {
+    // No merge column selected → every line stays its own row (nothing folds).
+    let recognition = crate::core::ocr::OcrRecognition {
+      blocks: vec![
+        block("序号", 10.0, 10.0, 20.0, 10.0),
+        block("说明", 70.0, 10.0, 30.0, 10.0),
+        block("1", 10.0, 40.0, 10.0, 10.0),
+        block("This is a", 70.0, 40.0, 40.0, 10.0),
+        block("wrapped", 80.0, 55.0, 40.0, 10.0),
+        block("cell", 80.0, 70.0, 30.0, 10.0),
+      ],
+      height_px: 150,
+      confidence: 0.9,
+    };
+    let md = extract_table_from_ocr_blocks(
+      &recognition,
+      &[50.0],
+      &[],
+      150.0,
+      150.0,
+      " ",
+      ParagraphMode::Guided,
+      Some(&guided_config(vec![])),
+    );
+    let lines: Vec<&str> = md.lines().filter(|l| l.starts_with('|')).collect();
+    // Header + delimiter + one row per visual line (nothing folded).
+    assert_eq!(lines.len(), 5);
+    assert!(lines[3].contains("|  | wrapped |"));
+    assert!(lines[4].contains("|  | cell |"));
   }
 }

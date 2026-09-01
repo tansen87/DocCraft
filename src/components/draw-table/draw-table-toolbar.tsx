@@ -1,6 +1,7 @@
 import {
   ChevronLeft,
   ChevronRight,
+  Columns3,
   Grid2X2,
   Grid3X3,
   Loader2,
@@ -42,6 +43,8 @@ interface DrawTableToolbarProps {
   mode: DrawTool;
   /** Switch the active tool. */
   onModeChange: (mode: DrawTool) => void;
+  /** Whether the `guided` paragraph mode is active (00015). */
+  guided?: boolean;
   onExtract: () => void;
   onExtractFirst5: () => void;
   /** Which extraction is currently running (`null` when idle). */
@@ -65,6 +68,7 @@ export function DrawTableToolbar({
   onClear,
   mode,
   onModeChange,
+  guided = false,
   onExtract,
   onExtractFirst5,
   extracting,
@@ -82,9 +86,11 @@ export function DrawTableToolbar({
         {t(
           mode === "exclude"
             ? "drawtable.instructionExclude"
-            : mode === "vertical"
-              ? "drawtable.instructionVertical"
-              : "drawtable.instructionHorizontal",
+            : mode === "merge"
+              ? "drawtable.instructionMerge"
+              : mode === "vertical"
+                ? "drawtable.instructionVertical"
+                : "drawtable.instructionHorizontal",
         )}
       </span>
 
@@ -141,6 +147,28 @@ export function DrawTableToolbar({
         </TooltipTrigger>
         <TooltipContent>{t("drawtable.excludeMode")}</TooltipContent>
       </Tooltip>
+
+      {/* 00015 guided: pick which columns merge their wrapped lines. */}
+      {guided ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={cn(
+                "size-7",
+                mode === "merge" ? TOOL_ACTIVE : TOOL_INACTIVE,
+              )}
+              onClick={() =>
+                onModeChange(mode === "merge" ? "vertical" : "merge")
+              }
+            >
+              <Columns3 className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t("drawtable.mergeColumn")}</TooltipContent>
+        </Tooltip>
+      ) : null}
 
       <div className="mx-1 h-5 w-px bg-border" />
 

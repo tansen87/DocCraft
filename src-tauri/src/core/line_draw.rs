@@ -389,6 +389,7 @@ fn extract_table_from_vertical_lines(
   _page_height: f64,
   high_precision: bool,
   mode: ParagraphMode,
+  merge_columns: &[usize],
 ) -> MdTable {
   let col_bounds = build_col_boundaries(vertical_lines, page_width);
   let ncols = col_bounds.len().saturating_sub(1);
@@ -428,8 +429,13 @@ fn extract_table_from_vertical_lines(
     .collect();
 
   // Fold wrapped rows back into their logical record when paragraph merging
-  // is on (see [`merge_continuation_rows`]).
-  let data_rows = merge_continuation_rows(visual_rows, mode);
+  // is on (see [`merge_continuation_rows`]). `Guided` folds only the
+  // user-selected columns.
+  let data_rows = if mode == ParagraphMode::Guided {
+    guided_merge_rows(visual_rows, merge_columns)
+  } else {
+    merge_continuation_rows(visual_rows, mode)
+  };
 
   // First line is the header
   let columns = data_rows.first().cloned().unwrap_or_default();
@@ -508,7 +514,10 @@ fn first_content_col(cells: &[String]) -> Option<usize> {
 ///
 /// `Keep` disables the whole pass: one GFM row per visual line, as before.
 fn merge_continuation_rows(rows: Vec<VisualRow>, mode: ParagraphMode) -> Vec<Vec<String>> {
-  if mode == ParagraphMode::Keep || rows.is_empty() {
+  // `Guided` (00015) is only honoured by the image-table extractor that
+  // carries the drawn-line column config; the PDF draw-table path degrades it
+  // to `keep` until P2 wires it through.
+  if mode == ParagraphMode::Keep || mode == ParagraphMode::Guided || rows.is_empty() {
     return rows.into_iter().map(|r| r.cells).collect();
   }
 
@@ -552,6 +561,84 @@ fn merge_continuation_rows(rows: Vec<VisualRow>, mode: ParagraphMode) -> Vec<Vec
   }
 
   out.into_iter().map(|r| r.cells).collect()
+}
+
+/// Guided (00015) column merge for the PDF draw-table path. Split the visual
+/// lines into records, then fold each *user-selected* column's wrapped lines
+/// back into its record cell via `join_fragments`. Columns not in
+/// `merge_columns` keep the first line's cell (per-record, line-by-line).
+///
+/// A line starts a **new record** when it is the first line (the header),
+/// when it follows the header (the header never accepts a fold - otherwise a
+/// first data row with an empty leading column, e.g. `,2026-01-01,simple`,
+/// would be glued onto the header), when its first non-empty column is column
+/// 0 (a flush-left top-level row), or when the gap from the previous line
+/// exceeds `ROW_GAP_EM`. Otherwise it is a wrapped continuation and folds into
+/// the previous record's merge columns.
+///
+/// Empty `merge_columns` degrades to `keep`: every visual line stays its own
+/// row.
+fn guided_merge_rows(rows: Vec<VisualRow>, merge_columns: &[usize]) -> Vec<Vec<String>> {
+  if merge_columns.is_empty() {
+    return rows.into_iter().map(|r| r.cells).collect();
+  }
+
+  let mut records: Vec<Vec<VisualRow>> = Vec::new();
+  for row in rows {
+    let col = first_content_col(&row.cells);
+    // A new record: the first line (header), any line right after the header
+    // (the header never folds), a line whose first content sits in column 0,
+    // or a line separated by more than a record gap.
+    let starts_new = records.len() <= 1
+      || col == Some(0)
+      || records
+        .last()
+        .and_then(|r| r.last())
+        .map_or(true, |prev| prev.y - row.y > prev.font_size * ROW_GAP_EM);
+    if starts_new {
+      records.push(vec![row]);
+    } else {
+      records
+        .last_mut()
+        .expect("records non-empty when pushing")
+        .push(row);
+    }
+  }
+
+  records
+    .into_iter()
+    .map(|rec| {
+      let ncols = rec.first().map(|r| r.cells.len()).unwrap_or(0);
+      let mut out: Vec<String> = Vec::with_capacity(ncols);
+      for col in 0..ncols {
+        if merge_columns.contains(&col) {
+          let parts: Vec<&str> = rec
+            .iter()
+            .flat_map(|r| {
+              r.cells
+                .get(col)
+                .filter(|c| !c.trim().is_empty())
+                .map(|c| c.trim())
+            })
+            .collect();
+          out.push(if parts.is_empty() {
+            String::new()
+          } else {
+            paragraph::join_fragments(&parts)
+          });
+        } else {
+          let first = rec.iter().find_map(|r| {
+            r.cells
+              .get(col)
+              .filter(|c| !c.trim().is_empty())
+              .map(|c| c.trim())
+          });
+          out.push(first.unwrap_or_default().to_string());
+        }
+      }
+      out
+    })
+    .collect()
 }
 
 // ─── Legacy extraction functions (kept for backward compatibility) ────────
@@ -1103,6 +1190,7 @@ pub fn extract_tables_from_draw_lines(
           page_height,
           high_precision,
           paragraph_mode,
+          &page_draw.merge_columns,
         );
         if !table.columns.is_empty() {
           tables.push(table);
@@ -1321,6 +1409,7 @@ mod tests {
       842.0,
       false,
       ParagraphMode::Keep,
+      &[],
     )
   }
 
@@ -1472,7 +1561,73 @@ mod tests {
   }
 
   fn cut_wrapped_cell(elements: &[TextElement], mode: ParagraphMode) -> MdTable {
-    extract_table_from_vertical_lines(elements, &[200.0], 600.0, 842.0, false, mode)
+    extract_table_from_vertical_lines(elements, &[200.0], 600.0, 842.0, false, mode, &[])
+  }
+
+  /// Guided: same two-column wrapped fixture, but only column 1 is selected.
+  fn cut_guided(elements: &[TextElement], merge_columns: &[usize]) -> MdTable {
+    extract_table_from_vertical_lines(
+      elements,
+      &[200.0],
+      600.0,
+      842.0,
+      false,
+      ParagraphMode::Guided,
+      merge_columns,
+    )
+  }
+
+  #[test]
+  fn guided_merges_only_selected_column() {
+    let table = cut_guided(&wrapped_cell_elements(), &[1]);
+    assert_eq!(table.columns, vec!["idx", "desc"]);
+    assert_eq!(table.rows, vec![vec!["1", "this is test"]]);
+  }
+
+  #[test]
+  fn guided_empty_merge_columns_degrades_to_keep() {
+    let table = cut_guided(&wrapped_cell_elements(), &[]);
+    assert_eq!(table.rows.len(), 3);
+    assert_eq!(table.rows[0], vec!["1", "this"]);
+    assert_eq!(table.rows[1], vec!["", "is"]);
+    assert_eq!(table.rows[2], vec!["", "test"]);
+  }
+
+  #[test]
+  fn guided_does_not_fold_first_data_row_into_header() {
+    // User regression: header close to the first data row whose leading
+    // column (account) is empty must NOT glue onto the header's desc.
+    //
+    //   account,date,desc
+    //   ,2026-01-01,simple
+    //   1002,2026-01-02,hello
+    //   ,,world
+    //
+    // → desc of record 2 folds "world"; record 1 stays its own row.
+    let elements = vec![
+      el("account", 20.0, 800.0),
+      el("date", 120.0, 800.0),
+      el("desc", 220.0, 800.0),
+      el("2026-01-01", 120.0, 785.0),
+      el("simple", 220.0, 785.0),
+      el("1002", 20.0, 770.0),
+      el("2026-01-02", 120.0, 770.0),
+      el("hello", 220.0, 770.0),
+      el("world", 220.0, 755.0),
+    ];
+    let table = extract_table_from_vertical_lines(
+      &elements,
+      &[100.0, 200.0],
+      600.0,
+      842.0,
+      false,
+      ParagraphMode::Guided,
+      &[2],
+    );
+    assert_eq!(table.columns, vec!["account", "date", "desc"]);
+    assert_eq!(table.rows.len(), 2);
+    assert_eq!(table.rows[0], vec!["", "2026-01-01", "simple"]);
+    assert_eq!(table.rows[1], vec!["1002", "2026-01-02", "hello world"]);
   }
 
   #[test]
@@ -1594,6 +1749,7 @@ mod tests {
       150.0,
       false,
       ParagraphMode::Keep,
+      &[],
     );
     assert_eq!(table.columns, vec!["姓名", "年龄", "城市"]);
     assert_eq!(table.rows.len(), 2);
@@ -1680,6 +1836,7 @@ mod tests {
       150.0,
       false,
       ParagraphMode::Keep,
+      &[],
     );
     assert_eq!(table.columns.len(), 3);
     assert_eq!(table.columns[0], "姓名");
@@ -1777,6 +1934,7 @@ mod tests {
       300.0,
       true,
       ParagraphMode::Keep,
+      &[],
     );
     assert_eq!(table.columns.len(), 3);
     assert_eq!(table.columns[0], "姓名");
@@ -1810,6 +1968,7 @@ mod tests {
       150.0,
       true,
       ParagraphMode::Keep,
+      &[],
     );
     assert_eq!(table.columns[0], "姓名 128");
     assert_eq!(table.columns[1], "年龄");
@@ -1823,6 +1982,7 @@ mod tests {
       150.0,
       false,
       ParagraphMode::Keep,
+      &[],
     );
     assert_ne!(
       (uniform.columns[0].as_str(), uniform.columns[1].as_str()),

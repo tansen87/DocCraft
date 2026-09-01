@@ -6,11 +6,15 @@ interface CanvasOverlayProps {
   /** Current rendering scale (CSS pixels per PDF point) */
   scale: number;
   /** What a click creates / which direction the coordinates refer to. */
-  mode: Extract<DrawMode, "horizontal" | "vertical">;
+  mode: Extract<DrawMode, "horizontal" | "vertical" | "merge">;
   /** Vertical (column separator) lines on this page */
   verticalLines: DrawLine[];
   /** Horizontal (row boundary) lines on this page */
   horizontalLines: DrawLine[];
+  /** Column indices (0-based) whose wrapped lines merge (00015 guided). */
+  mergeColumns?: number[];
+  /** Called when a merge column is clicked (mode === "merge"). */
+  onMergeToggle?: (canvasX: number) => void;
   /** Called when a new line is added */
   onLineAdd: (line: DrawLine) => void;
   /** Called when a line is removed */
@@ -25,12 +29,16 @@ interface CanvasOverlayProps {
 
 const VERTICAL_COLOR = "#ef4444"; // red - column separators
 const HORIZONTAL_COLOR = "#3b82f6"; // blue - row boundaries
+const MERGE_FILL = "rgba(34, 197, 94, 0.25)"; // green - guided merge columns
+const MERGE_STROKE = "rgba(34, 197, 94, 0.7)";
 
 export function CanvasOverlay({
   scale,
   mode,
   verticalLines,
   horizontalLines,
+  mergeColumns = [],
+  onMergeToggle,
   onLineAdd,
   onLineRemove,
   onLineUpdate,
@@ -60,6 +68,10 @@ export function CanvasOverlay({
       const canvasX = e.clientX - rect.left;
       const canvasY = e.clientY - rect.top;
 
+      if (mode === "merge") {
+        onMergeToggle?.(canvasX);
+        return;
+      }
       if (mode === "vertical") {
         const { pdfX } = canvasToPdf(canvasX, canvasY);
         onLineAdd({
@@ -80,7 +92,7 @@ export function CanvasOverlay({
         });
       }
     },
-    [mode, canvasToPdf, onLineAdd],
+    [mode, canvasToPdf, onLineAdd, onMergeToggle],
   );
 
   const handleMouseMove = useCallback(
@@ -151,6 +163,34 @@ export function CanvasOverlay({
         height={height}
         className="fill-foreground/[0.02]"
       />
+
+      {/* 00015 guided: highlight the user-picked merge columns (green). */}
+      {mergeColumns.length > 0 ? (
+        <>
+          {(() => {
+            const boundaries = [0].concat(
+              verticalLines.map((l) => l.canvasValue).sort((a, b) => a - b),
+              [width],
+            );
+            return Array.from({ length: boundaries.length - 1 }).map(
+              (_, col) =>
+                mergeColumns.includes(col) ? (
+                  <rect
+                    key={col}
+                    x={boundaries[col]}
+                    width={boundaries[col + 1] - boundaries[col]}
+                    y={0}
+                    height={height}
+                    fill={MERGE_FILL}
+                    stroke={MERGE_STROKE}
+                    strokeWidth={1}
+                    className="pointer-events-none"
+                  />
+                ) : null,
+            );
+          })()}
+        </>
+      ) : null}
 
       {/* Vertical lines (column separators) */}
       {verticalLines.map((line) => {

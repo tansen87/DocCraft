@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Loader2, MoveHorizontal, MoveVertical, Trash2, X } from "lucide-react";
+import {
+  Columns3,
+  Loader2,
+  MoveHorizontal,
+  MoveVertical,
+  Trash2,
+  X,
+} from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 import { Button } from "@/components/ui/button";
@@ -10,7 +17,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
-import { ocrImageTable } from "@/lib/ipc";
+import { getAppSettings, ocrImageTable } from "@/lib/ipc";
 import { recordUsage } from "@/lib/usage";
 import type { ImageTableResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -57,6 +64,15 @@ export function ImageTableOverlay({
     displayW: number;
     displayH: number;
   } | null>(null);
+  /**
+   * True when the `guided` paragraph mode is active (00015). In that mode the
+   * user clicks between vertical lines to pick which columns merge.
+   */
+  const [guided, setGuided] = useState(false);
+  /** Column tool active: clicking between vertical lines toggles its merge. */
+  const [mergeMode, setMergeMode] = useState(false);
+  /** 0-based column indices chosen to merge their wrapped lines (00015). */
+  const [mergeColumns, setMergeColumns] = useState<number[]>([]);
 
   const onImageLoad = useCallback(() => {
     const img = imgRef.current;
@@ -107,6 +123,27 @@ export function ImageTableOverlay({
     setLines((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
+  /** In guided mode, toggle the merge flag of the column under a click x. */
+  const toggleMergeColumn = useCallback(
+    (clientX: number) => {
+      if (!imgSize) return;
+      const imgEl = imgRef.current;
+      if (!imgEl) return;
+      const rect = imgEl.getBoundingClientRect();
+      const xPct = ((clientX - rect.left) / imgSize.displayW) * 100;
+      const vertical = lines
+        .filter((l) => l.vertical)
+        .map((l) => l.pct)
+        .sort((a, b) => a - b);
+      // Column index = number of vertical lines to the left of the click.
+      const col = vertical.filter((v) => v < xPct).length;
+      setMergeColumns((prev) =>
+        prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col],
+      );
+    },
+    [imgSize, lines],
+  );
+
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (loading) return;
@@ -114,9 +151,13 @@ export function ImageTableOverlay({
       // own pointer events). Otherwise add a new line.
       const target = e.target as HTMLElement;
       if (target.closest("[data-line-handle]")) return;
+      if (mergeMode) {
+        toggleMergeColumn(e.clientX);
+        return;
+      }
       addLine(e.clientX, e.clientY);
     },
-    [addLine, loading],
+    [loading, mergeMode, toggleMergeColumn, addLine],
   );
 
   const handleLinePointerDown = useCallback(
@@ -180,6 +221,22 @@ export function ImageTableOverlay({
 
   const horizontalCount = lines.filter((l) => !l.vertical).length;
 
+  // 00015: enable the guided column-merge tool only when the user's paragraph
+  // mode is `guided`.
+  useEffect(() => {
+    let active = true;
+    void getAppSettings()
+      .then((s) => {
+        if (active) setGuided((s?.paragraphMode ?? "smart") === "guided");
+      })
+      .catch(() => {
+        if (active) setGuided(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleConfirm = useCallback(async () => {
     if (lines.length === 0) {
       toast.error(t("imgTable.needLine"));
@@ -199,6 +256,18 @@ export function ImageTableOverlay({
                 .map((l) => l.pct),
             }
           : {}),
+        // 00015 guided: send the picked merge columns plus the drawn lines so
+        // the backend can merge only those columns' wrapped text.
+        ...(guided
+          ? {
+              guided: {
+                mergeColumns,
+                horizontalLines: lines
+                  .filter((l) => !l.vertical)
+                  .map((l) => l.pct),
+              },
+            }
+          : {}),
       });
       onResult(result);
       onClose();
@@ -215,7 +284,15 @@ export function ImageTableOverlay({
     } finally {
       setLoading(false);
     }
-  }, [lines, horizontalCount, imagePath, onResult, onClose]);
+  }, [
+    lines,
+    horizontalCount,
+    guided,
+    mergeColumns,
+    imagePath,
+    onResult,
+    onClose,
+  ]);
 
   // Keyboard shortcut: Enter to confirm, Esc to cancel.
   useEffect(() => {
@@ -292,6 +369,26 @@ export function ImageTableOverlay({
             <TooltipContent>{t("drawtable.clearAll")}</TooltipContent>
           </Tooltip>
 
+          {/* 00015 guided: pick which columns merge their wrapped lines. */}
+          {guided ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={mergeMode ? "secondary" : "ghost"}
+                  size="icon-sm"
+                  disabled={
+                    loading || lines.filter((l) => l.vertical).length === 0
+                  }
+                  onClick={() => setMergeMode((v) => !v)}
+                  className={cn(!mergeMode && "text-white/70 hover:text-white")}
+                >
+                  <Columns3 />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t("drawtable.mergeColumn")}</TooltipContent>
+            </Tooltip>
+          ) : null}
+
           <Button
             variant="secondary"
             size="sm"
@@ -345,6 +442,34 @@ export function ImageTableOverlay({
               height={imgSize.displayH}
               className="pointer-events-none absolute left-0 top-0"
             >
+              {/* 00015 guided: highlight the user-picked merge columns. */}
+              {guided && mergeMode ? (
+                <>
+                  {(() => {
+                    const boundaries = [0].concat(
+                      lines
+                        .filter((l) => l.vertical)
+                        .map((l) => (l.pct / 100) * imgSize.displayW)
+                        .sort((a, b) => a - b),
+                      [imgSize.displayW],
+                    );
+                    return Array.from({ length: boundaries.length - 1 }).map(
+                      (_, col) =>
+                        mergeColumns.includes(col) ? (
+                          <rect
+                            key={col}
+                            x={boundaries[col]}
+                            width={boundaries[col + 1] - boundaries[col]}
+                            y={0}
+                            height={imgSize.displayH}
+                            fill="rgba(34, 197, 94, 0.25)"
+                            stroke="rgba(34, 197, 94, 0.7)"
+                          />
+                        ) : null,
+                    );
+                  })()}
+                </>
+              ) : null}
               {lines.map((line, i) => {
                 const pos =
                   (line.pct / 100) *

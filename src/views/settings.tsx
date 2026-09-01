@@ -1315,6 +1315,11 @@ function ParagraphModeSettingsPanel({
       labelKey: "settings.paragraphMode.none",
       descKey: "settings.paragraphMode.noneDesc",
     },
+    {
+      value: "guided",
+      labelKey: "settings.paragraphMode.guided",
+      descKey: "settings.paragraphMode.guidedDesc",
+    },
   ];
 
   return (

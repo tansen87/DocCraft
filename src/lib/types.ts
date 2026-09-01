@@ -172,8 +172,23 @@ export type OcrModelSize = "tiny" | "small" | "medium";
  *  - "keep": one Markdown line per visual line (original behaviour).
  *  - "smart": merge soft line breaks inside a paragraph.
  *  - "none": merge every non-structural line of a page into one.
+ *  - "guided": merge only within the user-selected table columns (00015).
  */
-export type ParagraphMode = "keep" | "smart" | "none";
+export type ParagraphMode = "keep" | "smart" | "none" | "guided";
+
+/**
+ * User-specified column-merge configuration for the `guided` paragraph mode
+ * (docs/design/00015_guided-paragraph-mode.md).
+ */
+export interface GuidedMergeConfig {
+  /** Vertical line x-coordinates (page pixels, ascending). Optional - the
+   *  enclosing request usually already carries the percentage-based lines. */
+  verticalLines?: number[];
+  /** Record boundaries (y-coordinates, ascending); same as horizontal rows. */
+  horizontalLines?: number[];
+  /** Indices (0-based, left→right) of the columns whose wrapped lines merge. */
+  mergeColumns: number[];
+}
 
 /** A single GitHub-Flavored Markdown table parsed by the backend. */
 export interface MdTable {
@@ -218,6 +233,8 @@ export interface PageDrawTable {
   horizontalLines: number[];
   verticalLines: number[];
   rectangles?: RegionRect[];
+  /** Column indices (0-based) whose wrapped text merges (00015 guided). */
+  mergeColumns?: number[];
   /** Page origin (x, y of lower-left corner) in PDF points, from pdfjs rawDims. */
   pageX: number;
   pageY: number;
@@ -379,15 +396,21 @@ export interface DrawRect {
 export type CanvasElement = DrawLine | DrawRect;
 
 /** Mode for the canvas overlay interaction. */
-export type DrawMode = "horizontal" | "vertical" | "rectangle" | "select";
+export type DrawMode =
+  | "horizontal"
+  | "vertical"
+  | "rectangle"
+  | "select"
+  | "merge";
 
 /**
  * Active tool inside the draw-table surface. Line tools place separators on
  * click; the exclude tool hands the pointer to the exclusion-region editor
  * (same store as the normal-mode editor), so both orders of "draw lines first"
- * and "exclude area first" work on the same page.
+ * and "exclude area first" work on the same page. `merge` (00015 guided mode)
+ * toggles which columns merge their wrapped lines.
  */
-export type DrawTool = "vertical" | "horizontal" | "exclude";
+export type DrawTool = "vertical" | "horizontal" | "exclude" | "merge";
 
 // ─── Status bar activity & notices ───────────────────────────────────────
 
@@ -487,6 +510,8 @@ export interface ImageTableRequest {
    * being auto-grouped from OCR block positions.
    */
   horizontalLines?: number[];
+  /** Guided column-merge config (00015); only when guided mode is active. */
+  guided?: GuidedMergeConfig;
 }
 
 /** Result of extracting a table from an image with drawn lines. */
