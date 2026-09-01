@@ -26,6 +26,10 @@ pub struct DrawOcrEngines<'a> {
   /// (the empty string falls back to the built-in default). Only meaningful
   /// when `remote` is `Some`.
   pub remote_prompt: &'a str,
+  /// Force OCR on every page (`forceLocal`/`forceAi`) instead of only pages
+  /// without a text layer. When `true`, a rendered page image takes precedence
+  /// over the text layer, so a text-based PDF is still recognized from its image.
+  pub force_ocr: bool,
 }
 
 /// A text element extracted from a PDF page with its position.
@@ -999,8 +1003,13 @@ pub fn extract_tables_from_draw_lines(
     // fallback: local PaddleOCR yields positioned text blocks that feed the
     // same column-cutting pipeline, remote AI vision answers with a GFM table
     // cut by the drawn separator positions.
+    //
+    // In force modes (`forceLocal` / `forceAi`) OCR runs for EVERY page and the
+    // rendered image is authoritative, so a text-based PDF is still recognized
+    // from its image instead of being read from the text layer.
+    let force_ocr = ocr_engines.is_some_and(|e| e.force_ocr) && page_images.contains_key(&page_num);
     let mut ai_yielded = false;
-    if elements.is_empty() {
+    if elements.is_empty() || force_ocr {
       if let Some(img) = page_images.get(&page_num) {
         if let Some(engines) = ocr_engines {
           if let Some(engine) = engines.local {
@@ -1013,8 +1022,10 @@ pub fn extract_tables_from_draw_lines(
               }
             }
           }
-          // Remote AI vision: parse the model's markdown answer directly.
-          if elements.is_empty() {
+          // Remote AI vision: parse the model's markdown answer directly. In
+          // force + remote mode there is no local engine, so this runs even
+          // when the text layer is present.
+          if elements.is_empty() || (force_ocr && engines.local.is_none()) {
             if let Some(provider) = engines.remote {
               match ai_tables_for_page(provider, engines.remote_prompt, img, page_draw) {
                 Ok(ai_tables) => {

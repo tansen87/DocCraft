@@ -470,6 +470,7 @@ export function DrawTablePanel({
     async (
       request: DrawTableRequest,
       renderScale: number,
+      forceAllOcr: boolean,
     ): Promise<DrawTableResult> => {
       const doc = await getDoc();
       request.totalPages = doc.numPages;
@@ -493,14 +494,27 @@ export function DrawTablePanel({
         return extractDrawTable(pdfPath, { ...request, pageImages: images });
       }
 
-      // Phase 1 over the whole range without images: text-layer pages are
-      // extracted instantly from the backend cache; only pages that came up
-      // empty go through rendering + OCR.
+      // Multi-page: without images, text-layer pages are extracted cheaply
+      // from the backend cache; only pages that came up empty go through
+      // rendering + OCR. In force mode the image is authoritative for EVERY
+      // page, so OCR runs for all of them (batched) and no text-layer pass is
+      // made.
       onProgress?.({ phase: "extract" });
-      let result = await extractDrawTable(pdfPath, request);
-      const ocrNeeded = result.emptyTextPages.filter((p) =>
-        targetPages.includes(p),
-      );
+      let result: DrawTableResult = forceAllOcr
+        ? {
+            tableCount: 0,
+            tables: [],
+            regions: [],
+            totalRows: 0,
+            processingTimeMs: 0,
+            ocrPages: [],
+            emptyTextPages: [],
+            ocrConfidence: null,
+          }
+        : await extractDrawTable(pdfPath, request);
+      const ocrNeeded = forceAllOcr
+        ? targetPages
+        : result.emptyTextPages.filter((p) => targetPages.includes(p));
       for (let i = 0; i < ocrNeeded.length; i += OCR_BATCH_SIZE) {
         const batch = ocrNeeded.slice(i, i + OCR_BATCH_SIZE);
         onProgress?.({
@@ -558,14 +572,20 @@ export function DrawTablePanel({
         // (forceAi/nonTextAi) are resolved on the backend; disabled keeps
         // extraction text-layer-only.
         const settings = await getAppSettings();
-        const useOcr = settings.ocrMode !== "disabled" && (mayNeedOcr ?? true);
+        // Force modes (`forceLocal` / `forceAi`) recognize EVERY page from its
+        // rendered image - even text-based PDFs - so `mayNeedOcr` (which is
+        // false for a pure-text document) must not gate OCR off.
+        const isForce =
+          settings.ocrMode === "forceLocal" || settings.ocrMode === "forceAi";
+        const useOcr =
+          settings.ocrMode !== "disabled" && (isForce || (mayNeedOcr ?? true));
         // High-precision mode renders OCR page images at a higher DPI; the
         // backend pairs this with width-weighted character cutting.
         const renderScale = settings.drawTableHighPrecision
           ? OCR_RENDER_SCALE_HQ
           : OCR_RENDER_SCALE;
         const result = useOcr
-          ? await extractWithOcr(request, renderScale)
+          ? await extractWithOcr(request, renderScale, isForce)
           : await extractDrawTable(pdfPath, request);
 
         const ocrEngine = engineForMode(settings.ocrMode);

@@ -448,10 +448,12 @@ async fn extract_draw_table(
     let paragraph_mode = settings.paragraph_mode;
     let (local, remote) = resolve_draw_ocr(&app, &draw_data)?;
     let remote_prompt = core::ocr::effective_draw_table_prompt(&app)?;
+    let force_ocr = settings.ocr_mode.is_force();
     let engines = core::line_draw::DrawOcrEngines {
       local: local.as_ref(),
       remote: remote.as_ref(),
       remote_prompt: &remote_prompt,
+      force_ocr,
     };
     core::line_draw::extract_tables_from_draw_lines(
       &path,
@@ -483,10 +485,12 @@ async fn extract_draw_table_to_markdown(
     let paragraph_mode = settings.paragraph_mode;
     let (local, remote) = resolve_draw_ocr(&app, &draw_data)?;
     let remote_prompt = core::ocr::effective_draw_table_prompt(&app)?;
+    let force_ocr = settings.ocr_mode.is_force();
     let engines = core::line_draw::DrawOcrEngines {
       local: local.as_ref(),
       remote: remote.as_ref(),
       remote_prompt: &remote_prompt,
+      force_ocr,
     };
     core::line_draw::extract_tables_and_merge(
       &path,
