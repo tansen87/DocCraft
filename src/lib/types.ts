@@ -216,12 +216,13 @@ export interface LayoutModelInfo {
 
 /**
  * Paragraph line-break policy (backend `ParagraphMode`):
- *  - "keep": one Markdown line per visual line (original behaviour).
  *  - "smart": merge soft line breaks inside a paragraph.
  *  - "none": merge every non-structural line of a page into one.
  *  - "guided": merge only within the user-selected table columns (00015).
+ *    Without a merge-column selection it keeps one Markdown line per visual
+ *    line - identical to the removed `keep` mode.
  */
-export type ParagraphMode = "keep" | "smart" | "none" | "guided";
+export type ParagraphMode = "smart" | "none" | "guided";
 
 /**
  * User-specified column-merge configuration for the `guided` paragraph mode

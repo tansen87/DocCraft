@@ -217,7 +217,7 @@ export function SettingsView() {
   const [layoutScoreThreshold, setLayoutScoreThreshold] = useState(0.5);
   const [layoutDropHeaderFooter, setLayoutDropHeaderFooter] = useState(true);
   const [textSeparator, setTextSeparator] = useState("|");
-  const [paragraphMode, setParagraphMode] = useState<ParagraphMode>("smart");
+  const [paragraphMode, setParagraphMode] = useState<ParagraphMode>("guided");
   const [aiOcrPrompt, setAiOcrPrompt] = useState("");
   const [drawTablePrompt, setDrawTablePrompt] = useState("");
   const [enableTray, setEnableTray] = useState(true);
@@ -261,7 +261,13 @@ export function SettingsView() {
         setLayoutScoreThreshold(settings.layoutScoreThreshold ?? 0.5);
         setLayoutDropHeaderFooter(settings.layoutDropHeaderFooter ?? true);
         setTextSeparator(settings.textSeparator);
-        setParagraphMode(settings.paragraphMode ?? "smart");
+        setParagraphMode(
+          settings.paragraphMode === "smart" ||
+            settings.paragraphMode === "none" ||
+            settings.paragraphMode === "guided"
+            ? settings.paragraphMode
+            : "guided",
+        );
         setAiOcrPrompt(settings.aiOcrPrompt ?? "");
         setDrawTablePrompt(settings.drawTablePrompt ?? "");
         setEnableTray(settings.enableTray);
@@ -1536,9 +1542,9 @@ function ParagraphModeSettingsPanel({
     descKey: TranslationKey;
   }[] = [
     {
-      value: "keep",
-      labelKey: "settings.paragraphMode.keep",
-      descKey: "settings.paragraphMode.keepDesc",
+      value: "guided",
+      labelKey: "settings.paragraphMode.guided",
+      descKey: "settings.paragraphMode.guidedDesc",
     },
     {
       value: "smart",
@@ -1549,11 +1555,6 @@ function ParagraphModeSettingsPanel({
       value: "none",
       labelKey: "settings.paragraphMode.none",
       descKey: "settings.paragraphMode.noneDesc",
-    },
-    {
-      value: "guided",
-      labelKey: "settings.paragraphMode.guided",
-      descKey: "settings.paragraphMode.guidedDesc",
     },
   ];
 

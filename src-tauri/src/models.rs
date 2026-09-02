@@ -478,22 +478,23 @@ pub struct AppSettings {
 
 /// How extracted text lines are joined into paragraphs (PDF text pages and
 /// OCR pages share the same policy). Serialized as a lowercase string
-/// (`"keep"` / `"smart"` / `"none"`).
+/// (`"guided"` / `"smart"` / `"none"`). `Guided` without a merge-column
+/// selection keeps one Markdown line per visual line - identical to the
+/// removed `Keep` mode, so `"keep"` and unknown values degrade to it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", try_from = "String")]
 pub enum ParagraphMode {
-  /// One Markdown line per visual line - the original behaviour.
+  /// Guided: only merge the text lines inside the user-selected table columns
+  /// that sit between the drawn vertical lines (00015). With no selection it
+  /// keeps one Markdown line per visual line (the old `keep` behaviour).
   #[default]
-  Keep,
+  Guided,
   /// Merge soft line breaks inside a paragraph; keep paragraph boundaries,
   /// tables, lists, headings and code blocks intact.
   Smart,
   /// Merge every line of a page into one (tables and code blocks are still
   /// kept as-is).
   None,
-  /// Guided: only merge the text lines inside the user-selected table columns
-  /// that sit between the drawn vertical lines. See 00015.
-  Guided,
 }
 
 impl TryFrom<String> for ParagraphMode {
@@ -502,12 +503,11 @@ impl TryFrom<String> for ParagraphMode {
     Ok(match s.trim().to_ascii_lowercase().as_str() {
       "smart" | "unwrap" | "paragraph" => Self::Smart,
       "none" | "single" | "nolinebreak" => Self::None,
-      // Guided - a user draws vertical column separators and explicitly picks
-      // which columns merge their wrapped text.
-      "guided" | "manual" | "columns" => Self::Guided,
-      // Unknown values / pre-existing configs fall back to the original
-      // line-per-visual-line behaviour - never crash on a corrupt setting.
-      _ => Self::Keep,
+      // Guided (00015) is the default. A user draws vertical column separators
+      // and explicitly picks which columns merge their wrapped text; with no
+      // selection it behaves like the removed `keep` (per-line). Unknown /
+      // corrupt values and pre-existing `"keep"` configs all fall back here.
+      _ => Self::Guided,
     })
   }
 }

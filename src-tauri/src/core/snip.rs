@@ -624,12 +624,12 @@ fn extract_table_from_ocr_blocks(
       .collect();
     if paragraph_mode == ParagraphMode::Guided {
       // 00015: fold only the user-selected columns. Empty merge_columns
-      // degrades to per-line (== `keep`); the UI should prompt when nothing
-      // is selected.
+      // degrades to per-line (one GFM row per visual line); the UI should
+      // prompt when nothing is selected.
       let cols = guided.map(|g| g.merge_columns.as_slice()).unwrap_or(&[]);
       guided_merge_rows(visual_rows, cols)
     } else {
-      fold_continuation_rows(visual_rows, paragraph_mode)
+      fold_continuation_rows(visual_rows)
     }
   } else {
     // Grid mode: the drawn horizontal lines define row bands. Every band
@@ -740,13 +740,11 @@ fn first_content_col(cells: &[String]) -> Option<usize> {
 /// to its left empty and its first non-empty column sits right of the record's
 /// first one, with content directly above in that column and no block gap. The
 /// rule stays narrow so a record that genuinely has an empty leading column
-/// keeps its own row. `Keep` disables the whole pass - every visual line stays
-/// a separate GFM row (mirrors the PDF draw-table `merge_continuation_rows`).
-fn fold_continuation_rows(
-  rows: Vec<(Vec<String>, f64, f64)>,
-  mode: ParagraphMode,
-) -> Vec<Vec<String>> {
-  if mode == ParagraphMode::Keep || rows.is_empty() {
+/// keeps its own row. The caller only reaches this pass for `Smart` / `None`
+/// (mirrors the PDF draw-table `merge_continuation_rows`); `Guided` uses
+/// `guided_merge_rows` instead.
+fn fold_continuation_rows(rows: Vec<(Vec<String>, f64, f64)>) -> Vec<Vec<String>> {
+  if rows.is_empty() {
     return rows.into_iter().map(|(cells, _, _)| cells).collect();
   }
   // (cells, y of last line, leading font, first_content_col, continues)
@@ -829,7 +827,9 @@ fn guided_merge_rows(
       || records
         .last()
         .and_then(|r| r.last())
-        .map_or(true, |(_, prev_y, prev_font)| y - *prev_y > *prev_font * ROW_GAP_EM);
+        .map_or(true, |(_, prev_y, prev_font)| {
+          y - *prev_y > *prev_font * ROW_GAP_EM
+        });
     if starts_new {
       records.push(vec![(cells, y, font)]);
     } else {
@@ -843,10 +843,7 @@ fn guided_merge_rows(
   records
     .into_iter()
     .map(|rec| {
-      let ncols = rec
-        .first()
-        .map(|(cells, _, _)| cells.len())
-        .unwrap_or(0);
+      let ncols = rec.first().map(|(cells, _, _)| cells.len()).unwrap_or(0);
       let mut out: Vec<String> = Vec::with_capacity(ncols);
       for col in 0..ncols {
         // Merge columns: join every non-empty line across the record. Other
@@ -856,7 +853,10 @@ fn guided_merge_rows(
           let parts: Vec<&str> = rec
             .iter()
             .flat_map(|(cells, _, _)| {
-              cells.get(col).filter(|c| !c.trim().is_empty()).map(|c| c.trim())
+              cells
+                .get(col)
+                .filter(|c| !c.trim().is_empty())
+                .map(|c| c.trim())
             })
             .collect();
           if !parts.is_empty() {
@@ -864,7 +864,10 @@ fn guided_merge_rows(
           }
         } else {
           let first = rec.iter().find_map(|(cells, _, _)| {
-            cells.get(col).filter(|c| !c.trim().is_empty()).map(|c| c.trim())
+            cells
+              .get(col)
+              .filter(|c| !c.trim().is_empty())
+              .map(|c| c.trim())
           });
           acc = first.map(|s| s.to_string());
         }
@@ -997,37 +1000,6 @@ mod tests {
   }
 
   #[test]
-  fn ocr_blocks_vertical_only_keeps_each_line_in_keep_mode() {
-    let recognition = crate::core::ocr::OcrRecognition {
-      blocks: vec![
-        block("序号", 10.0, 10.0, 20.0, 10.0),
-        block("说明", 70.0, 10.0, 30.0, 10.0),
-        block("1", 10.0, 40.0, 10.0, 10.0),
-        block("This is a", 70.0, 40.0, 40.0, 10.0),
-        block("wrapped", 80.0, 55.0, 40.0, 10.0),
-        block("cell", 80.0, 70.0, 30.0, 10.0),
-      ],
-      height_px: 150,
-      confidence: 0.9,
-    };
-    let md = extract_table_from_ocr_blocks(
-      &recognition,
-      &[50.0],
-      &[],
-      150.0,
-      150.0,
-      " ",
-      ParagraphMode::Keep,
-      None,
-    );
-    let lines: Vec<&str> = md.lines().filter(|l| l.starts_with('|')).collect();
-    // Header + delimiter + one GFM row per visual line (wrapped cell un-merged).
-    assert_eq!(lines.len(), 5);
-    assert!(lines[3].contains("|  | wrapped |"));
-    assert!(lines[4].contains("|  | cell |"));
-  }
-
-  #[test]
   fn ocr_blocks_grid_mode_cuts_rows_at_horizontal_lines() {
     let recognition = crate::core::ocr::OcrRecognition {
       blocks: vec![
@@ -1122,11 +1094,13 @@ mod tests {
   }
 
   #[test]
-  fn screenshot_policy_keep_is_identity() {
+  fn screenshot_policy_guided_is_identity() {
     use crate::models::ParagraphMode;
+    // Outside the image-table extractor `guided` has no column context, so it
+    // keeps the text unchanged - identical to the removed `keep` mode.
     let src = "本文档规定了XX。\n接入方应当鉴权。\n未按要求调用。";
     assert_eq!(
-      crate::core::paragraph::apply_text(src, ParagraphMode::Keep),
+      crate::core::paragraph::apply_text(src, ParagraphMode::Guided),
       src
     );
   }
@@ -1199,13 +1173,13 @@ mod tests {
     );
     let lines: Vec<&str> = md.lines().filter(|l| l.starts_with('|')).collect();
     assert_eq!(lines.len(), 4); // header + delimiter + 2 data rows
-    assert_eq!(lines[0], "| Account | value date | acc date | description |");
+    assert_eq!(
+      lines[0],
+      "| Account | value date | acc date | description |"
+    );
     assert!(lines[1].starts_with("| -"));
     // record 1: non-merge columns keep their single cell; desc is its own cell.
-    assert_eq!(
-      lines[2],
-      "|  | 31/03/2025 | 31/03/2025 | New balance |"
-    );
+    assert_eq!(lines[2], "|  | 31/03/2025 | 31/03/2025 | New balance |");
     // record 2: description folded the wrapped "MANULIFE" into one cell.
     assert_eq!(
       lines[3],

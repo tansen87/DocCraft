@@ -6,7 +6,9 @@
 //! engines for scanned pages. This module applies the user's
 //! [`ParagraphMode`] as a **pure post-process** on the per-page markdown:
 //!
-//! * `Keep`  - leave every page byte-identical (the original behaviour).
+//! * `Guided` - merge only inside the user-selected table columns (00015);
+//!   with no selection it keeps one Markdown line per visual line (the
+//!   removed `keep` behaviour, applied by the callers that carry the config).
 //! * `Smart` - merge only soft line breaks: two consecutive visual lines are
 //!   joined unless a geometric (text pages, [`LineMeta`]) or textual (OCR
 //!   pages) signal marks a hard break between them.
@@ -46,7 +48,6 @@ pub fn apply(
       // end of one column to the start of the next.
       if pages_with_tables.contains(&page_no)
         || pages_with_columns.contains(&page_no)
-        || mode == ParagraphMode::Keep
         || mode == ParagraphMode::Guided
       {
         return md.clone();
@@ -58,12 +59,11 @@ pub fn apply(
 }
 
 /// Single-page helper for OCR results (no geometry available): runs the
-/// textual heuristics. `Keep` returns the text unchanged.
+/// textual heuristics. `Guided` returns the text unchanged - it needs the
+/// column context (drawn vertical lines) that a bare string cannot carry, so
+/// outside the image-table extractor it degrades to per-line (00015 §2.3).
 pub fn apply_text(text: &str, mode: ParagraphMode) -> String {
-  // `Guided` needs column context (drawn vertical lines), which a bare string
-  // cannot carry - so outside the image-table extractor it degrades to `keep`
-  // (00015 §2.3).
-  if mode == ParagraphMode::Keep || mode == ParagraphMode::Guided {
+  if mode == ParagraphMode::Guided {
     return text.to_string();
   }
   join_page(text, None, mode)
@@ -579,11 +579,7 @@ mod tests {
   #[test]
   fn table_page_is_untouched_in_all_modes() {
     let table = "| 姓名 | 年龄 |\n| --- | --- |\n| 张三 | 28 |";
-    for mode in [
-      ParagraphMode::Keep,
-      ParagraphMode::Smart,
-      ParagraphMode::None,
-    ] {
+    for mode in [ParagraphMode::Smart, ParagraphMode::None] {
       let out = apply(&[table.to_string()], None, &[], &[], mode);
       assert_eq!(out[0], table);
     }
@@ -626,11 +622,12 @@ mod tests {
     );
   }
 
-  /// `Keep` must be byte-identical; `None` merges everything but tables/fences.
+  /// `Guided` (no column config here) must be byte-identical - the removed
+  /// `keep` behaviour; `None` merges everything but tables/fences.
   #[test]
-  fn keep_is_identity_and_none_merges_all() {
+  fn guided_is_identity_and_none_merges_all() {
     let src = "第一行\n第二行\n第三行";
-    let out = apply(&[src.to_string()], None, &[], &[], ParagraphMode::Keep);
+    let out = apply(&[src.to_string()], None, &[], &[], ParagraphMode::Guided);
     assert_eq!(out[0], src);
 
     let out = apply(&[src.to_string()], None, &[], &[], ParagraphMode::None);
@@ -709,12 +706,17 @@ mod tests {
     assert_eq!(out[0], "左侧短行\n右侧另起内容");
   }
 
-  /// Unknown config values fall back to `Keep` via the TryFrom mapping.
+  /// Unknown / legacy config values (incl. the removed `"keep"`) fall back to
+  /// `Guided` via the TryFrom mapping - same per-line behaviour as before.
   #[test]
-  fn unknown_mode_string_falls_back_to_keep() {
+  fn unknown_mode_string_falls_back_to_guided() {
     assert_eq!(
       ParagraphMode::try_from("weird".to_string()).unwrap(),
-      ParagraphMode::Keep
+      ParagraphMode::Guided
+    );
+    assert_eq!(
+      ParagraphMode::try_from("keep".to_string()).unwrap(),
+      ParagraphMode::Guided
     );
     assert_eq!(
       ParagraphMode::try_from("smart".to_string()).unwrap(),

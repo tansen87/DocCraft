@@ -71,6 +71,17 @@ export function ConvertToolbar({
         </TooltipTrigger>
       </Tooltip>
 
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {onClear ? (
+            <Button variant="ghost" size="sm" onClick={onClear}>
+              <Trash2 />
+            </Button>
+          ) : null}
+        </TooltipTrigger>
+        <TooltipContent>{t("toolbar.remove")}</TooltipContent>
+      </Tooltip>
+
       {/* Page range input: converts only the selected pages while keeping
           the original document page numbers in the output markers. */}
       <Tooltip>
@@ -95,17 +106,6 @@ export function ConvertToolbar({
         <TooltipContent>
           {t("toolbar.pageRangeHint", { count: pageCount })}
         </TooltipContent>
-      </Tooltip>
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          {onClear ? (
-            <Button variant="ghost" size="sm" onClick={onClear}>
-              <Trash2 />
-            </Button>
-          ) : null}
-        </TooltipTrigger>
-        <TooltipContent>{t("toolbar.remove")}</TooltipContent>
       </Tooltip>
 
       {/* Draw Table mode toggle - styled like the header tabs */}

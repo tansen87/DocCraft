@@ -512,12 +512,12 @@ fn first_content_col(cells: &[String]) -> Option<usize> {
 /// when there is content directly above in that column, so a record that
 /// genuinely has an empty leading column keeps its own row.
 ///
-/// `Keep` disables the whole pass: one GFM row per visual line, as before.
+/// `Guided` (00015) is only honoured by the image-table extractor that
+/// carries the drawn-line column config; the PDF draw-table path degrades it
+/// to per-line (one GFM row per visual line, as before) until P2 wires the
+/// merge columns through.
 fn merge_continuation_rows(rows: Vec<VisualRow>, mode: ParagraphMode) -> Vec<Vec<String>> {
-  // `Guided` (00015) is only honoured by the image-table extractor that
-  // carries the drawn-line column config; the PDF draw-table path degrades it
-  // to `keep` until P2 wires it through.
-  if mode == ParagraphMode::Keep || mode == ParagraphMode::Guided || rows.is_empty() {
+  if mode == ParagraphMode::Guided || rows.is_empty() {
     return rows.into_iter().map(|r| r.cells).collect();
   }
 
@@ -1408,7 +1408,7 @@ mod tests {
       595.0,
       842.0,
       false,
-      ParagraphMode::Keep,
+      ParagraphMode::Guided,
       &[],
     )
   }
@@ -1638,8 +1638,8 @@ mod tests {
   }
 
   #[test]
-  fn wrapped_cell_keeps_every_visual_line_in_keep_mode() {
-    let table = cut_wrapped_cell(&wrapped_cell_elements(), ParagraphMode::Keep);
+  fn wrapped_cell_keeps_every_visual_line_in_guided_mode() {
+    let table = cut_wrapped_cell(&wrapped_cell_elements(), ParagraphMode::Guided);
     assert_eq!(table.rows.len(), 3);
     assert_eq!(table.rows[0], vec!["1", "this"]);
     assert_eq!(table.rows[1], vec!["", "is"]);
@@ -1748,7 +1748,7 @@ mod tests {
       120.0,
       150.0,
       false,
-      ParagraphMode::Keep,
+      ParagraphMode::Guided,
       &[],
     );
     assert_eq!(table.columns, vec!["姓名", "年龄", "城市"]);
@@ -1835,7 +1835,7 @@ mod tests {
       300.0,
       150.0,
       false,
-      ParagraphMode::Keep,
+      ParagraphMode::Guided,
       &[],
     );
     assert_eq!(table.columns.len(), 3);
@@ -1933,7 +1933,7 @@ mod tests {
       300.0,
       300.0,
       true,
-      ParagraphMode::Keep,
+      ParagraphMode::Guided,
       &[],
     );
     assert_eq!(table.columns.len(), 3);
@@ -1967,7 +1967,7 @@ mod tests {
       200.0,
       150.0,
       true,
-      ParagraphMode::Keep,
+      ParagraphMode::Guided,
       &[],
     );
     assert_eq!(table.columns[0], "姓名 128");
@@ -1981,7 +1981,7 @@ mod tests {
       200.0,
       150.0,
       false,
-      ParagraphMode::Keep,
+      ParagraphMode::Guided,
       &[],
     );
     assert_ne!(

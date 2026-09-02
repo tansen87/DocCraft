@@ -148,8 +148,6 @@ const en = {
     "Character used to join OCR blocks within a single line",
   "settings.textAndLineBreak": "Text & Line Breaks",
   "settings.paragraphMode": "Paragraph line breaks",
-  "settings.paragraphMode.keep": "Keep lines",
-  "settings.paragraphMode.keepDesc": "One Markdown line per visual line",
   "settings.paragraphMode.smart": "Smart merge",
   "settings.paragraphMode.smartDesc":
     "Merge line breaks inside a paragraph; tables, lists and headings stay intact",
@@ -158,7 +156,7 @@ const en = {
     "Merge every non-structural line of a page into one",
   "settings.paragraphMode.guided": "Guided merge",
   "settings.paragraphMode.guidedDesc":
-    "Merge text only inside the table columns drawn vertical lines",
+    "Merge text only inside the table columns drawn with vertical lines; without a selection, each line stays as-is",
   "settings.tray": "System Tray",
   "settings.trayDesc": "When enabled, show the system tray icon",
   "settings.hotkeyPlaceholder": "Click to record",
@@ -570,15 +568,14 @@ const zh: Record<TranslationKey, string> = {
   "settings.textSeparatorDesc": "用于连接同一行内 OCR 文本块的字符",
   "settings.textAndLineBreak": "文本与换行",
   "settings.paragraphMode": "段落换行模式",
-  "settings.paragraphMode.keep": "保留换行",
-  "settings.paragraphMode.keepDesc": "每个视觉行对应一个 Markdown 行",
   "settings.paragraphMode.smart": "智能合并",
   "settings.paragraphMode.smartDesc":
     "合并段落内部的换行;表格,列表,标题保持原样",
   "settings.paragraphMode.none": "全部合并",
   "settings.paragraphMode.noneDesc": "将页面内所有非结构行合并为一行",
   "settings.paragraphMode.guided": "引导合并",
-  "settings.paragraphMode.guidedDesc": "仅合并竖线间选中的列的折行文本",
+  "settings.paragraphMode.guidedDesc":
+    "仅合并竖线间选中的列的折行文本;未选择任何列时保持逐行",
   "settings.tray": "系统托盘",
   "settings.trayDesc": "开启时,显示系统托盘图标",
   "settings.hotkeyPlaceholder": "点击录入快捷键",

@@ -464,7 +464,7 @@ export function DrawTablePanel({
     let active = true;
     void getAppSettings()
       .then((s) => {
-        if (active) setGuided((s?.paragraphMode ?? "smart") === "guided");
+        if (active) setGuided((s?.paragraphMode ?? "guided") === "guided");
       })
       .catch(() => {
         if (active) setGuided(false);
