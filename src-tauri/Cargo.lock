@@ -1254,6 +1254,7 @@ version = "0.2.0"
 dependencies = [
  "base64 0.23.1",
  "image",
+ "ndarray",
  "ocr-rs",
  "pdf-inspector",
  "png 0.18.1",

@@ -1,0 +1,17 @@
+{
+  "name": "PicoDet_layout_1x_table",
+  "displayName": "PicoDet layout 1x table",
+  "modelFile": "PicoDet_layout_1x_table.mnn",
+  "inputWidth": 800,
+  "inputHeight": 608,
+  "keepRatio": false,
+  "mean": [0.485, 0.456, 0.406],
+  "std": [0.229, 0.224, 0.225],
+  "scoreThreshold": 0.5,
+  "classes": [
+    "Table"
+  ],
+  "bucketMap": {
+    "Table": "Table"
+  }
+}

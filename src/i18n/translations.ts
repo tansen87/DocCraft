@@ -196,6 +196,34 @@ const en = {
     "OCR only non-text pages using remote AI vision providers",
   "settings.ocrMode.disabled": "Disabled",
   "settings.ocrMode.disabledDesc": "Skip OCR entirely",
+  "settings.ocrLayoutMode": "Layout analysis",
+  "settings.ocrLayoutMode.off": "None",
+  "settings.ocrLayoutMode.offDesc":
+    "Keep the current Y→X line output - no layout analysis",
+  "settings.ocrLayoutMode.rule": "Geometric",
+  "settings.ocrLayoutMode.ruleDesc":
+    "Zero-model heuristics: column split, heading levels, header/footer bands",
+  "settings.ocrLayoutMode.paddle": "Paddle model",
+  "settings.ocrLayoutMode.paddleDesc":
+    "Paddle layout model (MNN). Degrades to geometric when the model is not bundled",
+  "settings.ocrLayoutModel": "Layout model",
+  "settings.ocrLayoutModelDesc":
+    "Model pool under models/layout - pick the model that matches your document type",
+  "settings.layoutModelDesc.PP-DocLayout-S":
+    "General-purpose default (23 classes) - broadest training domain (papers, reports, exams, books, magazines, contracts, newspapers)",
+  "settings.layoutModelDesc.PicoDet-S_layout_17cls":
+    "Papers / reports (17 classes) - higher accuracy than PP-DocLayout-S at the same size",
+  "settings.layoutModelDesc.PicoDet_layout_1x":
+    "Regular layouts (5 classes, PubLayNet) - few precise classes (text / title / list / table / figure)",
+  "settings.layoutModelDesc.PicoDet_layout_1x_table":
+    "Tables only (1 class) - for table region detection",
+  "settings.layoutModelMissing": "model files not installed",
+  "settings.layoutScoreThreshold": "Score threshold",
+  "settings.layoutScoreThresholdDesc":
+    "Detection confidence threshold (0-1); PicoDet recommends 0.5",
+  "settings.layoutDropHeaderFooter": "Filter header/footer",
+  "settings.layoutDropHeaderFooterDesc":
+    "Drop page header/footer regions instead of keeping them as HTML comments",
   "settings.aiOcrPrompt": "AI document OCR prompt",
   "settings.aiOcrPromptDesc":
     "Custom instructions sent to the AI vision model for PDF pages, images and screenshots. Leave empty to use the built-in default",
@@ -526,7 +554,7 @@ const zh: Record<TranslationKey, string> = {
   "settings.snipResultPopup": "弹出识别窗口",
   "settings.snipResultPopupDesc": "开启时,弹窗显示识别结果",
   "settings.snipAutoCopy": "复制识别结果",
-  "settings.snipAutoCopyDesc": "开始时,自动把结果复制到剪贴板",
+  "settings.snipAutoCopyDesc": "开启时,将识别结果复制到剪贴板",
   "settings.snipResultOpacity": "识别窗口透明度",
   "settings.snipResultOpacityDesc":
     "识别窗口背景的透明度 (0 = 完全透明, 100 = 完全不透明)",
@@ -586,6 +614,33 @@ const zh: Record<TranslationKey, string> = {
     "仅对非文本页面使用远程 AI 视觉模型进行 OCR",
   "settings.ocrMode.disabled": "不使用 OCR",
   "settings.ocrMode.disabledDesc": "完全跳过 OCR",
+  "settings.ocrLayoutMode": "版面分析",
+  "settings.ocrLayoutMode.off": "不使用",
+  "settings.ocrLayoutMode.offDesc": "保持现状的 Y→X 拼行输出,不做版面分析",
+  "settings.ocrLayoutMode.rule": "纯几何",
+  "settings.ocrLayoutMode.ruleDesc":
+    "零模型启发式:分栏拆分、标题层级、页眉页脚条带过滤",
+  "settings.ocrLayoutMode.paddle": "Paddle 模型",
+  "settings.ocrLayoutMode.paddleDesc":
+    "Paddle 版面模型(MNN).模型未捆绑时自动降级为纯几何档",
+  "settings.ocrLayoutModel": "版面模型",
+  "settings.ocrLayoutModelDesc":
+    "模型池位于 models/layout,按文档类型选择最合适的模型",
+  "settings.layoutModelDesc.PP-DocLayout-S":
+    "通用默认(23类)-训练域最广(中英文论文/研报/试卷/书籍/杂志/合同/报纸)",
+  "settings.layoutModelDesc.PicoDet-S_layout_17cls":
+    "论文/研报(17类)-同体积下精度高于 PP-DocLayout-S",
+  "settings.layoutModelDesc.PicoDet_layout_1x":
+    "规整版面(5类 PubLayNet)-类别少而准(文字/标题/列表/表格/图片)",
+  "settings.layoutModelDesc.PicoDet_layout_1x_table":
+    "仅表格(1类)-用于表格区域检测",
+  "settings.layoutModelMissing": "未安装模型文件",
+  "settings.layoutScoreThreshold": "置信度阈值",
+  "settings.layoutScoreThresholdDesc":
+    "版面检测置信度阈值(0-1),PicoDet 推荐 0.5",
+  "settings.layoutDropHeaderFooter": "过滤页眉页脚",
+  "settings.layoutDropHeaderFooterDesc":
+    "丢弃页眉/页脚区域,而不是以 HTML 注释形式保留",
   "settings.aiOcrPrompt": "AI 文档 OCR 提示词",
   "settings.aiOcrPromptDesc":
     "发送给 AI 视觉模型用于 PDF 页面/图片/截图 OCR 的自定义指令.留空使用内置默认提示词",

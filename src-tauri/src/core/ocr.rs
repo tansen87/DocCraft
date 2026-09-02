@@ -10,10 +10,10 @@ use uuid::Uuid;
 
 use crate::core::page_marker::page_marker;
 use crate::core::settings;
-use crate::core::{extract_cache, get_resources_dir, grid_rebuild, paragraph};
+use crate::core::{extract_cache, get_resources_dir, grid_rebuild, layout, paragraph};
 use crate::models::{
-  ConvertResult, DetectResult, ExcludeRegions, HybridSessionInfo, LayoutDto, OcrImageResult,
-  OcrMode, OcrModelSize, OcrVendor, PdfTypeDto,
+  ConvertResult, DetectResult, ExcludeRegions, HybridSessionInfo, LayoutDto, LayoutMode,
+  OcrImageResult, OcrMode, OcrModelSize, OcrVendor, PdfTypeDto,
 };
 
 /// Prompt sent to the vision model for every OCR page.
@@ -371,6 +371,70 @@ pub fn acquire_snip_ocr_engine(app: &AppHandle) -> Result<Arc<Mutex<LocalOcrEngi
   use tauri::Manager;
   let cache = app.state::<SnipEngineCache>();
   acquire_from_cell(app, &cache.0)
+}
+
+/// Managed cache of the resident **layout analysis** engine
+/// (docs/design/00016_local-ocr-layout-analysis.md §3.3). The layout model
+/// (~5–7 MB) is only loaded in `paddle` mode and stays resident for the whole
+/// process. The cache holds the currently-selected model; changing the model
+/// or inference parameters clears it (see `apply_app_settings` in lib.rs).
+/// The screenshot path never touches this - small snips have no layout needs.
+pub struct LayoutEngineCache(pub Mutex<Option<Arc<Mutex<layout::LayoutEngine>>>>);
+
+impl Default for LayoutEngineCache {
+  fn default() -> Self {
+    Self(Mutex::new(None))
+  }
+}
+
+impl LayoutEngineCache {
+  /// Drop the cached engine (called when the model / inference params change).
+  pub fn clear(&self) {
+    *self.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
+  }
+}
+
+/// Inference thread count for the layout model, matching the OCR engine's
+/// `local_ocr_threads` policy (0 = auto-detect, clamped to 1–16).
+fn inference_threads(local_ocr_threads: u32) -> i32 {
+  if local_ocr_threads > 0 {
+    local_ocr_threads as i32
+  } else {
+    std::thread::available_parallelism()
+      .map(|n| n.get() as i32)
+      .unwrap_or(4)
+      .clamp(1, 16)
+  }
+}
+
+/// Acquire the resident layout engine for the currently selected model
+/// (`settings.ocr_layout_model`). Fails when the model directory is missing -
+/// callers degrade to `rule` mode instead of aborting the conversion.
+pub fn acquire_layout_engine(
+  app: &AppHandle,
+  settings: &crate::models::AppSettings,
+) -> Result<Arc<Mutex<layout::LayoutEngine>>, String> {
+  use tauri::Manager;
+  let model = &settings.ocr_layout_model;
+  let dir = layout::find_layout_model_dir(model).ok_or_else(|| {
+    format!(
+      "Layout model '{model}' not found under {}",
+      layout::layout_models_dir().display()
+    )
+  })?;
+  let cache = app.state::<LayoutEngineCache>();
+  let mut guard = cache.0.lock().unwrap_or_else(|e| e.into_inner());
+  if let Some(engine) = guard.as_ref() {
+    return Ok(engine.clone());
+  }
+  let engine = Arc::new(Mutex::new(layout::LayoutEngine::new(
+    &dir,
+    inference_threads(settings.local_ocr_threads),
+    settings.ocr_low_precision,
+    settings.layout_score_threshold,
+  )?));
+  *guard = Some(engine.clone());
+  Ok(engine)
 }
 
 /// Some vision models wrap their markdown answer in a fenced code block even
@@ -950,34 +1014,92 @@ pub async fn ocr_page_in_session(
 /// Run one page through the local OCR engine, returning the markdown plus the
 /// page's average recognition confidence (0..1).
 fn local_ocr_page(app: &AppHandle, page: u32, image_png: &str) -> Result<(String, f32), String> {
-  use tauri::Manager;
   // Decode the PNG image from base64
   let image_data = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, image_png)
     .map_err(|e| format!("Failed to decode base64 image: {e}"))?;
 
-  // Shared/resident local OCR engine.
-  let cache = app.state::<OcrEngineCache>();
-  let engine = acquire_local_ocr_engine(app, &cache)?;
+  let paragraph_mode = settings::get_app_settings(app)?.paragraph_mode;
 
-  // Use the configured text separator and paragraph policy.
-  let settings = settings::get_app_settings(app)?;
-  let sep = settings.text_separator;
-  let paragraph_mode = settings.paragraph_mode;
-
-  // Run OCR
-  let (text, confidence) = {
-    let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
-    eng.recognize_bytes_with_confidence(&image_data, &sep)?
-  };
+  // Dispatch by the layout mode (off / rule / paddle), sharing the resident
+  // OCR engine cache with every other local path.
+  let (text, confidence) = recognize_bytes_with_layout(app, &image_data)?;
 
   if text.trim().is_empty() {
     return Err(format!("Local OCR returned no content (page {page})"));
   }
 
   // Local OCR has no geometry - the textual heuristics decide which visual
-  // lines belong to the same paragraph.
+  // lines belong to the same paragraph. Layout regions already carry their
+  // own structure (headings / blank lines between regions), which the
+  // heuristics keep intact.
   let text = paragraph::apply_text(&text, paragraph_mode);
   Ok((text.trim().to_string(), confidence))
+}
+
+/// Recognize one page image with the configured layout mode
+/// (docs/design/00016_local-ocr-layout-analysis.md).
+///
+/// - `off` → the historical Y→X line output, byte-identical to before.
+/// - `rule` → zero-model geometric regions (columns / headings / header &
+///   footer bands).
+/// - `paddle` → MNN layout model regions, degraded to `rule` when the
+///   selected model directory is missing.
+///
+/// Returns the assembled markdown plus the average OCR confidence (0..1) of
+/// the OCR blocks - layout scores never mix into the confidence chain.
+pub fn recognize_bytes_with_layout(
+  app: &AppHandle,
+  image_data: &[u8],
+) -> Result<(String, f32), String> {
+  use tauri::Manager;
+  let settings = settings::get_app_settings(app)?;
+  let ocr_cache = app.state::<OcrEngineCache>();
+  let engine = acquire_local_ocr_engine(app, &ocr_cache)?;
+
+  if settings.ocr_layout_mode == LayoutMode::Off {
+    let (text, confidence) = {
+      let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
+      eng.recognize_bytes_with_confidence(image_data, &settings.text_separator)?
+    };
+    return Ok((text, confidence));
+  }
+
+  // Layout path: one detection pass over the page, then region-based assembly.
+  let image =
+    image::load_from_memory(image_data).map_err(|e| format!("Failed to load image: {e}"))?;
+  let rec = {
+    let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
+    eng.recognize_png_blocks(image_data)?
+  };
+  let page_w = image.width() as f64;
+  let page_h = image.height() as f64;
+
+  let mut regions = match settings.ocr_layout_mode {
+    LayoutMode::Rule => layout::rule_detect(&rec.blocks, page_w, page_h),
+    LayoutMode::Paddle => match acquire_layout_engine(app, &settings) {
+      Ok(layout_engine) => {
+        let layout_engine = layout_engine.lock().unwrap_or_else(|e| e.into_inner());
+        layout_engine.detect(&image)?
+      }
+      Err(e) => {
+        // Missing / broken model: degrade to the rule behaviour and record a
+        // notice instead of failing the conversion (design §5 risk table).
+        eprintln!("[layout] paddle mode degraded to rule: {e}");
+        layout::rule_detect(&rec.blocks, page_w, page_h)
+      }
+    },
+    LayoutMode::Off => unreachable!("off mode handled above"),
+  };
+  layout::sort_reading_order(&mut regions, page_w, page_h);
+
+  let md = layout::assemble_markdown(
+    &regions,
+    &rec.blocks,
+    page_h,
+    &settings.text_separator,
+    settings.layout_drop_header_footer,
+  );
+  Ok((md, rec.confidence))
 }
 
 /// Reassemble text + OCR pages in document order and drop the session.
@@ -1061,21 +1183,13 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
   let (markdown, ocr_confidence) = if mode.is_local() {
     // Local PaddleOCR is CPU-bound model inference - run it off the async
     // runtime so concurrent conversions never block each other's futures.
-    use tauri::Manager;
-    let sep = settings::get_app_settings(app)?.text_separator;
     let app = app.clone();
     let path = path.to_string();
-    // Shared/resident engine; the inner
-    // lock serializes concurrent recognitions on the same engine.
-    let cache = app.state::<OcrEngineCache>();
-    let engine = acquire_local_ocr_engine(&app, &cache)?;
     tauri::async_runtime::spawn_blocking(move || {
       let image_data =
         std::fs::read(&path).map_err(|e| format!("Failed to read image file: {e}"))?;
-      let (text, confidence) = {
-        let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
-        eng.recognize_bytes_with_confidence(&image_data, &sep)?
-      };
+      let paragraph_mode = settings::get_app_settings(&app)?.paragraph_mode;
+      let (text, confidence) = recognize_bytes_with_layout(&app, &image_data)?;
       if text.trim().is_empty() {
         return Err("Local OCR returned no content".to_string());
       }

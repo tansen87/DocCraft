@@ -10,6 +10,7 @@ import type {
   HybridSessionInfo,
   ImageTableRequest,
   ImageTableResult,
+  LayoutModelInfo,
   MdAnalyzeResult,
   MdExportResult,
   OcrImageResult,
@@ -95,6 +96,10 @@ export const getAppSettings = () => invoke<AppSettings>("get_app_settings");
 
 export const setAppSettings = (settings: AppSettings) =>
   invoke<void>("set_app_settings", { settings });
+
+/** List the layout models discovered under `resources/models/layout/`. */
+export const listLayoutModels = () =>
+  invoke<LayoutModelInfo[]>("list_layout_models");
 
 /** Append one usage event to the local JSONL stats log (never uploaded). */
 export const recordUsage = (entry: UsageInput) =>

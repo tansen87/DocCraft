@@ -9,9 +9,12 @@
 /resources/models/PP-OCRv6_medium_det.mnn
 /resources/models/PP-OCRv6_medium_rec.mnn
 /resources/models/ppocr_keys_v6_medium.txt
-/resources/models/ppocr_keys_v6_small.txt
-/resources/models/PP-OCRv6_small_det.mnn
-/resources/models/PP-OCRv6_small_rec.mnn
-/resources/models/ppocr_keys_v6_tiny.txt
-/resources/models/PP-OCRv6_tiny_det.mnn
-/resources/models/PP-OCRv6_tiny_rec.mnn
+# /resources/models/ppocr_keys_v6_small.txt
+# /resources/models/PP-OCRv6_small_det.mnn
+# /resources/models/PP-OCRv6_small_rec.mnn
+# /resources/models/ppocr_keys_v6_tiny.txt
+# /resources/models/PP-OCRv6_tiny_det.mnn
+# /resources/models/PP-OCRv6_tiny_rec.mnn
+# Layout analysis models (docs/design/00016): the .mnn weights are ignored,
+# while layout-meta.json + README stay tracked so the pool is discoverable.
+# /resources/models/layout/**/*.mnn

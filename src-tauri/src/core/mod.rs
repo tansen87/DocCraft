@@ -2,6 +2,7 @@ pub mod config_transfer;
 pub mod convert;
 pub mod extract_cache;
 pub mod grid_rebuild;
+pub mod layout;
 pub mod line_draw;
 pub mod md_to_xlsx;
 pub mod ocr;

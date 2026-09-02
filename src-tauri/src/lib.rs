@@ -266,6 +266,16 @@ fn apply_app_settings(app: &tauri::AppHandle, settings: AppSettings) -> Result<(
     app.state::<core::ocr::OcrEngineCache>().clear();
     app.state::<core::ocr::SnipEngineCache>().clear();
   }
+  // Layout-analysis settings (docs/design/00016) invalidate the resident
+  // layout engine: selected model, its score threshold, or shared inference
+  // parameters changed.
+  let layout_params_changed = settings_now.ocr_layout_model != before.ocr_layout_model
+    || settings_now.layout_score_threshold != before.layout_score_threshold
+    || settings_now.ocr_low_precision != before.ocr_low_precision
+    || settings_now.local_ocr_threads != before.local_ocr_threads;
+  if layout_params_changed {
+    app.state::<core::ocr::LayoutEngineCache>().clear();
+  }
   Ok(())
 }
 
@@ -273,6 +283,15 @@ fn apply_app_settings(app: &tauri::AppHandle, settings: AppSettings) -> Result<(
 #[tauri::command]
 async fn set_app_settings(app: tauri::AppHandle, settings: AppSettings) -> Result<(), String> {
   apply_app_settings(&app, settings)
+}
+
+/// List the layout models discovered under `resources/models/layout/`
+/// (docs/design/00016 §3.1 / §4). Every subdirectory with a valid
+/// `layout-meta.json` is returned; `available` tells the settings page
+/// whether a usable `model.mnn` is bundled.
+#[tauri::command]
+fn list_layout_models() -> Vec<core::layout::LayoutModelInfo> {
+  core::layout::list_layout_models()
 }
 
 /// Append one usage event to the local JSONL stats log (never uploaded).
@@ -548,6 +567,7 @@ pub fn run() {
     .manage(crate::core::snip::SnipHotkey::default())
     .manage(core::ocr::OcrEngineCache::default())
     .manage(core::ocr::SnipEngineCache::default())
+    .manage(core::ocr::LayoutEngineCache::default())
     .manage(TrayState::default())
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
@@ -627,6 +647,7 @@ pub fn run() {
       reveal_ocr_key,
       get_app_settings,
       set_app_settings,
+      list_layout_models,
       record_usage,
       get_usage_stats,
       clear_usage_stats,

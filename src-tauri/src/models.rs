@@ -453,6 +453,27 @@ pub struct AppSettings {
   /// matching the pre-setting behaviour. Positive values use the user's choice.
   #[serde(default)]
   pub local_ocr_threads: u32,
+  /// Layout analysis applied to local OCR pages (docs/design/00016).
+  /// `off` keeps the current behaviour (pure Y→X sorting), `rule` runs the
+  /// zero-model geometric heuristics (columns / headings / header-footer
+  /// bands), `paddle` runs the selected MNN layout model and falls back to
+  /// `rule` when the model is missing.
+  #[serde(default)]
+  pub ocr_layout_mode: LayoutMode,
+  /// Selected layout model: the subdirectory name under
+  /// `resources/models/layout/` that carries a `model.mnn` +
+  /// `layout-meta.json`. Missing / unknown values make `paddle` mode degrade
+  /// to `rule` (with a notification) instead of failing the conversion.
+  #[serde(default = "default_layout_model")]
+  pub ocr_layout_model: String,
+  /// Confidence threshold (0..1) for Paddle layout detections (PicoDet
+  /// recommends 0.5). Only applies to `paddle` mode.
+  #[serde(default = "default_layout_score_threshold")]
+  pub layout_score_threshold: f32,
+  /// Drop `page_header` / `page_footer` regions from the layout output
+  /// instead of keeping them as HTML comments. `paddle` mode only.
+  #[serde(default = "default_true")]
+  pub layout_drop_header_footer: bool,
 }
 
 /// How extracted text lines are joined into paragraphs (PDF text pages and
@@ -522,6 +543,35 @@ pub enum OcrModelSize {
   Small,
   Tiny,
   Medium,
+}
+
+/// Layout analysis mode applied to local OCR pages (docs/design/00016).
+/// Serialized as a lowercase string (`"off"` / `"rule"` / `"paddle"`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase", try_from = "String")]
+pub enum LayoutMode {
+  /// No layout analysis - the current Y→X sorted line output, byte-identical
+  /// to previous behaviour. Default, zero regression risk.
+  #[default]
+  Off,
+  /// Pure geometric heuristics (no model): XY-Cut column detection, heading
+  /// font-size heuristic, top/bottom header-footer band filtering.
+  Rule,
+  /// Paddle layout detection model (PicoDet) via MNN. Falls back to `rule`
+  /// when the selected model directory is missing.
+  Paddle,
+}
+
+impl TryFrom<String> for LayoutMode {
+  type Error = std::convert::Infallible;
+  fn try_from(s: String) -> Result<Self, Self::Error> {
+    Ok(match s.trim().to_ascii_lowercase().as_str() {
+      "rule" | "geometric" | "xycut" => Self::Rule,
+      "paddle" | "model" | "mnn" => Self::Paddle,
+      // Unknown / pre-existing configs fall back to off (no behaviour change).
+      _ => Self::Off,
+    })
+  }
 }
 
 impl OcrModelSize {
@@ -821,6 +871,14 @@ fn default_text_separator() -> String {
   "|".to_string()
 }
 
+fn default_layout_model() -> String {
+  "PP-DocLayout-S".to_string()
+}
+
+fn default_layout_score_threshold() -> f32 {
+  0.5
+}
+
 fn default_snip_result_opacity() -> u32 {
   60
 }
@@ -851,6 +909,10 @@ impl Default for AppSettings {
       draw_table_prompt: String::new(),
       paragraph_mode: ParagraphMode::default(),
       local_ocr_threads: 0,
+      ocr_layout_mode: LayoutMode::default(),
+      ocr_layout_model: default_layout_model(),
+      layout_score_threshold: default_layout_score_threshold(),
+      layout_drop_header_footer: true,
     }
   }
 }

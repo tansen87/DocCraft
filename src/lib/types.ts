@@ -160,6 +160,26 @@ export interface AppSettings {
    * Positive values use the user's explicit choice (clamped to 1–16).
    */
   localOcrThreads?: number;
+  /**
+   * Layout analysis applied to local OCR pages (docs/design/00016):
+   *  - "off": current behaviour (pure Y→X line output) - default, no change.
+   *  - "rule": zero-model geometric heuristics (columns / headings /
+   *    header-footer bands).
+   *  - "paddle": MNN layout model; degrades to "rule" when the model is
+   *    not bundled.
+   */
+  ocrLayoutMode?: LayoutMode;
+  /**
+   * Selected layout model: subdirectory name under
+   * `resources/models/layout/` carrying `model.mnn` + `layout-meta.json`
+   * (default "PP-DocLayout-S"). Missing models degrade `paddle` to `rule`.
+   */
+  ocrLayoutModel?: string;
+  /** Confidence threshold (0..1) for Paddle layout detections (default 0.5). */
+  layoutScoreThreshold?: number;
+  /** Drop page header/footer regions instead of keeping them as HTML comments
+   *  (paddle mode, default true). */
+  layoutDropHeaderFooter?: boolean;
 }
 
 export type OcrMode =
@@ -171,6 +191,28 @@ export type OcrMode =
 
 /** Local PaddleOCR model tier (files bundled under resources/ppocr). */
 export type OcrModelSize = "tiny" | "small" | "medium";
+
+/**
+ * Layout analysis mode for local OCR pages (docs/design/00016).
+ *  - "off": current behaviour (default) - pure Y→X line output.
+ *  - "rule": zero-model geometric heuristics.
+ *  - "paddle": MNN layout model (degrades to "rule" when not bundled).
+ */
+export type LayoutMode = "off" | "rule" | "paddle";
+
+/** One layout model discovered under `resources/models/layout/`. */
+export interface LayoutModelInfo {
+  /** Subdirectory name (= the `ocrLayoutModel` setting value). */
+  dir: string;
+  displayName: string;
+  /** Number of classes the model can emit. */
+  classCount: number;
+  /** Processing buckets the model covers (title/text/table/figure/...). */
+  buckets: string[];
+  /** False when the directory lacks a usable `model.mnn`; `paddle` then
+   *  degrades to `rule` mode. */
+  available: boolean;
+}
 
 /**
  * Paragraph line-break policy (backend `ParagraphMode`):

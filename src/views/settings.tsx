@@ -48,7 +48,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { GlassPanel } from "@/components/ui/glass-panel";
-import type { OcrMode, OcrModelSize, ParagraphMode } from "@/lib/types";
+import type {
+  OcrMode,
+  OcrModelSize,
+  ParagraphMode,
+  LayoutMode,
+} from "@/lib/types";
 import {
   Tooltip,
   TooltipContent,
@@ -66,6 +71,7 @@ import {
   getOcrConfig,
   getUsageStats,
   importConfig,
+  listLayoutModels,
   revealOcrKey,
   saveOcrConfig,
   setAppSettings,
@@ -73,11 +79,12 @@ import {
 } from "@/lib/ipc";
 import { setMaxConcurrent as applyRuntimeConcurrency } from "@/lib/concurrency";
 import { useI18n } from "@/i18n";
-import type { TranslationKey } from "@/i18n/translations";
+import { translations, type TranslationKey } from "@/i18n/translations";
 import { formatDuration } from "@/lib/format-duration";
 import { localDate } from "@/lib/usage";
 import type {
   AppSettings,
+  LayoutModelInfo,
   OcrModel,
   OcrVendor,
   OcrVendorInput,
@@ -204,6 +211,11 @@ export function SettingsView() {
   const [screenshotHotkey, setScreenshotHotkey] = useState("");
   const [ocrLowPrecision, setOcrLowPrecision] = useState(true);
   const [ocrModelSize, setOcrModelSize] = useState<OcrModelSize>("small");
+  const [ocrLayoutMode, setOcrLayoutMode] = useState<LayoutMode>("off");
+  const [ocrLayoutModel, setOcrLayoutModel] = useState("PP-DocLayout-S");
+  const [layoutModels, setLayoutModels] = useState<LayoutModelInfo[]>([]);
+  const [layoutScoreThreshold, setLayoutScoreThreshold] = useState(0.5);
+  const [layoutDropHeaderFooter, setLayoutDropHeaderFooter] = useState(true);
   const [textSeparator, setTextSeparator] = useState("|");
   const [paragraphMode, setParagraphMode] = useState<ParagraphMode>("smart");
   const [aiOcrPrompt, setAiOcrPrompt] = useState("");
@@ -225,9 +237,15 @@ export function SettingsView() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.all([getOcrConfig(), getAppSettings(), getUsageStats(localDate())])
-      .then(([ocrVendors, settings, usage]) => {
+    Promise.all([
+      getOcrConfig(),
+      getAppSettings(),
+      getUsageStats(localDate()),
+      listLayoutModels().catch(() => []),
+    ])
+      .then(([ocrVendors, settings, usage, layoutModels]) => {
         if (cancelled) return;
+        setLayoutModels(layoutModels);
         setVendors(ocrVendors.map(toForm));
         setOcrMode(settings.ocrMode);
         setMaxConcurrent(clampThread(settings.maxConcurrent));
@@ -238,6 +256,10 @@ export function SettingsView() {
         setScreenshotHotkey(settings.screenshotHotkey ?? "");
         setOcrLowPrecision(settings.ocrLowPrecision ?? true);
         setOcrModelSize(settings.ocrModelSize ?? "small");
+        setOcrLayoutMode(settings.ocrLayoutMode ?? "off");
+        setOcrLayoutModel(settings.ocrLayoutModel ?? "PP-DocLayout-S");
+        setLayoutScoreThreshold(settings.layoutScoreThreshold ?? 0.5);
+        setLayoutDropHeaderFooter(settings.layoutDropHeaderFooter ?? true);
         setTextSeparator(settings.textSeparator);
         setParagraphMode(settings.paragraphMode ?? "smart");
         setAiOcrPrompt(settings.aiOcrPrompt ?? "");
@@ -305,6 +327,12 @@ export function SettingsView() {
       enableTray,
       ocrLowPrecision,
       ocrModelSize,
+      ocrLayoutMode,
+      ocrLayoutModel,
+      layoutScoreThreshold: Number.isFinite(layoutScoreThreshold)
+        ? Math.min(1, Math.max(0, layoutScoreThreshold))
+        : 0.5,
+      layoutDropHeaderFooter,
       textSeparator,
       paragraphMode,
       aiOcrPrompt,
@@ -500,6 +528,27 @@ export function SettingsView() {
                   ocrModelSize={ocrModelSize}
                   onOcrModelSizeChange={(v) => {
                     setOcrModelSize(v);
+                    markDirty();
+                  }}
+                  ocrLayoutMode={ocrLayoutMode}
+                  onOcrLayoutModeChange={(v) => {
+                    setOcrLayoutMode(v);
+                    markDirty();
+                  }}
+                  ocrLayoutModel={ocrLayoutModel}
+                  onOcrLayoutModelChange={(v) => {
+                    setOcrLayoutModel(v);
+                    markDirty();
+                  }}
+                  layoutModels={layoutModels}
+                  layoutScoreThreshold={layoutScoreThreshold}
+                  onLayoutScoreThresholdChange={(v) => {
+                    setLayoutScoreThreshold(v);
+                    markDirty();
+                  }}
+                  layoutDropHeaderFooter={layoutDropHeaderFooter}
+                  onLayoutDropHeaderFooterChange={(v) => {
+                    setLayoutDropHeaderFooter(v);
                     markDirty();
                   }}
                   aiOcrPrompt={aiOcrPrompt}
@@ -731,7 +780,7 @@ function SettingRow({
       <div className="min-w-0 space-y-0.5">
         <Label htmlFor={htmlFor}>{label}</Label>
         {description ? (
-          <p className="text-xs leading-relaxed text-muted-foreground">
+          <p className="text-xs leading-relaxed text-muted-foreground whitespace-pre-line">
             {description}
           </p>
         ) : null}
@@ -762,6 +811,17 @@ function SectionHeader({
   );
 }
 
+/** Per-model description for the layout model select: shows the description
+ * of the currently selected model, falling back to the generic pool note for
+ * models without a dedicated entry. */
+function layoutModelDescription(
+  dir: string,
+  t: (key: TranslationKey) => string,
+): string {
+  const key = `settings.layoutModelDesc.${dir}` as TranslationKey;
+  return key in translations.en ? t(key) : t("settings.ocrLayoutModelDesc");
+}
+
 function OcrSettingsPanel({
   vendors,
   onChange,
@@ -772,6 +832,15 @@ function OcrSettingsPanel({
   onOcrLowPrecisionChange,
   ocrModelSize,
   onOcrModelSizeChange,
+  ocrLayoutMode,
+  onOcrLayoutModeChange,
+  ocrLayoutModel,
+  onOcrLayoutModelChange,
+  layoutModels,
+  layoutScoreThreshold,
+  onLayoutScoreThresholdChange,
+  layoutDropHeaderFooter,
+  onLayoutDropHeaderFooterChange,
   aiOcrPrompt,
   onAiOcrPromptChange,
   drawTablePrompt,
@@ -786,6 +855,15 @@ function OcrSettingsPanel({
   onOcrLowPrecisionChange: (v: boolean) => void;
   ocrModelSize: OcrModelSize;
   onOcrModelSizeChange: (v: OcrModelSize) => void;
+  ocrLayoutMode: LayoutMode;
+  onOcrLayoutModeChange: (v: LayoutMode) => void;
+  ocrLayoutModel: string;
+  onOcrLayoutModelChange: (v: string) => void;
+  layoutModels: LayoutModelInfo[];
+  layoutScoreThreshold: number;
+  onLayoutScoreThresholdChange: (v: number) => void;
+  layoutDropHeaderFooter: boolean;
+  onLayoutDropHeaderFooterChange: (v: boolean) => void;
   aiOcrPrompt: string;
   onAiOcrPromptChange: (v: string) => void;
   drawTablePrompt: string;
@@ -972,6 +1050,101 @@ function OcrSettingsPanel({
             disabled={loading}
           />
         </SettingRow>
+      </Panel>
+
+      {/* Layout analysis (docs/design/00016): off / rule / paddle. The
+          model + sub-options only expand for the paddle tier. */}
+      <Panel>
+        <SettingRow
+          label={t("settings.ocrLayoutMode")}
+          description={t(`settings.ocrLayoutMode.${ocrLayoutMode}Desc`)}
+        >
+          <Select
+            value={ocrLayoutMode}
+            onValueChange={(v) => onOcrLayoutModeChange(v as LayoutMode)}
+            disabled={loading}
+          >
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="off">
+                {t("settings.ocrLayoutMode.off")}
+              </SelectItem>
+              <SelectItem value="rule">
+                {t("settings.ocrLayoutMode.rule")}
+              </SelectItem>
+              <SelectItem value="paddle">
+                {t("settings.ocrLayoutMode.paddle")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </SettingRow>
+        {ocrLayoutMode === "paddle" ? (
+          <>
+            <SettingRow
+              label={t("settings.ocrLayoutModel")}
+              description={layoutModelDescription(ocrLayoutModel, t)}
+            >
+              <Select
+                value={ocrLayoutModel}
+                onValueChange={(v) => onOcrLayoutModelChange(v)}
+                disabled={loading}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {layoutModels.length === 0 ? (
+                    <SelectItem value={ocrLayoutModel} disabled>
+                      {ocrLayoutModel}
+                    </SelectItem>
+                  ) : (
+                    layoutModels.map((m) => (
+                      <SelectItem key={m.dir} value={m.dir}>
+                        {m.displayName}
+                        {m.available
+                          ? ""
+                          : ` (${t("settings.layoutModelMissing")})`}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </SettingRow>
+            <SettingRow
+              label={t("settings.layoutScoreThreshold")}
+              description={t("settings.layoutScoreThresholdDesc")}
+            >
+              <Input
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                className="w-24"
+                value={
+                  Number.isFinite(layoutScoreThreshold)
+                    ? layoutScoreThreshold
+                    : ""
+                }
+                onChange={(e) =>
+                  onLayoutScoreThresholdChange(Number(e.target.value))
+                }
+                disabled={loading}
+              />
+            </SettingRow>
+            <SettingRow
+              label={t("settings.layoutDropHeaderFooter")}
+              description={t("settings.layoutDropHeaderFooterDesc")}
+            >
+              <Switch
+                checked={layoutDropHeaderFooter}
+                onCheckedChange={onLayoutDropHeaderFooterChange}
+                disabled={loading}
+              />
+            </SettingRow>
+          </>
+        ) : null}
       </Panel>
 
       {/* Custom prompts for the remote AI vision paths (empty = built-in
