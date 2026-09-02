@@ -1,0 +1,39 @@
+[project]
+name = "paddle-to-mnn"
+version = "1.0.0"
+description = "Convert PaddlePaddle inference models (PP-DocLayout-S, PP-OCR, ...) to MNN"
+readme = "convert_paddle_to_mnn.py"
+requires-python = ">=3.9"
+# The conversion script shells out to `paddle2onnx` and `mnnconvert` (both
+# installed as console scripts of the packages below) and uses `yaml` when
+# available. It does not import paddle/paddle2onnx/mnn directly, but the CLI
+# tools need them to run.
+dependencies = [
+    # paddle2onnx 2.1.0 requires paddlepaddle >= 3.0.0.dev20250426.
+    # On win32 it additionally hard-rejects the stable 3.0.0 build
+    # (see paddle2onnx/__init__.py), so enforce >=3.1.0 on Windows.
+    "paddlepaddle>=3.1.0; sys_platform == 'win32'",
+    "paddlepaddle>=3.0.0; sys_platform != 'win32'",
+    "paddle2onnx==2.1.0",
+    # Provides the `mnnconvert` console script (MNN converter).
+    "mnn>=3.6.1",
+    # Optional: only used to parse inference.yml (falls back gracefully).
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# Full PaddleOCR/PaddleX stack (v3), matching the JSON-format models in this
+# directory (PicoDet-S_layout_17cls, PP_DocLayout_S). Install with:
+#   pip install -e ".[full]"
+full = [
+    "paddleocr==3.0.0",
+    "paddlex==3.0.0",
+]
+
+[project.scripts]
+# Expose the converter for convenience; run with:  paddle-to-mnn --help
+paddle-to-mnn = "convert_paddle_to_mnn:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
