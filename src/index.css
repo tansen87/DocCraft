@@ -322,6 +322,14 @@ body,
   -webkit-backdrop-filter: blur(var(--glass-blur, 20px));
 }
 
+/* Always-on frosted blur for the floating exclusion panel: it must stay
+   blurred even when the user's blur toggle is off (which zeroes --glass-blur),
+   so the blur is hard-coded instead of reading the variable. */
+@utility glass-blur-always {
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
 @layer components {
   .glass-panel {
     position: relative;

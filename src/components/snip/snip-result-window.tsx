@@ -202,7 +202,7 @@ export function SnipResultWindow() {
   const [pinned, setPinned] = useState(false);
   const [copied, setCopied] = useState(false);
   const [glassOpacity, setGlassOpacity] = useState(60);
-  const [glassBlurEnabled, setGlassBlurEnabled] = useState(true);
+  const [glassBlurEnabled, setGlassBlurEnabled] = useState(false);
   // Tooltip open state for each button - closed on pointer-down so dragging
   // the header never leaves a stale tooltip visible.
   const [pinTipOpen, setPinTipOpen] = useState(false);
@@ -223,7 +223,7 @@ export function SnipResultWindow() {
     getAppSettings()
       .then((s) => {
         setGlassOpacity(s.snipResultOpacity ?? 60);
-        setGlassBlurEnabled(s.glassBlurEnabled ?? true);
+        setGlassBlurEnabled(s.glassBlurEnabled ?? false);
       })
       .catch(() => {});
   }, []);
@@ -290,7 +290,7 @@ export function SnipResultWindow() {
     getAppSettings()
       .then((s) => {
         setGlassOpacity(s.snipResultOpacity ?? 60);
-        setGlassBlurEnabled(s.glassBlurEnabled ?? true);
+        setGlassBlurEnabled(s.glassBlurEnabled ?? false);
       })
       .catch(() => {});
   }

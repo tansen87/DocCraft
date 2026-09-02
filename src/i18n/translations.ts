@@ -135,11 +135,11 @@ const en = {
   "settings.snipResultOpacity": "Identify window opacity",
   "settings.snipResultOpacityDesc":
     "Background transparency of the result window (0 = fully transparent, 100 = fully opaque)",
-  "settings.mainWindowOpacity": "Main window opacity",
+  "settings.mainWindowOpacity": "Background transparency",
   "settings.mainWindowOpacityDesc":
     "Background transparency of the main window (0 = fully transparent, 100 = fully opaque)",
-  "settings.glass": "Glass appearance",
-  "settings.glassBlur": "Blur effect",
+  "settings.glass": "Interface adjustment",
+  "settings.glassBlur": "Gaussian blur",
   "settings.glassBlurDesc": "Frosted-glass blur on the main and result windows",
   "settings.screenshotHotkey": "Screenshot hotkey",
   "settings.screenshotHotkeyHint": "Global key that opens region capture",
@@ -556,11 +556,11 @@ const zh: Record<TranslationKey, string> = {
   "settings.snipResultOpacity": "识别窗口透明度",
   "settings.snipResultOpacityDesc":
     "识别窗口背景的透明度 (0 = 完全透明, 100 = 完全不透明)",
-  "settings.mainWindowOpacity": "主窗口透明度",
+  "settings.mainWindowOpacity": "背景透明度",
   "settings.mainWindowOpacityDesc":
     "主窗口背景的透明度 (0 = 完全透明, 100 = 完全不透明)",
-  "settings.glass": "玻璃外观",
-  "settings.glassBlur": "模糊效果",
+  "settings.glass": "界面调节",
+  "settings.glassBlur": "高斯模糊",
   "settings.glassBlurDesc": "主窗口与识别窗口的毛玻璃模糊效果",
   "settings.screenshotHotkey": "截图识别快捷键",
   "settings.screenshotHotkeyHint": "全局触发截图识别的按键",

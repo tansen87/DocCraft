@@ -97,12 +97,12 @@ type SettingsSection =
   | "ocr"
   | "threads"
   | "snip"
-  | "glass"
   | "textSep"
   | "tray"
   | "draw"
   | "excel"
   | "backup"
+  | "glass"
   | "stats";
 
 const SECTIONS: {
@@ -111,12 +111,12 @@ const SECTIONS: {
     | "settings.ocr"
     | "settings.threads"
     | "snip.capture"
-    | "settings.glass"
     | "settings.textAndLineBreak"
     | "settings.tray"
     | "settings.drawTable"
     | "settings.excel"
     | "settings.backup"
+    | "settings.glass"
     | "settings.stats";
   icon: typeof ScanText;
 }[] = [
@@ -129,11 +129,6 @@ const SECTIONS: {
     id: "snip",
     labelKey: "snip.capture",
     icon: Camera,
-  },
-  {
-    id: "glass",
-    labelKey: "settings.glass",
-    icon: Sparkles,
   },
   {
     id: "textSep",
@@ -164,6 +159,11 @@ const SECTIONS: {
     id: "stats",
     labelKey: "settings.stats",
     icon: BarChart3,
+  },
+  {
+    id: "glass",
+    labelKey: "settings.glass",
+    icon: Sparkles,
   },
   {
     id: "tray",
@@ -225,7 +225,7 @@ export function SettingsView() {
   const [snipAutoCopy, setSnipAutoCopy] = useState(true);
   const [snipResultOpacity, setSnipResultOpacity] = useState(60);
   const [mainWindowOpacity, setMainWindowOpacity] = useState(100);
-  const [glassBlurEnabled, setGlassBlurEnabled] = useState(true);
+  const [glassBlurEnabled, setGlassBlurEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -275,7 +275,7 @@ export function SettingsView() {
         setSnipAutoCopy(settings.snipAutoCopy ?? true);
         setSnipResultOpacity(settings.snipResultOpacity ?? 60);
         setMainWindowOpacity(settings.mainWindowOpacity ?? 100);
-        setGlassBlurEnabled(settings.glassBlurEnabled ?? true);
+        setGlassBlurEnabled(settings.glassBlurEnabled ?? false);
         setUsageStats(usage);
         setLoaded(true);
       })
@@ -590,46 +590,6 @@ export function SettingsView() {
                   disabled={loading}
                 />
               </section>
-              <section id="settings-glass" className="scroll-mt-3">
-                <SectionHeader title={t("settings.glass")} />
-                <GlassSettingsPanel
-                  blurEnabled={glassBlurEnabled}
-                  onBlurEnabledChange={(v) => {
-                    setGlassBlurEnabled(v);
-                    markDirty();
-                    // Live preview: update both windows without saving.
-                    window.dispatchEvent(
-                      new CustomEvent("doccraft:opacity-preview", {
-                        detail: { blur: v },
-                      }),
-                    );
-                    emitTo("snip-result", "snip:settings-changed", {
-                      blur: v,
-                    }).catch(() => {});
-                  }}
-                  resultOpacity={snipResultOpacity}
-                  onResultOpacityChange={(v) => {
-                    setSnipResultOpacity(v);
-                    markDirty();
-                    // Live preview: send value directly to snip result window.
-                    emitTo("snip-result", "snip:settings-changed", {
-                      opacity: v,
-                    }).catch(() => {});
-                  }}
-                  mainOpacity={mainWindowOpacity}
-                  onMainOpacityChange={(v) => {
-                    setMainWindowOpacity(v);
-                    markDirty();
-                    // Live preview: update main window background without saving.
-                    window.dispatchEvent(
-                      new CustomEvent("doccraft:opacity-preview", {
-                        detail: { mainWindow: v },
-                      }),
-                    );
-                  }}
-                  disabled={loading}
-                />
-              </section>
               <section id="settings-textSep" className="scroll-mt-3">
                 <SectionHeader title={t("settings.textAndLineBreak")} />
                 <ParagraphModeSettingsPanel
@@ -710,6 +670,46 @@ export function SettingsView() {
                   onCleared={() => void refreshUsage()}
                 />
               </section>
+              <section id="settings-glass" className="scroll-mt-3">
+                <SectionHeader title={t("settings.glass")} />
+                <GlassSettingsPanel
+                  blurEnabled={glassBlurEnabled}
+                  onBlurEnabledChange={(v) => {
+                    setGlassBlurEnabled(v);
+                    markDirty();
+                    // Live preview: update both windows without saving.
+                    window.dispatchEvent(
+                      new CustomEvent("doccraft:opacity-preview", {
+                        detail: { blur: v },
+                      }),
+                    );
+                    emitTo("snip-result", "snip:settings-changed", {
+                      blur: v,
+                    }).catch(() => {});
+                  }}
+                  resultOpacity={snipResultOpacity}
+                  onResultOpacityChange={(v) => {
+                    setSnipResultOpacity(v);
+                    markDirty();
+                    // Live preview: send value directly to snip result window.
+                    emitTo("snip-result", "snip:settings-changed", {
+                      opacity: v,
+                    }).catch(() => {});
+                  }}
+                  mainOpacity={mainWindowOpacity}
+                  onMainOpacityChange={(v) => {
+                    setMainWindowOpacity(v);
+                    markDirty();
+                    // Live preview: update main window background without saving.
+                    window.dispatchEvent(
+                      new CustomEvent("doccraft:opacity-preview", {
+                        detail: { mainWindow: v },
+                      }),
+                    );
+                  }}
+                  disabled={loading}
+                />
+              </section>
               <section id="settings-tray" className="scroll-mt-3">
                 <SectionHeader title={t("settings.tray")} />
                 <TraySettingsPanel
@@ -727,7 +727,10 @@ export function SettingsView() {
 
         {dirty ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center">
-            <GlassPanel className="pointer-events-auto flex animate-in fade-in-0 slide-in-from-bottom-2 items-center gap-3 rounded-full glass-blur py-1.5 pl-4 pr-1.5">
+            <GlassPanel
+              blur={false}
+              className="glass-blur-always pointer-events-auto flex animate-in fade-in-0 slide-in-from-bottom-2 items-center gap-3 rounded-full py-1.5 pl-4 pr-1.5"
+            >
               <span className="text-xs text-muted-foreground">
                 {t("settings.unsavedChanges")}
               </span>

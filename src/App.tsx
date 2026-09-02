@@ -40,7 +40,7 @@ function App() {
   const [tab, setTabState] = useState<WorkspaceTab>(initialTab);
   const { resolvedTheme } = useTheme();
   const [glassOpacity, setGlassOpacity] = useState(100);
-  const [glassBlurEnabled, setGlassBlurEnabled] = useState(true);
+  const [glassBlurEnabled, setGlassBlurEnabled] = useState(false);
 
   const setTab = useCallback((next: WorkspaceTab) => {
     setTabState(next);
@@ -110,7 +110,7 @@ function App() {
       getAppSettings()
         .then((s) => {
           setGlassOpacity(s.mainWindowOpacity ?? 100);
-          setGlassBlurEnabled(s.glassBlurEnabled ?? true);
+          setGlassBlurEnabled(s.glassBlurEnabled ?? false);
         })
         .catch(() => {});
     void load();
