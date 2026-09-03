@@ -1074,7 +1074,7 @@ pub fn recognize_bytes_with_layout(
   let page_w = image.width() as f64;
   let page_h = image.height() as f64;
 
-  let mut regions = match settings.ocr_layout_mode {
+  let regions = match settings.ocr_layout_mode {
     LayoutMode::Paddle => match acquire_layout_engine(app, &settings) {
       Ok(layout_engine) => {
         let layout_engine = layout_engine.lock().unwrap_or_else(|e| e.into_inner());

@@ -118,6 +118,9 @@ fn join_page(markdown: &str, meta: Option<&[LineMeta]>, mode: ParagraphMode) -> 
   });
 
   let mut out: Vec<String> = Vec::with_capacity(lines.len());
+  // Precompute the median line length once per page - it is identical for every
+  // pair of lines, so recomputing it inside the loop would cost O(n² log n).
+  let median = median_line_len(&lines);
   let mut fence = false;
   for (i, line) in lines.iter().enumerate() {
     let trimmed = line.trim();
@@ -148,9 +151,9 @@ fn join_page(markdown: &str, meta: Option<&[LineMeta]>, mode: ParagraphMode) -> 
     let hard = if mode == ParagraphMode::None {
       false
     } else if let (Some(m), Some(g)) = (meta, geom.as_ref()) {
-      hard_break_geometric(prev, line, m, g, i)
+      hard_break_geometric(prev, line, m, g, i, median)
     } else {
-      hard_break_textual(prev, line, &lines)
+      hard_break_textual(prev, line, median)
     };
 
     if hard {
@@ -172,9 +175,10 @@ fn hard_break_geometric(
   meta: &[LineMeta],
   geom: &PageGeom,
   i: usize,
+  median: usize,
 ) -> bool {
   let (Some(m_prev), Some(m_cur)) = (meta.get(i.wrapping_sub(1)), meta.get(i)) else {
-    return hard_break_textual(prev, cur, &[]);
+    return hard_break_textual(prev, cur, median);
   };
 
   // G7 has priority: an English word split by a hyphen must be re-joined even
@@ -232,9 +236,9 @@ fn hard_break_geometric(
 }
 
 /// Decide whether a hard break sits between `prev` and `cur` using only the
-/// text itself (OCR pages have no geometry). `lines` is the whole page for
-/// the median line-length heuristic.
-fn hard_break_textual(prev: &str, cur: &str, lines: &[&str]) -> bool {
+/// text itself (OCR pages have no geometry). `median` is the precomputed
+/// median line length of the whole page, used for the short-line heuristic.
+fn hard_break_textual(prev: &str, cur: &str, median: usize) -> bool {
   // T1: the previous line ends with sentence punctuation.
   if ends_sentence(prev) {
     return true;
@@ -254,7 +258,6 @@ fn hard_break_textual(prev: &str, cur: &str, lines: &[&str]) -> bool {
   }
   // T4: the previous line is a short line (heading / caption), unless it
   // already ended a sentence (which T1 would have caught).
-  let median = median_line_len(lines);
   if median > 0 && prev_trim.chars().count() * 2 < median {
     return true;
   }
@@ -406,13 +409,15 @@ fn starts_block_marker(line: &str) -> bool {
   }
   if first.is_ascii_digit() {
     let num_len = t.chars().take_while(|ch| ch.is_ascii_digit()).count();
-    let after = t[num_len..].chars().next();
-    // 1.   1、  1)  1）  1.1   1:
-    if matches!(
-      after,
-      Some('.') | Some('、') | Some(')') | Some('）') | Some(':') | Some('：')
-    ) {
-      return true;
+    let rest = &t[num_len..];
+    let after = rest.chars().next();
+    // 1、  1)  1）  1:  are always markers; `1.` is a marker only when the dot
+    // is followed by whitespace, so "1. 条款" is a clause but "1.1 背景" (a
+    // version number) is not.
+    match after {
+      Some('.') => return rest[1..].chars().next().is_some_and(char::is_whitespace),
+      Some('、') | Some(')') | Some('）') | Some(':') | Some('：') => return true,
+      _ => {}
     }
   }
   // (1)  （1）
@@ -444,44 +449,30 @@ fn starts_block_marker(line: &str) -> bool {
       }
     }
   }
-  // Latin lettered list:  A.
+  // Latin lettered list:  A. followed by whitespace. A dot NOT followed by
+  // whitespace is an abbreviation, initial or name ("U.S. policy", "J. Smith")
+  // and must not split a paragraph.
   if first.is_ascii_alphabetic() {
     let after = t[1..].chars().next();
     if after == Some('.') {
-      return true;
+      return t[2..].chars().next().is_some_and(char::is_whitespace);
     }
   }
   false
 }
 
-/// Whether a line ends a sentence - a strong paragraph boundary.
+/// Whether a line ends a sentence - a strong paragraph boundary. Only *strong*
+/// enders (sentence punctuation, and the Japanese close quotes `」` `』` that
+/// in Chinese text almost always close a sentence) count; parentheses, ASCII
+/// quotes and apostrophes are only *possible* boundaries and must not split a
+/// paragraph (e.g. "(详见附录一)" or "J. Smith's").
 fn ends_sentence(line: &str) -> bool {
   let Some(last) = line.trim_end().chars().next_back() else {
     return false;
   };
   matches!(
     last,
-    '.'
-      | '。'
-      | '！'
-      | '？'
-      | '…'
-      | '；'
-      | ';'
-      | '!'
-      | '?'
-      | '」'
-      | '』'
-      | '”'
-      | '"'
-      | '’'
-      | '\''
-      | '）'
-      | ')'
-      | ']'
-      | '】'
-      | '}'
-      | '》'
+    '.' | '。' | '！' | '？' | '…' | '；' | ';' | '!' | '?' | '」' | '』'
   )
 }
 
@@ -607,6 +598,37 @@ mod tests {
     let pages = vec!["前一行\n```\nlet x = 1\nlet y = 2\n```\n后一行".to_string()];
     let out = apply(&pages, None, &[], &[], ParagraphMode::Smart);
     assert_eq!(out[0], "前一行\n```\nlet x = 1\nlet y = 2\n```\n后一行");
+  }
+
+  /// Lines ending in closers / quotes / apostrophes are not sentence ends, so
+  /// the following line is merged (P0-2); true sentence punctuation still
+  /// breaks.
+  #[test]
+  fn closers_and_quotes_do_not_split_paragraphs() {
+    let out = apply_text("(详见附录一)\n这是同一段的下一行。", ParagraphMode::Smart);
+    assert_eq!(out, "(详见附录一) 这是同一段的下一行。");
+
+    let out = apply_text("It is John's\nbook, page one.", ParagraphMode::Smart);
+    assert_eq!(out, "It is John's book, page one.");
+
+    let pages = vec!["第一段结尾。\n第二段开始。".to_string()];
+    let out = apply(&pages, None, &[], &[], ParagraphMode::Smart);
+    assert_eq!(out[0], "第一段结尾。\n第二段开始。");
+  }
+
+  /// A letter / digit list marker only splits when the dot is followed by
+  /// whitespace: "A." is a list item, but "U.S." / "J. Smith" / "1.1" are not
+  /// (P0-5).
+  #[test]
+  fn block_marker_dot_requires_whitespace() {
+    assert!(starts_block_marker("A. first item"));
+    assert!(starts_block_marker("1. 条款"));
+    assert!(!starts_block_marker("U.S. policy on trade"));
+    assert!(!starts_block_marker("1.1 背景"));
+
+    let pages = vec!["U.S. policy on trade\nis consistent worldwide.".to_string()];
+    let out = apply(&pages, None, &[], &[], ParagraphMode::Smart);
+    assert_eq!(out[0], "U.S. policy on trade is consistent worldwide.");
   }
 
   /// OCR text heuristic: a sentence-ending line starts a new paragraph, and

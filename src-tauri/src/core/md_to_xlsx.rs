@@ -52,22 +52,44 @@ fn split_cells(line: &str) -> Vec<String> {
   cells
 }
 
+/// Whether a line is a GFM code fence (``` or ~~~), toggling it on the
+/// trimmed line avoids false flips on code that merely contains "```".
+fn is_fence_marker(line: &str) -> bool {
+  let t = line.trim();
+  t.starts_with("```") || t.starts_with("~~~")
+}
+
 /// Split a Markdown document into ordered blocks: GFM tables and plain text
 /// lines. Tables that follow a `<!-- Page N -->` marker are tagged with that
-/// source page; the marker persists across following blocks.
+/// source page; the marker persists across following blocks. Lines inside a
+/// code fence are always emitted as plain lines - the GFM table sample inside
+/// them is documentation, not a real table to export.
 fn parse_md_blocks(content: &str) -> Vec<MdBlock> {
   let lines: Vec<&str> = content.lines().collect();
   let mut blocks = Vec::new();
   let mut current_page: Option<u32> = None;
+  let mut fence = false;
   let mut i = 0usize;
   while i < lines.len() {
-    let line = lines[i].trim();
+    let raw = lines[i];
+    let line = raw.trim();
+    // Fences are recognised before table detection: after toggling, every line
+    // inside (opener, body, closer) is a plain text line.
+    let cur_is_fence = is_fence_marker(line);
+    if cur_is_fence {
+      fence = !fence;
+    }
+    if fence {
+      blocks.push(MdBlock::Line(raw.to_string()));
+      i += 1;
+      continue;
+    }
     if let Some(page) = page_from_line(line) {
       current_page = Some(page);
       i += 1;
       continue;
     }
-    let header = lines[i].trim();
+    let header = line;
     let delim = lines.get(i + 1).map(|l| l.trim()).unwrap_or("");
     if header.starts_with('|') && is_delimiter(delim) {
       let columns = split_cells(header);
@@ -93,9 +115,8 @@ fn parse_md_blocks(content: &str) -> Vec<MdBlock> {
       }));
       i = j;
     } else {
-      let text = lines[i].trim().to_string();
-      if !text.is_empty() {
-        blocks.push(MdBlock::Line(text));
+      if !line.is_empty() {
+        blocks.push(MdBlock::Line(line.to_string()));
       }
       i += 1;
     }
@@ -274,6 +295,22 @@ mod tests {
     assert_eq!(tables[0].rows.len(), 2);
     assert_eq!(tables[0].rows[0], vec!["1", "x"]);
     assert_eq!(tables[0].rows[1], vec!["2", "y"]);
+  }
+
+  #[test]
+  fn ignores_tables_inside_code_fences() {
+    let md = "intro\n\n```md\n| A | B |\n|---|---|\n| sample | table |\n```\n\n| Real | Column |\n|------|--------|\n| 1    | x      |\n";
+    let tables = parse_md_tables(md);
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].columns, vec!["Real", "Column"]);
+    assert_eq!(tables[0].rows[0], vec!["1", "x"]);
+  }
+
+  #[test]
+  fn ignores_tables_inside_tilde_fences() {
+    let md = "before\n\n~~~\n| A | B |\n|---|---|\n| 1 | 2 |\n~~~\n\nafter";
+    let tables = parse_md_tables(md);
+    assert!(tables.is_empty());
   }
 
   #[test]

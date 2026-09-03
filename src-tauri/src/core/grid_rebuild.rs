@@ -427,22 +427,25 @@ fn lines_to_table_markdown(items: &[&TextItem]) -> String {
   out
 }
 
-/// Split `text` at runs of 2+ consecutive spaces (the visible column gaps left
-/// by single-run rows). Pieces are trimmed and empty ones dropped; returns
-/// `None` when there is no such run, so a single intact cell keeps its exact
-/// text (single spaces inside a cell / normal prose stay untouched).
+/// Split `text` at runs of 2+ consecutive whitespace characters (the visible
+/// column gaps left by single-run rows). `char::is_whitespace` covers ASCII
+/// space, the full-width U+3000 and the non-breaking U+00A0, so CJK rows
+/// separated by full-width spaces (`姓名　　年龄`) split correctly. Pieces are
+/// trimmed and empty ones dropped; returns `None` when there is no such run, so
+/// a single intact cell keeps its exact text (single spaces inside a cell /
+/// normal prose stay untouched).
 fn split_at_column_gaps(text: &str) -> Option<Vec<String>> {
-  let bytes = text.as_bytes();
+  let chars: Vec<char> = text.chars().collect();
   let mut cells: Vec<String> = Vec::new();
   let mut seg_start = 0usize;
   let mut i = 0usize;
-  while i < bytes.len() {
-    if bytes[i] == b' ' && i + 1 < bytes.len() && bytes[i + 1] == b' ' {
-      let cell = &text[seg_start..i];
+  while i < chars.len() {
+    if chars[i].is_whitespace() && i + 1 < chars.len() && chars[i + 1].is_whitespace() {
+      let cell: String = chars[seg_start..i].iter().collect();
       if !cell.trim().is_empty() {
         cells.push(cell.trim().to_string());
       }
-      while i < bytes.len() && bytes[i] == b' ' {
+      while i < chars.len() && chars[i].is_whitespace() {
         i += 1;
       }
       seg_start = i;
@@ -450,7 +453,7 @@ fn split_at_column_gaps(text: &str) -> Option<Vec<String>> {
       i += 1;
     }
   }
-  let last = &text[seg_start..];
+  let last: String = chars[seg_start..].iter().collect();
   if !last.trim().is_empty() {
     cells.push(last.trim().to_string());
   }
@@ -560,6 +563,27 @@ mod tests {
     let items2 = vec![item("  padded   ", 72.0, 790.0, 60.0, 12.0)];
     let refs2: Vec<&TextItem> = items2.iter().collect();
     assert_eq!(lines_to_markdown(&refs2, "|"), "padded");
+  }
+
+  /// CJK / latin rows separated by full-width (U+3000) or non-breaking runs
+  /// split into columns too, not just ASCII double-space runs.
+  #[test]
+  fn full_width_and_nbsp_runs_split_cjk_columns() {
+    assert_eq!(
+      split_at_column_gaps("姓名　　年龄　　部门"),
+      Some(vec![
+        "姓名".to_string(),
+        "年龄".to_string(),
+        "部门".to_string()
+      ])
+    );
+    assert_eq!(
+      split_at_column_gaps("P1\u{a0}\u{a0}P2"),
+      Some(vec!["P1".to_string(), "P2".to_string()])
+    );
+    // A single space (half or full width) inside a cell / prose is untouched.
+    assert_eq!(split_at_column_gaps("hello world"), None);
+    assert_eq!(split_at_column_gaps("你好 世界"), None);
   }
 
   #[test]
