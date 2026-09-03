@@ -1074,11 +1074,16 @@ pub fn recognize_bytes_with_layout(
   let page_w = image.width() as f64;
   let page_h = image.height() as f64;
 
+  let mut uses_reading_order = false;
   let mut regions = match settings.ocr_layout_mode {
     LayoutMode::Rule => layout::rule_detect(&rec.blocks, page_w, page_h),
     LayoutMode::Paddle => match acquire_layout_engine(app, &settings) {
       Ok(layout_engine) => {
         let layout_engine = layout_engine.lock().unwrap_or_else(|e| e.into_inner());
+        // DETR models (e.g. PP-DocLayoutV3) already emit regions in their
+        // predicted reading order; keep it instead of overwriting with a
+        // geometric re-sort so skewed / curved layouts stay in original order.
+        uses_reading_order = layout_engine.reading_order();
         layout_engine.detect(&image)?
       }
       Err(e) => {
@@ -1090,11 +1095,14 @@ pub fn recognize_bytes_with_layout(
     },
     LayoutMode::Off => unreachable!("off mode handled above"),
   };
-  layout::sort_reading_order(&mut regions, page_w, page_h);
+  if !uses_reading_order {
+    layout::sort_reading_order(&mut regions, page_w, page_h);
+  }
 
   let md = layout::assemble_markdown(
     &regions,
     &rec.blocks,
+    page_w,
     page_h,
     &settings.text_separator,
     settings.layout_drop_header_footer,

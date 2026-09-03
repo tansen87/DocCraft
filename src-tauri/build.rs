@@ -5,6 +5,62 @@ use std::time::SystemTime;
 fn main() {
   tauri_build::build();
   sync_resources();
+  build_mnn_v3();
+}
+
+/// Build the standalone MNN wrapper + link MNN for the PP-DocLayoutV3 DETR
+/// layout model. It links the same MNN static library used by `ocr-rs`, but
+/// through our own wrapper so the input tensor is selected by name ("image")
+/// instead of `ocr_rs`'s alphabetically-first-input binding.
+fn build_mnn_v3() {
+  let manifest_dir =
+    PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
+  // MNN lives at `<repo>/cpp/mnn` (sibling of `src-tauri`).
+  let mnn = manifest_dir
+    .parent()
+    .map(Path::to_path_buf)
+    .unwrap_or(manifest_dir)
+    .join("cpp")
+    .join("mnn");
+  let include_dir = mnn.join("include");
+  let lib_dir = mnn.join("lib");
+  if !include_dir.is_dir() || !lib_dir.join("MNN.lib").is_file() {
+    println!("cargo:warning=MNN not vendored (cpp/mnn); PP-DocLayoutV3 runtime disabled");
+    return;
+  }
+
+  let mut build = cc::Build::new();
+  build.cpp(true);
+  match std::env::var("CARGO_CFG_TARGET_ENV").as_deref() {
+    Ok("msvc") => {
+      build.flag("/std:c++14").flag("/EHsc");
+      // MNN prebuilt `.lib` is compiled with a static CRT; match it to avoid
+      // LNK2038 RuntimeLibrary mismatches (same as ocr-rs's build.rs).
+      build.static_crt(true);
+    }
+    _ => {
+      build.flag("-std=c++14");
+    }
+  }
+  build
+    .file(mnn.join("mnn_v3_wrapper.cpp"))
+    .include(&include_dir)
+    .compile("mnn_v3_wrapper");
+
+  println!("cargo:rerun-if-changed=cpp/mnn/mnn_v3_wrapper.cpp");
+  println!("cargo:rerun-if-changed=cpp/mnn/include");
+
+  // Link the wrapper archive and MNN by absolute path: build-script
+  // `rustc-link-lib` is not reliably re-emitted for example targets, so these
+  // `rustc-link-arg` flags pass both `.lib` files straight to the linker for
+  // every linked target (examples and the final app binary).
+  let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
+  println!("cargo:rustc-link-search=native={}", lib_dir.display());
+  println!("cargo:rustc-link-search=native={out_dir}");
+  println!("cargo:rustc-link-lib=static=mnn_v3_wrapper");
+  println!("cargo:rustc-link-lib=static=MNN");
+  println!("cargo:rustc-link-arg={out_dir}/mnn_v3_wrapper.lib");
+  println!("cargo:rustc-link-arg={}/MNN.lib", lib_dir.display());
 }
 
 /// Mirror `src-tauri/resources/` into `<target>/<profile>/doccraft_resources/`

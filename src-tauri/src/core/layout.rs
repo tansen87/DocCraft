@@ -20,6 +20,8 @@
 //! - [`assemble_markdown`]: regions + OCR blocks → Markdown.
 
 use std::collections::HashMap;
+use std::ffi::CStr;
+use std::os::raw::c_char;
 use std::path::{Path, PathBuf};
 
 use image::DynamicImage;
@@ -29,6 +31,191 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::get_resources_dir;
 use crate::core::ocr::OcrBlock;
+
+// ─── Standalone MNN binding for PP-DocLayoutV3 (DETR) ─────────────────────
+//
+// The vendored wrapper (`cpp/mnn/mnn_v3_wrapper.cpp`, built by `build.rs`)
+// selects the `image` input by name and feeds neutral `im_shape` / `scale_factor`
+// defaults.
+// It emits three outputs: `fetch_name_0` = `[N, 7]` detections
+// (`[class_id, score, x1, y1, x2, y2, reading_order]`), `fetch_name_1` = `[1]`
+// count, and `fetch_name_2` = `[N, 200, 2]` multi-point polygons. We consume
+// only `fetch_name_0`.
+#[repr(C)]
+struct V3Ctx {
+  _private: [u8; 0],
+}
+
+unsafe extern "C" {
+  fn mnnv3_create(buffer: *const u8, size: usize, threads: i32, precision: i32) -> *mut V3Ctx;
+  fn mnnv3_destroy(e: *mut V3Ctx);
+  fn mnnv3_last_error(e: *mut V3Ctx) -> *const c_char;
+  fn mnnv3_run(e: *mut V3Ctx, image: *const f32, w: usize, h: usize) -> i32;
+  fn mnnv3_output_data(e: *mut V3Ctx, len: *mut usize) -> *const f32;
+  fn mnnv3_output_shape(e: *mut V3Ctx, dims: *mut usize, ndims: *mut usize);
+}
+
+/// Owning handle to the DETR layout model (PP-DocLayoutV3) running on MNN.
+struct V3Engine {
+  ptr: *mut V3Ctx,
+}
+
+// MNN CPU inference is thread-aware; exposing the engine across threads mirrors
+// `ocr_rs::InferenceEngine`'s own `Send + Sync`.
+unsafe impl Send for V3Engine {}
+unsafe impl Sync for V3Engine {}
+
+impl Drop for V3Engine {
+  fn drop(&mut self) {
+    unsafe {
+      mnnv3_destroy(self.ptr);
+    }
+  }
+}
+
+impl V3Engine {
+  fn new(model_path: &Path, threads: i32, low_precision: bool) -> Result<Self, String> {
+    let buffer = std::fs::read(model_path)
+      .map_err(|e| format!("Failed to read PP-DocLayoutV3 model {}: {e}", model_path.display()))?;
+    let precision = if low_precision { 1 } else { 0 };
+    let ptr = unsafe { mnnv3_create(buffer.as_ptr(), buffer.len(), threads, precision) };
+    if ptr.is_null() {
+      return Err("PP-DocLayoutV3: failed to create MNN engine".to_string());
+    }
+    Ok(V3Engine { ptr })
+  }
+
+  fn last_error(&self) -> String {
+    unsafe {
+      let p = mnnv3_last_error(self.ptr);
+      if p.is_null() {
+        "unknown V3 error".to_string()
+      } else {
+        CStr::from_ptr(p).to_string_lossy().into_owned()
+      }
+    }
+  }
+
+  /// Run the DETR model and decode `[N, 7]` into layout regions. Coordinates
+  /// from `fetch_name_0` live in the resized 800x800 input space; they are
+  /// mapped back with the model's `keep_ratio` resize convention, then the
+  /// regions are ordered by the model's predicted reading order (column 6).
+  fn detect(
+    &self,
+    image: &DynamicImage,
+    meta: &LayoutModelMeta,
+    score_threshold: f32,
+  ) -> Result<Vec<LayoutRegion>, String> {
+    let (in_w, in_h) = (meta.input_width as f64, meta.input_height as f64);
+    if in_w == 0.0 || in_h == 0.0 {
+      return Err("PP-DocLayoutV3: input size is unset".to_string());
+    }
+    let mut input = preprocess_layout_image(image, meta, in_w, in_h)?;
+    let (w, h) = (in_w as usize, in_h as usize);
+    let data = input
+      .as_slice_mut()
+      .ok_or_else(|| "V3 input tensor not contiguous".to_string())?;
+
+    let rc = unsafe { mnnv3_run(self.ptr, data.as_ptr(), w, h) };
+    if rc != 0 {
+      return Err(format!("PP-DocLayoutV3 inference failed: {}", self.last_error()));
+    }
+
+    let mut dims = [0usize; 8];
+    let mut nd = 0usize;
+    unsafe {
+      mnnv3_output_shape(self.ptr, dims.as_mut_ptr(), &mut nd);
+    }
+    if nd < 2 || dims[nd - 1] != 7 {
+      return Err(format!(
+        "Unexpected PP-DocLayoutV3 output shape {:?} (expected [N, 7])",
+        &dims[..nd.min(8)]
+      ));
+    }
+    let rows = dims[nd - 2];
+    let mut len = 0usize;
+    let pd = unsafe { mnnv3_output_data(self.ptr, &mut len) };
+    if pd.is_null() {
+      return Err("PP-DocLayoutV3 produced no output data".to_string());
+    }
+    let slice = unsafe { std::slice::from_raw_parts(pd, len) };
+    let orig_w = image.width() as f64;
+    let orig_h = image.height() as f64;
+    decode_detr_rows(slice, rows, meta, score_threshold, orig_w, orig_h, in_w, in_h)
+  }
+}
+
+/// Decode the DETR `[N, 7]` output into layout regions. Each row is
+/// `[class_id, score, x1, y1, x2, y2, reading_order]` in the resized input
+/// space. Coordinates are mapped back with the model's resize convention and
+/// the regions are returned in the model's predicted reading order, then
+/// de-duplicated by NMS.
+fn decode_detr_rows(
+  data: &[f32],
+  rows: usize,
+  meta: &LayoutModelMeta,
+  score_threshold: f32,
+  orig_w: f64,
+  orig_h: f64,
+  in_w: f64,
+  in_h: f64,
+) -> Result<Vec<LayoutRegion>, String> {
+  if data.len() < rows * 7 {
+    return Err(format!(
+      "PP-DocLayoutV3 output too small: {} bytes for {} rows of 7",
+      data.len(),
+      rows
+    ));
+  }
+  let map = |mx: f64, my: f64| map_model_point(mx, my, orig_w, orig_h, in_w, in_h, meta.keep_ratio);
+  // Candidates carry (reading_order, region).
+  let mut candidates: Vec<(f64, LayoutRegion)> = Vec::new();
+  for r in 0..rows {
+    let base = r * 7;
+    let class_id = data[base] as usize;
+    let score = data[base + 1];
+    if !(score >= score_threshold) {
+      continue;
+    }
+    let (x1, y1) = map(data[base + 2] as f64, data[base + 3] as f64);
+    let (x2, y2) = map(data[base + 4] as f64, data[base + 5] as f64);
+    if x2 <= x1 || y2 <= y1 {
+      continue;
+    }
+    candidates.push((
+      data[base + 6] as f64,
+      LayoutRegion {
+        class: meta.class_bucket(class_id),
+        rect: LayoutRect {
+          x: x1,
+          y: y1,
+          width: x2 - x1,
+          height: y2 - y1,
+        },
+        score: score as f64,
+      },
+    ));
+  }
+  if candidates.is_empty() {
+    return Ok(Vec::new());
+  }
+  // Greedy NMS by confidence, keeping the reading-order association.
+  candidates.sort_by(|a, b| {
+    b.1.score
+      .partial_cmp(&a.1.score)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  let mut keep: Vec<(f64, LayoutRegion)> = Vec::new();
+  for (order, region) in candidates {
+    if keep.iter().any(|(_, k)| iou(k.rect, region.rect) > 0.5) {
+      continue;
+    }
+    keep.push((order, region));
+  }
+  // Emit in the model's predicted reading order.
+  keep.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+  Ok(keep.into_iter().map(|(_, r)| r).collect())
+}
 
 /// Width of the top / bottom strip treated as a page header / footer band.
 const BAND_RATIO: f64 = 0.08;
@@ -43,6 +230,15 @@ const MIN_GAP_PX: f64 = 12.0;
 const TITLE_HEIGHT_RATIO: f64 = 1.4;
 /// ... and whose width is at most this fraction of the page width is a heading.
 const TITLE_MAX_WIDTH_RATIO: f64 = 0.6;
+/// A horizontal gap wider than this fraction of the page width separates two
+/// table / column cells within one OCR line.
+const COLUMN_GAP_RATIO: f64 = 0.02;
+/// Absolute minimum horizontal gap (px) that splits cells in a line.
+const COLUMN_GAP_MIN_PX: f64 = 12.0;
+/// A region is treated as a table only when its OCR grid has at least this
+/// many rows and columns (guards against turning plain prose into a table).
+const TABLE_MIN_ROWS: usize = 2;
+const TABLE_MIN_COLUMNS: usize = 2;
 
 /// Processing bucket for a layout region. Every model's class table is mapped
 /// into these buckets through its `layout-meta.json`; classes that match none
@@ -186,6 +382,10 @@ pub struct LayoutModelMeta {
   /// Per-channel RGB mean / std for normalization.
   pub mean: [f32; 3],
   pub std: [f32; 3],
+  /// Inference engine flavor: `"detr"` selects the standalone MNN binding
+  /// (PP-DocLayoutV3, `[N,7]` output with reading order); `null`/`"picodet"`
+  /// uses the `ocr_rs` rows-of-6 engine.
+  pub engine: Option<String>,
   /// Model-agnostic detection threshold override (settings win when set).
   pub score_threshold: f32,
   /// Class table in class-id order (index = class id). The order MUST match
@@ -208,6 +408,7 @@ impl Default for LayoutModelMeta {
       keep_ratio: false,
       mean: [0.485, 0.456, 0.406],
       std: [0.229, 0.224, 0.225],
+      engine: None,
       score_threshold: 0.5,
       classes: Vec::new(),
       bucket_map: HashMap::new(),
@@ -462,12 +663,15 @@ fn nms(regions: Vec<LayoutRegion>) -> Vec<LayoutRegion> {
 /// The `paddle` mode engine: PicoDet layout detection through the same MNN
 /// runtime that runs det/rec (design §3.3).
 pub struct LayoutEngine {
-  engine: InferenceEngine,
+  engine: Option<InferenceEngine>,
   meta: LayoutModelMeta,
   score_threshold: f32,
-  /// Resolved input size (width, height). Taken from the meta, or read from
-  /// the model's own input shape when the meta leaves it unset.
+  /// Resolved input size (width, height) for the PicoDet engine path. Taken
+  /// from the meta, or read from the model's own input shape when the meta
+  /// leaves it unset.
   input_size: (u32, u32),
+  /// Present only for DETR models (`meta.engine == "detr"`, e.g. PP-DocLayoutV3).
+  v3: Option<V3Engine>,
 }
 
 impl LayoutEngine {
@@ -488,6 +692,25 @@ impl LayoutEngine {
         model_path.display()
       ));
     }
+
+    // DETR models (PP-DocLayoutV3) use the standalone MNN binding instead of
+    // `ocr_rs`, since their output is `[N,7]` rather than rows-of-6 and their
+    // graph needs the `image` input selected by name.
+    if meta.engine.as_deref() == Some("detr") {
+      if meta.input_width == 0 || meta.input_height == 0 {
+        return Err("PP-DocLayoutV3 requires inputWidth/inputHeight in layout-meta.json".to_string());
+      }
+      let v3 = V3Engine::new(&model_path, threads, low_precision)?;
+      let input_size = (meta.input_width, meta.input_height);
+      return Ok(Self {
+        engine: None,
+        meta,
+        score_threshold,
+        input_size,
+        v3: Some(v3),
+      });
+    }
+
     let mut config = InferenceConfig::new().with_threads(threads);
     if low_precision {
       config = config.with_precision(PrecisionMode::Low);
@@ -501,27 +724,42 @@ impl LayoutEngine {
     let input_size = resolve_input_size(&meta, &engine)?;
 
     Ok(Self {
-      engine,
+      engine: Some(engine),
       meta,
       score_threshold,
       input_size,
+      v3: None,
     })
+  }
+
+  /// Whether the active model already emits regions in its predicted reading
+  /// order (DETR models do). When true, callers should NOT apply the geometric
+  /// XY-Cut re-sort, so skewed / curved documents keep the model's order.
+  pub fn reading_order(&self) -> bool {
+    self.v3.is_some()
   }
 
   /// Detect layout regions on a page image.
   ///
-  /// The converted PicoDet model is expected to output one tensor whose last
-  /// dimension is 6: `[class_id, score, x1, y1, x2, y2]` in the model input
-  /// (letterboxed) coordinate space. Coordinates are mapped back to the
-  /// original image. This decode must be validated against the converted
-  /// models (design acceptance: bbox IoU > 0.95 vs PaddleX).
+  /// DETR models are routed to the standalone `[N, 7]` decode; the PicoDet
+  /// path expects one tensor whose last dimension is 6:
+  /// `[class_id, score, x1, y1, x2, y2]` in the model input (letterboxed)
+  /// coordinate space. Coordinates are mapped back to the original image. This
+  /// decode must be validated against the converted models (design acceptance:
+  /// bbox IoU > 0.95 vs PaddleX).
   pub fn detect(&self, image: &DynamicImage) -> Result<Vec<LayoutRegion>, String> {
+    if let Some(v3) = &self.v3 {
+      return v3.detect(image, &self.meta, self.score_threshold);
+    }
+    let engine = self
+      .engine
+      .as_ref()
+      .ok_or_else(|| "layout engine not initialized".to_string())?;
     let (orig_w, orig_h) = (image.width() as f64, image.height() as f64);
     let (in_w, in_h) = (self.input_size.0 as f64, self.input_size.1 as f64);
 
     let input = preprocess_layout_image(image, &self.meta, in_w, in_h)?;
-    let output = self
-      .engine
+    let output = engine
       .run_dynamic(input.view().into_dyn())
       .map_err(|e| format!("Layout inference failed: {e}"))?;
 
@@ -919,6 +1157,124 @@ pub fn blocks_to_lines(blocks: &[&OcrBlock], image_h: f64, separator: &str) -> V
     .collect()
 }
 
+/// Vertical gap (px) below which two blocks belong to the same visual line.
+fn line_gap(page_h: f64) -> f64 {
+  (page_h * 0.015).max(8.0)
+}
+
+/// Horizontal gap (px) above which two adjacent blocks in a line are treated
+/// as separate columns / table cells.
+fn column_gap(page_w: f64) -> f64 {
+  (page_w * COLUMN_GAP_RATIO).max(COLUMN_GAP_MIN_PX)
+}
+
+/// Cluster OCR blocks into a grid of cells (`rows × columns`), where each cell
+/// is the space-joined text of the blocks that fall on the same visual line and
+/// in the same column. Cells are split by horizontal gaps (`column_gap`).
+fn build_grid(blocks: &[&OcrBlock], page_w: f64, page_h: f64) -> Vec<Vec<String>> {
+  let threshold_y = line_gap(page_h);
+  let gap_x = column_gap(page_w);
+
+  let mut items: Vec<&OcrBlock> = blocks.to_vec();
+  items.sort_by(|a, b| {
+    a.top
+      .partial_cmp(&b.top)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+
+  // 1) Group into visual rows by vertical proximity.
+  let mut rows: Vec<Vec<&OcrBlock>> = Vec::new();
+  let mut current_y = items.first().map(|b| b.top).unwrap_or(0.0);
+  for b in &items {
+    if let Some(last) = rows.last_mut() {
+      if (b.top - current_y).abs() > threshold_y {
+        rows.push(vec![*b]);
+        current_y = b.top;
+        continue;
+      }
+      last.push(*b);
+    } else {
+      rows.push(vec![*b]);
+    }
+    current_y = b.top;
+  }
+
+  // 2) Split each row into columns by horizontal gap.
+  rows
+    .into_iter()
+    .map(|mut row| {
+      row.sort_by(|a, b| {
+        a.left
+          .partial_cmp(&b.left)
+          .unwrap_or(std::cmp::Ordering::Equal)
+      });
+      let mut cells: Vec<Vec<String>> = Vec::new();
+      let mut prev_right = row
+        .first()
+        .map(|b| b.left + b.width)
+        .unwrap_or(0.0);
+      for b in row {
+        if b.left - prev_right > gap_x {
+          cells.push(vec![b.text.clone()]);
+        } else {
+          match cells.last_mut() {
+            Some(cell) => cell.push(b.text.clone()),
+            None => cells.push(vec![b.text.clone()]),
+          }
+        }
+        prev_right = b.left + b.width;
+      }
+      cells
+        .into_iter()
+        .map(|cell| cell.join(" "))
+        .collect()
+    })
+    .collect()
+}
+
+/// Whether a block grid is regular enough to be rendered as a table (≥2 rows
+/// with ≥2 columns each). This keeps plain single-column prose as text.
+fn is_table_like(grid: &[Vec<String>]) -> bool {
+  grid.len() >= TABLE_MIN_ROWS
+    && grid
+      .iter()
+      .filter(|row| row.len() >= TABLE_MIN_COLUMNS)
+      .count()
+      >= 2
+}
+
+/// Escape `|` inside a cell so it doesn't break the Markdown table.
+fn escape_cell(s: &str) -> String {
+  s.replace('|', "\\|")
+}
+
+/// Render a `rows × cols` grid as a Markdown table. Per the GFM spec a table
+/// needs a header row followed by a `|---|` separator row, otherwise `| a | b |`
+/// lines render as plain text. The first data row is therefore emitted as the
+/// header and a separator row is inserted after it.
+fn grid_to_markdown(grid: &[Vec<String>]) -> String {
+  let cols = grid.iter().map(|r| r.len()).max().unwrap_or(0);
+  if cols == 0 {
+    return String::new();
+  }
+  let render = |cells: &[String]| {
+    let mut padded: Vec<String> = cells.to_vec();
+    padded.resize(cols, String::new());
+    format!(
+      "| {} |",
+      padded.iter().map(|c| escape_cell(c)).collect::<Vec<_>>().join(" | ")
+    )
+  };
+  let mut rows: Vec<String> = Vec::new();
+  for (i, row) in grid.iter().enumerate() {
+    rows.push(render(row));
+    if i == 0 {
+      rows.push(render(&vec!["---".to_string(); cols]));
+    }
+  }
+  rows.join("\n")
+}
+
 /// Markdown heading level for a title region: `#` for a document title
 /// (tall region), `##` / `###` for paragraph titles bucketed by region height.
 fn title_level(region: &LayoutRegion, page_h: f64) -> usize {
@@ -935,6 +1291,7 @@ fn title_level(region: &LayoutRegion, page_h: f64) -> usize {
 fn region_chunk(
   region: &LayoutRegion,
   blocks: &[&OcrBlock],
+  page_w: f64,
   page_h: f64,
   separator: &str,
   drop_header_footer: bool,
@@ -961,11 +1318,11 @@ fn region_chunk(
     LayoutClass::Seal => String::new(),
     LayoutClass::Figure => "![figure](figure_placeholder)".to_string(),
     LayoutClass::Table => {
-      let lines = blocks_to_lines(blocks, page_h, separator);
-      if lines.is_empty() {
+      let grid = build_grid(blocks, page_w, page_h);
+      if grid.is_empty() {
         String::new()
       } else {
-        format!("{}\n\n<!-- 建议画线提取表格 -->", lines.join("\n"))
+        grid_to_markdown(&grid)
       }
     }
     LayoutClass::Title => {
@@ -976,7 +1333,16 @@ fn region_chunk(
       let level = title_level(region, page_h);
       format!("{} {}", "#".repeat(level), lines.join(" "))
     }
-    LayoutClass::Text | LayoutClass::Other => blocks_to_lines(blocks, page_h, separator).join("\n"),
+    LayoutClass::Text | LayoutClass::Other => {
+      // Render regular multi-column content as a table too (design: "类似表格
+      // 的规整列也输出表格"), while keeping single-column prose as plain text.
+      let grid = build_grid(blocks, page_w, page_h);
+      if is_table_like(&grid) {
+        grid_to_markdown(&grid)
+      } else {
+        blocks_to_lines(blocks, page_h, separator).join("\n")
+      }
+    }
   }
 }
 
@@ -991,6 +1357,7 @@ fn region_chunk(
 pub fn assemble_markdown(
   regions: &[LayoutRegion],
   blocks: &[OcrBlock],
+  page_w: f64,
   page_h: f64,
   separator: &str,
   drop_header_footer: bool,
@@ -1018,6 +1385,7 @@ pub fn assemble_markdown(
     let chunk = region_chunk(
       region,
       &region_blocks[i],
+      page_w,
       page_h,
       separator,
       drop_header_footer,
@@ -1075,6 +1443,58 @@ mod tests {
       rect: r,
       score: 1.0,
     }
+  }
+
+  #[test]
+  fn detr_rows_decode_thresholds_and_orders_by_reading_order() {
+    // 800x800 input space, stretched from a 1200x1600 page.
+    let meta: LayoutModelMeta = serde_json::from_str(
+      r#"{
+        "name": "PP-DocLayoutV3",
+        "inputWidth": 800,
+        "inputHeight": 800,
+        "keepRatio": false,
+        "mean": [0,0,0],
+        "std": [1,1,1],
+        "scoreThreshold": 0.5,
+        "engine": "detr",
+        "classes": ["text", "seal", "table", "doc_title", "image"],
+        "bucketMap": { "seal": "Seal", "doc_title": "Title" }
+      }"#,
+    )
+    .unwrap();
+    // rows: [class, score, x1, y1, x2, y2, reading_order]
+    let data = vec![
+      3.0, 0.9, 400.0, 400.0, 800.0, 800.0, 2.0, // doc_title -> Title, order 2
+      1.0, 0.8, 0.0, 0.0, 400.0, 400.0, 0.0,     // seal, order 0
+      4.0, 0.6, 100.0, 100.0, 600.0, 600.0, 1.0, // image, order 1
+      2.0, 0.1, 0.0, 0.0, 100.0, 100.0, 9.0,     // below threshold -> dropped
+      9.0, 0.7, 10.0, 8.0, 20.0, 10.0, 3.0,      // unknown class id -> Other
+    ];
+    let regions = decode_detr_rows(&data, 5, &meta, 0.5, 1200.0, 1600.0, 800.0, 800.0).unwrap();
+    // The sub-threshold row is dropped and the valid ones are ordered by column 6.
+    assert_eq!(regions.len(), 4);
+    assert_eq!(regions[0].class, LayoutClass::Seal); // order 0
+    assert_eq!(regions[1].class, LayoutClass::Figure); // order 1 (image -> Figure)
+    assert_eq!(regions[2].class, LayoutClass::Title); // order 2
+    assert_eq!(regions[3].class, LayoutClass::Other); // order 3 (out-of-range class id)
+  }
+
+  #[test]
+  fn detr_rows_map_back_from_stretch_input_space() {
+    // 1200x1600 original stretched to 800x800: x scale 800/1200=2/3, y 800/1600=1/2.
+    // Detected (x1,y1,x2,y2)=(120, 100, 600, 500) -> (180, 200, 900, 1000).
+    let meta: LayoutModelMeta = serde_json::from_str(
+      r#"{"name":"v3","inputWidth":800,"inputHeight":800,"keepRatio":false,"mean":[0,0,0],"std":[1,1,1],"engine":"detr","classes":["text"]}"#,
+    )
+    .unwrap();
+    let data = vec![0.0, 0.9, 120.0, 100.0, 600.0, 500.0, 0.0];
+    let regions = decode_detr_rows(&data, 1, &meta, 0.5, 1200.0, 1600.0, 800.0, 800.0).unwrap();
+    assert_eq!(regions.len(), 1);
+    assert!((regions[0].rect.x - 180.0).abs() < 1.0);
+    assert!((regions[0].rect.y - 200.0).abs() < 1.0);
+    assert!((regions[0].rect.width - 720.0).abs() < 1.0);
+    assert!((regions[0].rect.height - 800.0).abs() < 1.0);
   }
 
   #[test]
@@ -1283,7 +1703,7 @@ mod tests {
       block("left one", 50.0, 210.0, 100.0, 12.0),
       block("left two", 50.0, 260.0, 100.0, 12.0),
     ];
-    let md = assemble_markdown(&regions, &blocks, 800.0, "|", true);
+    let md = assemble_markdown(&regions, &blocks, 620.0, 800.0, "|", true);
     assert_eq!(md, "left one\nleft two\n\nright one");
   }
 
@@ -1295,7 +1715,7 @@ mod tests {
       block("a", 40.0, 210.0, 100.0, 12.0),
       block("c", 40.0, 260.0, 100.0, 12.0),
     ];
-    let md = assemble_markdown(&regions, &blocks, 800.0, "|", true);
+    let md = assemble_markdown(&regions, &blocks, 620.0, 800.0, "|", true);
     assert_eq!(md, "a|b\nc");
   }
 
@@ -1313,7 +1733,7 @@ mod tests {
       block("Body", 50.0, 250.0, 300.0, 12.0),
       block("footer text", 200.0, 770.0, 200.0, 12.0),
     ];
-    let md = assemble_markdown(&regions, &blocks, 800.0, "|", true);
+    let md = assemble_markdown(&regions, &blocks, 620.0, 800.0, "|", true);
     assert_eq!(
       md,
       "<!-- 已过滤页眉: header text -->\n\n## Doc title\n\nBody\n\n<!-- 已过滤页脚: footer text -->"
@@ -1330,7 +1750,7 @@ mod tests {
       block("header text", 200.0, 10.0, 200.0, 12.0),
       block("Body", 50.0, 250.0, 300.0, 12.0),
     ];
-    let md = assemble_markdown(&regions, &blocks, 800.0, "|", false);
+    let md = assemble_markdown(&regions, &blocks, 620.0, 800.0, "|", false);
     assert_eq!(md, "header text\n\nBody");
   }
 
@@ -1342,7 +1762,49 @@ mod tests {
       block("covered", 50.0, 210.0, 100.0, 12.0),
       block("missed", 50.0, 500.0, 100.0, 12.0),
     ];
-    let md = assemble_markdown(&regions, &blocks, 800.0, "|", true);
+    let md = assemble_markdown(&regions, &blocks, 620.0, 800.0, "|", true);
     assert_eq!(md, "covered\n\nmissed");
+  }
+
+  #[test]
+  fn assemble_renders_regular_columns_as_table_even_when_text_class() {
+    // Regular 2-column rows classified as Text still become a Markdown table.
+    let regions = vec![region(LayoutClass::Text, rect(40.0, 100.0, 540.0, 300.0))];
+    let blocks = vec![
+      block("h1", 50.0, 110.0, 100.0, 12.0),
+      block("h2", 400.0, 110.0, 100.0, 12.0),
+      block("r1c1", 50.0, 160.0, 100.0, 12.0),
+      block("r1c2", 400.0, 160.0, 100.0, 12.0),
+    ];
+    let md = assemble_markdown(&regions, &blocks, 620.0, 800.0, "|", true);
+    assert_eq!(
+      md,
+      "| h1 | h2 |\n| --- | --- |\n| r1c1 | r1c2 |"
+    );
+  }
+
+  #[test]
+  fn assemble_table_region_emits_markdown_table() {
+    let regions = vec![region(LayoutClass::Table, rect(40.0, 100.0, 540.0, 300.0))];
+    let blocks = vec![
+      block("a", 50.0, 110.0, 100.0, 12.0),
+      block("b", 400.0, 110.0, 100.0, 12.0),
+      block("c", 50.0, 160.0, 100.0, 12.0),
+      block("d", 400.0, 160.0, 100.0, 12.0),
+    ];
+    let md = assemble_markdown(&regions, &blocks, 620.0, 800.0, "|", true);
+    assert_eq!(md, "| a | b |\n| --- | --- |\n| c | d |");
+  }
+
+  #[test]
+  fn assemble_keeps_single_column_prose_as_text() {
+    // Two full-width blocks on separate lines stay plain text, not a table.
+    let regions = vec![region(LayoutClass::Text, rect(40.0, 200.0, 500.0, 200.0))];
+    let blocks = vec![
+      block("a long prose line", 50.0, 210.0, 400.0, 12.0),
+      block("another prose line", 50.0, 260.0, 400.0, 12.0),
+    ];
+    let md = assemble_markdown(&regions, &blocks, 620.0, 800.0, "|", true);
+    assert_eq!(md, "a long prose line\nanother prose line");
   }
 }

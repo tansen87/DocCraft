@@ -215,6 +215,8 @@ const en = {
     "Regular layouts (5 classes, PubLayNet) - few precise classes (text / title / list / table / figure)",
   "settings.layoutModelDesc.PicoDet_layout_1x_table":
     "Tables only (1 class) - for table region detection",
+  "settings.layoutModelDesc.PP-DocLayoutV3":
+    "DETR layout module for PaddleOCR-VL (25 classes, 800x800) - multi-point boxes and reading order for skewed / curved / photographed documents",
   "settings.layoutModelMissing": "model files not installed",
   "settings.layoutScoreThreshold": "Score threshold",
   "settings.layoutScoreThresholdDesc":
@@ -631,6 +633,8 @@ const zh: Record<TranslationKey, string> = {
     "规整版面(5类 PubLayNet)-类别少而准(文字/标题/列表/表格/图片)",
   "settings.layoutModelDesc.PicoDet_layout_1x_table":
     "仅表格(1类)-用于表格区域检测",
+  "settings.layoutModelDesc.PP-DocLayoutV3":
+    "PaddleOCR-VL 统一版面模块(25类, 800x800)-多点多边形框与阅读顺序,适合倾斜/弯曲/翻拍文档",
   "settings.layoutModelMissing": "未安装模型文件",
   "settings.layoutScoreThreshold": "置信度阈值",
   "settings.layoutScoreThresholdDesc":
