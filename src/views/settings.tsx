@@ -729,7 +729,7 @@ export function SettingsView() {
           <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center">
             <GlassPanel
               blur={false}
-              className="glass-blur-always pointer-events-auto flex animate-in fade-in-0 slide-in-from-bottom-2 items-center gap-3 rounded-full py-1.5 pl-4 pr-1.5"
+              className="backdrop-blur-[20px] pointer-events-auto flex animate-in fade-in-0 slide-in-from-bottom-2 items-center gap-3 rounded-full py-1.5 pl-4 pr-1.5"
             >
               <span className="text-xs text-muted-foreground">
                 {t("settings.unsavedChanges")}

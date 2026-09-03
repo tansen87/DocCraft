@@ -419,7 +419,10 @@ pub struct AppSettings {
   #[serde(default = "default_main_window_opacity")]
   pub main_window_opacity: u32,
   /// Enable the frosted-glass blur effect on the main and result windows.
-  #[serde(default = "default_true")]
+  /// Default off: acrylic/backdrop blur only kicks in when the user turns it
+  /// on; the exclusion panel and the unsaved-changes bar stay blurred via
+  /// `glass-blur-always` regardless.
+  #[serde(default)]
   pub glass_blur_enabled: bool,
   /// Run the local PaddleOCR engine in MNN low-precision (f16) mode -
   /// roughly 30–50% faster on CPU with negligible accuracy loss.
@@ -901,7 +904,7 @@ impl Default for AppSettings {
       snip_auto_copy: true,
       snip_result_opacity: 60,
       main_window_opacity: 100,
-      glass_blur_enabled: true,
+      glass_blur_enabled: false,
       ocr_low_precision: true,
       ocr_model_size: OcrModelSize::default(),
       draw_table_high_precision: true,

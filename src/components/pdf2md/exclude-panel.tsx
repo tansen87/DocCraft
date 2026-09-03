@@ -69,7 +69,7 @@ export function ExcludePanel({
   return (
     <GlassPanel
       blur={false}
-      className="glass-blur-always absolute right-3 top-11 z-10 w-60 rounded-xl p-3 shadow-lg"
+      className="backdrop-blur-[20px] absolute right-3 top-11 z-10 w-60 rounded-xl p-3 shadow-lg"
     >
       <div className="flex items-center gap-2">
         <SquareDashedMousePointer className="size-4 shrink-0 text-primary" />
