@@ -178,6 +178,21 @@ export interface AppSettings {
   /** Drop page header/footer regions instead of keeping them as HTML comments
    *  (paddle mode, default true). */
   layoutDropHeaderFooter?: boolean;
+  /**
+   * Normalize raw local OCR output before the paragraph policy: strip
+   * zero-width / BOM characters, collapse in-line whitespace runs (incl.
+   * full-width) to one space, and normalize CJK ⟷ Latin spacing (default true).
+   */
+  ocrTextCleanup?: boolean;
+  /** Strip inline Markdown syntax (`**bold**`, `` `code` ``, `[text](url)`)
+   *  from cells when writing Excel (default false). */
+  stripMdSyntax?: boolean;
+  /**
+   * Write plain integers / decimals / percentages as numeric cells so they
+   * sort and sum. When false every cell is a text string; leading-zero and
+   * culturally formatted values always stay text (default false).
+   */
+  writeNumeric?: boolean;
 }
 
 export type OcrMode =

@@ -349,6 +349,7 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
       }
       // Screenshot OCR has no geometry - run the textual heuristics so the
       // output matches the user's paragraph policy (same as PDF batch OCR).
+      let text = crate::core::ocr::apply_ocr_cleanup(&app, &text)?;
       let text = paragraph::apply_text(&text, paragraph_mode);
       Ok((text.trim().to_string(), Some(confidence), save_ms))
     })
@@ -370,6 +371,7 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
     let markdown = crate::core::ocr::ai_recognize_image(&provider, &png_b64, &prompt).await?;
     // Deterministic post-processing on top of the prompt-level merge, matching
     // the chosen paragraph policy (same as PDF batch AI OCR).
+    let markdown = crate::core::ocr::apply_ocr_cleanup(app, &markdown)?;
     let markdown = paragraph::apply_text(&markdown, paragraph_mode);
     (markdown, None, save_start.elapsed().as_millis() as u64)
   };

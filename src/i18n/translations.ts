@@ -176,6 +176,9 @@ const en = {
   "settings.ocrLowPrecision": "Low-precision inference",
   "settings.ocrLowPrecisionDesc":
     "Run local PaddleOCR in MNN f16 mode - ~30-50% faster on CPU with negligible accuracy loss",
+  "settings.ocrTextCleanup": "Clean OCR text",
+  "settings.ocrTextCleanupDesc":
+    "Normalize raw OCR output: strip zero-width/BOM characters, collapse in-line whitespace runs to one space, and add a space between CJK and Latin text",
   "settings.ocrModelSize": "Recognition model",
   "settings.ocrModelSize.tiny": "Tiny (faster)",
   "settings.ocrModelSize.small": "Small (balance)",
@@ -265,6 +268,12 @@ const en = {
   "settings.excelTablesOnly": "Only convert tables to Excel",
   "settings.excelTablesOnlyDesc":
     "When enabled, only export GFM tables from the document; After closing, the entire document content (tables and plain text) will be written to Excel",
+  "settings.stripMdSyntax": "Strip markdown syntax",
+  "settings.stripMdSyntaxDesc":
+    "Remove emphasis/code/link syntax (**bold**, `code`, [text](url)) from cells when writing Excel",
+  "settings.writeNumeric": "Write numbers as numbers",
+  "settings.writeNumericDesc":
+    "Write plain integers/decimals/percentages as numeric cells so they sort and sum; leading-zero and formatted values stay text",
 
   "toolbar.remove": "Remove",
   "toolbar.drawTable": "Draw Table",
@@ -585,6 +594,9 @@ const zh: Record<TranslationKey, string> = {
   "settings.ocrLowPrecision": "低精度推理加速",
   "settings.ocrLowPrecisionDesc":
     "本地 PaddleOCR 使用 MNN f16 模式推理,CPU 上约快 30-50%,精度损失可忽略",
+  "settings.ocrTextCleanup": "清理 OCR 文本",
+  "settings.ocrTextCleanupDesc":
+    "规整 OCR 原始输出:去除零宽字符与 BOM、将行内连续空白压缩为单个空格、在 CJK 与拉丁/数字之间补一个空格",
   "settings.ocrModelSize": "识别模型",
   "settings.ocrModelSize.tiny": "tiny(更快)",
   "settings.ocrModelSize.small": "small(均衡)",
@@ -669,6 +681,12 @@ const zh: Record<TranslationKey, string> = {
   "settings.excelTablesOnly": "仅将表格转换为 Excel",
   "settings.excelTablesOnlyDesc":
     "开启时,只导出文档中的GFM表格;关闭后会将整个文档内容(表格和普通文本)都写入Excel",
+  "settings.stripMdSyntax": "剥离 Markdown 语法",
+  "settings.stripMdSyntaxDesc":
+    "写入 Excel 时移除行内 Markdown 语法(**加粗**、`代码`、[链接](url))",
+  "settings.writeNumeric": "数字按数值写入",
+  "settings.writeNumericDesc":
+    "将纯整数/小数/百分比写成数值单元格以便排序与求和;前导零及带格式的值仍保持文本",
 
   "toolbar.remove": "移除",
   "toolbar.drawTable": "划线表格",

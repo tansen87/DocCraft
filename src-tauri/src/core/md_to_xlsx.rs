@@ -158,6 +158,118 @@ pub fn analyze_markdown(path: &str) -> Result<MdAnalyzeResult, String> {
   })
 }
 
+/// One numeric cell value. `Percent` keeps the fraction so the writer can
+/// apply a percentage number format that renders `12%`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum NumberCell {
+  Num(f64),
+  Percent(f64),
+}
+
+/// Conservative number sniffer (docs/design/00017 P1-3): only bare integers,
+/// decimal numbers and percentages are written as numbers. Leading zeros
+/// (`"0012"`), thousand separators (`"1,234.5"`) and long ID numbers stay text
+/// because turning them into a number would lose their meaning.
+fn sniff_number(s: &str) -> Option<NumberCell> {
+  let t = s.trim();
+  let (base, is_percent) = match t.strip_suffix('%') {
+    Some(b) => (b, true),
+    None => (t, false),
+  };
+  if base.is_empty() || !base.bytes().all(|b| b.is_ascii_digit() || b == b'.') {
+    return None;
+  }
+  // Keep "0" / "0.5", but drop other leading-zero strings like "0012".
+  if base.len() > 1 && base.starts_with('0') && !base.starts_with("0.") {
+    return None;
+  }
+  // At most one decimal point.
+  if base.matches('.').count() > 1 {
+    return None;
+  }
+  let value: f64 = base.parse().ok()?;
+  Some(if is_percent {
+    NumberCell::Percent(value / 100.0)
+  } else {
+    NumberCell::Num(value)
+  })
+}
+
+/// Replace `[label](url)` links with `label`, keeping the visible text.
+fn strip_links(s: &str) -> String {
+  let chars: Vec<char> = s.chars().collect();
+  let mut out = String::with_capacity(chars.len());
+  let mut cursor = 0usize;
+  while cursor < chars.len() {
+    if chars[cursor] == '['
+      && let Some(rel_b) = chars[cursor + 1..].iter().position(|&c| c == ']')
+    {
+      let close_b = cursor + 1 + rel_b;
+      if chars.get(close_b + 1) == Some(&'(') {
+        if let Some(rel_p) = chars[close_b + 2..].iter().position(|&c| c == ')') {
+          // A well-formed link: keep the label, skip past the URL.
+          out.extend(chars[cursor + 1..close_b].iter());
+          cursor = close_b + 2 + rel_p + 1;
+          continue;
+        }
+      }
+    }
+    out.push(chars[cursor]);
+    cursor += 1;
+  }
+  out
+}
+
+/// Strip inline Markdown syntax before a value is written to Excel
+/// (docs/design/00017 P1-2): remove `**` / `__` / `*` / backtick emphasis and
+/// collapse `[text](url)` to `text`, and turn `<br>` into a newline. Plain text
+/// passes through unchanged.
+pub fn strip_inline_markdown(input: &str) -> String {
+  let s = input
+    .replace("<br>", "\n")
+    .replace("<br/>", "\n")
+    .replace("<br />", "\n");
+  let s = strip_links(&s);
+  s.replace("**", "")
+    .replace("__", "")
+    .replace('`', "")
+    .replace('*', "")
+}
+
+/// Write one table cell, honoring the P1-3 numeric-cell and P1-2 Markdown
+/// stripping flags.
+fn write_cell(
+  ws: &mut Worksheet,
+  row: u32,
+  col: u16,
+  value: &str,
+  strip_md: bool,
+  write_numeric: bool,
+  cell_fmt: &Format,
+  num_fmt: &Format,
+  percent_fmt: &Format,
+) -> Result<(), String> {
+  let shown = if strip_md {
+    strip_inline_markdown(value)
+  } else {
+    value.to_string()
+  };
+  if write_numeric {
+    if let Some(nc) = sniff_number(&shown) {
+      let (v, fmt) = match nc {
+        NumberCell::Num(v) => (v, num_fmt),
+        NumberCell::Percent(v) => (v, percent_fmt),
+      };
+      ws.write_number_with_format(row, col, v, fmt)
+        .map_err(|e| e.to_string())?;
+      return Ok(());
+    }
+  }
+  ws.write_string_with_format(row, col, &shown, cell_fmt)
+    .map_err(|e| e.to_string())?;
+  Ok(())
+}
+
 /// Write one table block (label row + header row + data rows + blank row) at
 /// the current `row`, advancing it afterwards.
 fn write_table(
@@ -169,6 +281,10 @@ fn write_table(
   header_fmt: &Format,
   cell_fmt: &Format,
   label_fmt: &Format,
+  num_fmt: &Format,
+  percent_fmt: &Format,
+  strip_md: bool,
+  write_numeric: bool,
 ) -> Result<(), String> {
   let label = match table.page {
     Some(page) => format!("Page {page}"),
@@ -184,8 +300,17 @@ fn write_table(
   *row += 1;
   for r in &table.rows {
     for (col, value) in r.iter().enumerate() {
-      ws.write_string_with_format(*row, col as u16, value, cell_fmt)
-        .map_err(|e| e.to_string())?;
+      write_cell(
+        ws,
+        *row,
+        col as u16,
+        value,
+        strip_md,
+        write_numeric,
+        cell_fmt,
+        num_fmt,
+        percent_fmt,
+      )?;
     }
     *row += 1;
     *total_rows += 1;
@@ -197,11 +322,15 @@ fn write_table(
 /// Parse the Markdown file at `md_path` and write it into the workbook at
 /// `xlsx_path`. When `tables_only` is `true` only the GFM tables are exported;
 /// otherwise the whole document (tables and plain text lines, in order) is
-/// written into a single worksheet.
+/// written into a single worksheet. `strip_md` enables inline Markdown
+/// stripping (P1-2); `write_numeric` writes number-shaped cells as numeric when
+/// `true` and keeps everything a string when `false` (P1-3).
 pub fn export_markdown_tables(
   md_path: &str,
   xlsx_path: &str,
   tables_only: bool,
+  strip_md: bool,
+  write_numeric: bool,
 ) -> Result<MdExportResult, String> {
   let content = read_file(md_path)?;
   let start = Instant::now();
@@ -219,6 +348,13 @@ pub fn export_markdown_tables(
     .set_bold()
     .set_font_size(12)
     .set_align(FormatAlign::Left);
+  let num_fmt = Format::new()
+    .set_border(FormatBorder::Thin)
+    .set_align(FormatAlign::Right);
+  let percent_fmt = Format::new()
+    .set_border(FormatBorder::Thin)
+    .set_num_format("0.00%")
+    .set_align(FormatAlign::Right);
 
   let mut row: u32 = 0;
   let mut total_rows = 0usize;
@@ -239,6 +375,10 @@ pub fn export_markdown_tables(
         &header_fmt,
         &cell_fmt,
         &label_fmt,
+        &num_fmt,
+        &percent_fmt,
+        strip_md,
+        write_numeric,
       )?;
     }
     table_count = tables.len();
@@ -259,11 +399,20 @@ pub fn export_markdown_tables(
             &header_fmt,
             &cell_fmt,
             &label_fmt,
+            &num_fmt,
+            &percent_fmt,
+            strip_md,
+            write_numeric,
           )?;
           table_count += 1;
         }
         MdBlock::Line(text) => {
-          ws.write_string_with_format(row, 0, text, &cell_fmt)
+          let line = if strip_md {
+            strip_inline_markdown(text)
+          } else {
+            text.clone()
+          };
+          ws.write_string_with_format(row, 0, &line, &cell_fmt)
             .map_err(|e| e.to_string())?;
           row += 1;
           total_rows += 1;
@@ -377,8 +526,14 @@ mod tests {
       "| Col A | Col B |\n|---|---|\n| 1 | x |\n| 2 | y |\n",
     )
     .unwrap();
-    let res =
-      export_markdown_tables(md_path.to_str().unwrap(), xlsx_path.to_str().unwrap(), true).unwrap();
+    let res = export_markdown_tables(
+      md_path.to_str().unwrap(),
+      xlsx_path.to_str().unwrap(),
+      true,
+      false,
+      false,
+    )
+    .unwrap();
     assert_eq!(res.table_count, 1);
     assert_eq!(res.total_rows, 2);
     assert!(xlsx_path.exists());
@@ -400,6 +555,8 @@ mod tests {
       md_path.to_str().unwrap(),
       xlsx_path.to_str().unwrap(),
       false,
+      false,
+      false,
     )
     .unwrap();
     assert_eq!(res.table_count, 1);
@@ -415,8 +572,62 @@ mod tests {
     let md_path = std::env::temp_dir().join("md2xlsx_sample2.md");
     let xlsx_path = std::env::temp_dir().join("md2xlsx_sample2_out.xlsx");
     std::fs::write(&md_path, "just some text\n").unwrap();
-    let res = export_markdown_tables(md_path.to_str().unwrap(), xlsx_path.to_str().unwrap(), true);
+    let res = export_markdown_tables(
+      md_path.to_str().unwrap(),
+      xlsx_path.to_str().unwrap(),
+      true,
+      false,
+      false,
+    );
     assert!(res.is_err());
     std::fs::remove_file(&md_path).ok();
+  }
+
+  #[test]
+  fn strip_inline_markdown_removes_emphasis_links_and_code() {
+    assert_eq!(strip_inline_markdown("**bold**"), "bold");
+    assert_eq!(strip_inline_markdown("`code` sample"), "code sample");
+    assert_eq!(strip_inline_markdown("[link](https://example.com)"), "link");
+    assert_eq!(strip_inline_markdown("*a* and __b__"), "a and b");
+    assert_eq!(strip_inline_markdown("plain cell"), "plain cell");
+  }
+
+  #[test]
+  fn sniff_number_classifies_conservatively() {
+    assert_eq!(sniff_number("123"), Some(NumberCell::Num(123.0)));
+    assert_eq!(sniff_number("3.14"), Some(NumberCell::Num(3.14)));
+    assert_eq!(sniff_number("12%"), Some(NumberCell::Percent(0.12)));
+    assert_eq!(sniff_number("0"), Some(NumberCell::Num(0.0)));
+    // Leading zero, thousands separators and non-numbers stay text.
+    assert_eq!(sniff_number("0012"), None);
+    assert_eq!(sniff_number("1,234.5"), None);
+    assert_eq!(sniff_number("abc"), None);
+    assert_eq!(sniff_number(""), None);
+  }
+
+  #[test]
+  fn export_with_numeric_and_strip_flags_writes_workbook() {
+    let md_path = std::env::temp_dir().join("md2xlsx_flags.md");
+    let xlsx_path = std::env::temp_dir().join("md2xlsx_flags_out.xlsx");
+    std::fs::write(
+      &md_path,
+      "| Col A | Col B |\n|---|---|\n| **bold** | 123 |\n| [x](https://e.com) | 12% |\n",
+    )
+    .unwrap();
+    // Numeric cells on (write_numeric=true) + Markdown stripping on.
+    let res = export_markdown_tables(
+      md_path.to_str().unwrap(),
+      xlsx_path.to_str().unwrap(),
+      true,
+      true,
+      true,
+    )
+    .unwrap();
+    assert_eq!(res.table_count, 1);
+    assert_eq!(res.total_rows, 2);
+    assert!(xlsx_path.exists());
+    assert!(xlsx_path.metadata().unwrap().len() > 0);
+    std::fs::remove_file(&md_path).ok();
+    std::fs::remove_file(&xlsx_path).ok();
   }
 }

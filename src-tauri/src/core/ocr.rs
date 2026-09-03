@@ -10,7 +10,9 @@ use uuid::Uuid;
 
 use crate::core::page_marker::page_marker;
 use crate::core::settings;
-use crate::core::{extract_cache, get_resources_dir, grid_rebuild, layout, paragraph};
+use crate::core::{
+  extract_cache, get_resources_dir, grid_rebuild, grid_rebuild::LineMeta, layout, paragraph,
+};
 use crate::models::{
   ConvertResult, DetectResult, ExcludeRegions, HybridSessionInfo, LayoutDto, LayoutMode,
   OcrImageResult, OcrMode, OcrModelSize, OcrVendor, PdfTypeDto,
@@ -31,6 +33,17 @@ pub fn effective_ai_ocr_prompt(app: &AppHandle) -> Result<String, String> {
   } else {
     custom
   })
+}
+
+/// Normalize raw OCR output before the paragraph policy when the
+/// `ocr_text_cleanup` setting is on; otherwise return the text byte-identical
+/// (docs/design/00017 P1-1).
+pub fn apply_ocr_cleanup(app: &AppHandle, text: &str) -> Result<String, String> {
+  if settings::get_app_settings(app)?.ocr_text_cleanup {
+    Ok(paragraph::clean_ocr_text(text))
+  } else {
+    Ok(text.to_string())
+  }
 }
 
 /// Local OCR engine wrapper for PaddleOCR via ocr-rs.
@@ -73,13 +86,29 @@ impl LocalOcrEngine {
     image: &image::DynamicImage,
     separator: &str,
   ) -> Result<(String, f32), String> {
+    let (text, confidence, _) = self.recognize_image_with_geometry(image, separator)?;
+    Ok((text, confidence))
+  }
+
+  /// Like [`Self::recognize_image_with_confidence`] but additionally returns
+  /// one [`LineMeta`] per output line (docs/design/00017 P1-4). The geometry is
+  /// produced by the same Y clustering that joins blocks into lines, so local
+  /// OCR pages can drive the geometric paragraph heuristics instead of the
+  /// textual ones. `y` is flipped into PDF-style coordinates (up = increasing)
+  /// because OCR sits in top-down image-pixel space while
+  /// `hard_break_geometric` expects user-space y.
+  pub fn recognize_image_with_geometry(
+    &self,
+    image: &image::DynamicImage,
+    separator: &str,
+  ) -> Result<(String, f32, Vec<LineMeta>), String> {
     let results = self
       .engine
       .recognize(image)
       .map_err(|e| format!("Local OCR recognition failed: {e}"))?;
 
     if results.is_empty() {
-      return Ok((String::new(), 0.0));
+      return Ok((String::new(), 0.0, Vec::new()));
     }
 
     // Average confidence over the blocks that actually produced text. Blocks
@@ -98,13 +127,18 @@ impl LocalOcrEngine {
     // Adaptive threshold: ~1.5% of image height, or at least 8px.
     let line_threshold = (image.height() as f64 * 0.015).max(8.0);
 
-    // Build sortable items with position info.
-    let mut items: Vec<(f64, f64, &str)> = results
+    // Sortable items: (y, x, x_right, height, text).
+    let mut items: Vec<(f64, f64, f64, f64, &str)> = results
       .iter()
       .map(|r| {
-        let y = r.bbox.rect.top() as f64;
-        let x = r.bbox.rect.left() as f64;
-        (y, x, r.text.as_str())
+        let rect = r.bbox.rect;
+        (
+          rect.top() as f64,
+          rect.left() as f64,
+          rect.right() as f64,
+          rect.height() as f64,
+          r.text.as_str(),
+        )
       })
       .collect();
 
@@ -112,39 +146,58 @@ impl LocalOcrEngine {
     items.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
     // Group into lines: items whose Y difference is within threshold.
-    let mut lines: Vec<Vec<(f64, &str)>> = Vec::new();
-    let mut current_line: Vec<(f64, &str)> = Vec::new();
+    let mut lines: Vec<Vec<(f64, f64, f64, f64, &str)>> = Vec::new();
+    let mut current_line: Vec<(f64, f64, f64, f64, &str)> = Vec::new();
     let mut current_y: f64 = items[0].0;
 
-    for (y, x, text) in &items {
+    for (y, x, xr, h, text) in &items {
       if (y - current_y).abs() > line_threshold && !current_line.is_empty() {
         // Sort current line by X (left-to-right) before pushing.
-        current_line.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        current_line.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
         lines.push(current_line);
         current_line = Vec::new();
       }
       current_y = *y;
-      current_line.push((*x, text));
+      current_line.push((*y, *x, *xr, *h, text));
     }
     if !current_line.is_empty() {
-      current_line.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+      current_line.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
       lines.push(current_line);
     }
 
-    // Join each line's blocks with the configured separator, separate lines with newlines.
+    // Join each line's blocks with the configured separator, separate lines
+    // with newlines.
     let output = lines
       .iter()
       .map(|line| {
         line
           .iter()
-          .map(|(_, text)| *text)
+          .map(|(_, _, _, _, text)| *text)
           .collect::<Vec<_>>()
           .join(separator)
       })
       .collect::<Vec<_>>()
       .join("\n");
 
-    Ok((output, avg_confidence))
+    // One LineMeta per line: x0/x1 from the line's leftmost/rightmost edges,
+    // "font size" proxied by the tallest block, y flipped to PDF space.
+    let meta: Vec<LineMeta> = lines
+      .iter()
+      .map(|line| {
+        let x0 = line.iter().map(|l| l.1).fold(f64::INFINITY, f64::min) as f32;
+        let x1 = line.iter().map(|l| l.2).fold(f64::NEG_INFINITY, f64::max) as f32;
+        let max_h = line.iter().map(|l| l.3).fold(f64::MIN, f64::max);
+        let top = line[0].0;
+        LineMeta {
+          y: -(top + max_h / 2.0) as f32,
+          font_size: max_h as f32,
+          x0,
+          x1,
+        }
+      })
+      .collect();
+
+    Ok((output, avg_confidence, meta))
   }
 }
 
@@ -993,7 +1046,10 @@ pub async fn ocr_page_in_session(
       // The prompt already asks the model to join paragraph-internal line
       // breaks; the textual heuristics run again as a deterministic fallback
       // so the output matches the chosen policy exactly.
-      Ok(m) => paragraph::apply_text(&m, settings::get_app_settings(app)?.paragraph_mode),
+      Ok(m) => {
+        let m = apply_ocr_cleanup(app, &m)?;
+        paragraph::apply_text(&m, settings::get_app_settings(app)?.paragraph_mode)
+      }
       Err(e) => {
         let mut map = store.lock();
         if let Some(session) = map.get_mut(session_id) {
@@ -1022,17 +1078,28 @@ fn local_ocr_page(app: &AppHandle, page: u32, image_png: &str) -> Result<(String
 
   // Dispatch by the layout mode (off / rule / paddle), sharing the resident
   // OCR engine cache with every other local path.
-  let (text, confidence) = recognize_bytes_with_layout(app, &image_data)?;
+  let (text, confidence, line_meta) = recognize_bytes_with_layout(app, &image_data)?;
 
   if text.trim().is_empty() {
     return Err(format!("Local OCR returned no content (page {page})"));
   }
 
-  // Local OCR has no geometry - the textual heuristics decide which visual
-  // lines belong to the same paragraph. Layout regions already carry their
-  // own structure (headings / blank lines between regions), which the
-  // heuristics keep intact.
-  let text = paragraph::apply_text(&text, paragraph_mode);
+  // Normalize the raw OCR output (P1-1) before the paragraph policy.
+  let text = apply_ocr_cleanup(app, &text)?;
+
+  let text = if let Some(meta) = line_meta {
+    // `off` mode kept per-line geometry (P1-4): run the geometric heuristics
+    // instead of the textual ones, which misclassify short OCR lines as
+    // headings (T4). Meta lines align 1:1 with the (cleaned) output lines.
+    let pages = vec![text.clone()];
+    paragraph::apply(&pages, Some(&[meta]), &[], &[], paragraph_mode)
+      .pop()
+      .unwrap_or(text)
+  } else {
+    // Layout regions carry their own structure (headings / blank lines between
+    // regions), so the textual heuristics keep them intact.
+    paragraph::apply_text(&text, paragraph_mode)
+  };
   Ok((text.trim().to_string(), confidence))
 }
 
@@ -1045,23 +1112,28 @@ fn local_ocr_page(app: &AppHandle, page: u32, image_png: &str) -> Result<(String
 /// - `paddle` → MNN layout model regions, degraded to `rule` when the
 ///   selected model directory is missing.
 ///
-/// Returns the assembled markdown plus the average OCR confidence (0..1) of
-/// the OCR blocks - layout scores never mix into the confidence chain.
+/// Returns the assembled markdown, the average OCR confidence (0..1) of the
+/// OCR blocks (layout scores never mix into the confidence chain), and the
+/// per-line geometry for `off` mode (P1-4). Layout (`rule` / `paddle`) and
+/// degraded paths return `None` geometry - their output is structure-aware
+/// already, so they keep the textual paragraph fallback.
 pub fn recognize_bytes_with_layout(
   app: &AppHandle,
   image_data: &[u8],
-) -> Result<(String, f32), String> {
+) -> Result<(String, f32, Option<Vec<LineMeta>>), String> {
   use tauri::Manager;
   let settings = settings::get_app_settings(app)?;
   let ocr_cache = app.state::<OcrEngineCache>();
   let engine = acquire_local_ocr_engine(app, &ocr_cache)?;
 
   if settings.ocr_layout_mode == LayoutMode::Off {
-    let (text, confidence) = {
+    let image =
+      image::load_from_memory(image_data).map_err(|e| format!("Failed to load image: {e}"))?;
+    let (text, confidence, meta) = {
       let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
-      eng.recognize_bytes_with_confidence(image_data, &settings.text_separator)?
+      eng.recognize_image_with_geometry(&image, &settings.text_separator)?
     };
-    return Ok((text, confidence));
+    return Ok((text, confidence, Some(meta)));
   }
 
   // Layout path: one detection pass over the page, then region-based assembly.
@@ -1093,7 +1165,9 @@ pub fn recognize_bytes_with_layout(
         // (design §5 risk table).
         eprintln!("[layout] paddle mode degraded to off: {e}");
         let eng = engine.lock().unwrap_or_else(|e| e.into_inner());
-        return eng.recognize_bytes_with_confidence(image_data, &settings.text_separator);
+        let (text, confidence) =
+          eng.recognize_bytes_with_confidence(image_data, &settings.text_separator)?;
+        return Ok((text, confidence, None));
       }
     },
     LayoutMode::Off => unreachable!("off mode handled above"),
@@ -1107,7 +1181,7 @@ pub fn recognize_bytes_with_layout(
     &settings.text_separator,
     settings.layout_drop_header_footer,
   );
-  Ok((md, rec.confidence))
+  Ok((md, rec.confidence, None))
 }
 
 /// Reassemble text + OCR pages in document order and drop the session.
@@ -1197,12 +1271,19 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
       let image_data =
         std::fs::read(&path).map_err(|e| format!("Failed to read image file: {e}"))?;
       let paragraph_mode = settings::get_app_settings(&app)?.paragraph_mode;
-      let (text, confidence) = recognize_bytes_with_layout(&app, &image_data)?;
+      let (text, confidence, line_meta) = recognize_bytes_with_layout(&app, &image_data)?;
       if text.trim().is_empty() {
         return Err("Local OCR returned no content".to_string());
       }
-      // Images have no geometry - the textual heuristics apply.
-      let text = paragraph::apply_text(&text, paragraph_mode);
+      let text = apply_ocr_cleanup(&app, &text)?;
+      let text = if let Some(meta) = line_meta {
+        let pages = vec![text.clone()];
+        paragraph::apply(&pages, Some(&[meta]), &[], &[], paragraph_mode)
+          .pop()
+          .unwrap_or(text)
+      } else {
+        paragraph::apply_text(&text, paragraph_mode)
+      };
       Ok((text.trim().to_string(), confidence))
     })
     .await
@@ -1224,7 +1305,7 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
     })
     .await
     .map_err(|e| format!("Failed to prepare image: {e}"))??;
-    ocr_page(
+    let md = ocr_page(
       &provider.client,
       &provider.base_url,
       &provider.model_id,
@@ -1234,8 +1315,9 @@ pub async fn convert_image_to_md(app: &AppHandle, path: &str) -> Result<OcrImage
       mime,
       &encoded,
     )
-    .await
-    .map(|md| (paragraph::apply_text(&md, paragraph_mode), 0.0))?
+    .await?;
+    let md = apply_ocr_cleanup(app, &md)?;
+    (paragraph::apply_text(&md, paragraph_mode), 0.0)
   };
 
   Ok(OcrImageResult {

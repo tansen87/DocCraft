@@ -439,8 +439,17 @@ async fn export_markdown_tables(
   xlsx_path: String,
 ) -> Result<MdExportResult, String> {
   tauri::async_runtime::spawn_blocking(move || {
-    let tables_only = core::settings::get_app_settings(&app)?.excel_tables_only;
-    core::md_to_xlsx::export_markdown_tables(&md_path, &xlsx_path, tables_only)
+    let settings = core::settings::get_app_settings(&app)?;
+    let tables_only = settings.excel_tables_only;
+    let strip_md = settings.strip_md_syntax;
+    let write_numeric = settings.write_numeric;
+    core::md_to_xlsx::export_markdown_tables(
+      &md_path,
+      &xlsx_path,
+      tables_only,
+      strip_md,
+      write_numeric,
+    )
   })
   .await
   .map_err(|e| e.to_string())?

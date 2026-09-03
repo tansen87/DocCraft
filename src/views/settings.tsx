@@ -216,6 +216,9 @@ export function SettingsView() {
   const [layoutModels, setLayoutModels] = useState<LayoutModelInfo[]>([]);
   const [layoutScoreThreshold, setLayoutScoreThreshold] = useState(0.5);
   const [layoutDropHeaderFooter, setLayoutDropHeaderFooter] = useState(true);
+  const [ocrTextCleanup, setOcrTextCleanup] = useState(true);
+  const [stripMdSyntax, setStripMdSyntax] = useState(false);
+  const [writeNumeric, setWriteNumeric] = useState(false);
   const [textSeparator, setTextSeparator] = useState(" ");
   const [paragraphMode, setParagraphMode] = useState<ParagraphMode>("guided");
   const [aiOcrPrompt, setAiOcrPrompt] = useState("");
@@ -260,6 +263,9 @@ export function SettingsView() {
         setOcrLayoutModel(settings.ocrLayoutModel ?? "PP-DocLayoutV3");
         setLayoutScoreThreshold(settings.layoutScoreThreshold ?? 0.5);
         setLayoutDropHeaderFooter(settings.layoutDropHeaderFooter ?? true);
+        setOcrTextCleanup(settings.ocrTextCleanup ?? true);
+        setStripMdSyntax(settings.stripMdSyntax ?? false);
+        setWriteNumeric(settings.writeNumeric ?? false);
         setTextSeparator(settings.textSeparator);
         setParagraphMode(
           settings.paragraphMode === "smart" ||
@@ -339,6 +345,9 @@ export function SettingsView() {
         ? Math.min(1, Math.max(0, layoutScoreThreshold))
         : 0.5,
       layoutDropHeaderFooter,
+      ocrTextCleanup,
+      stripMdSyntax,
+      writeNumeric,
       textSeparator,
       paragraphMode,
       aiOcrPrompt,
@@ -557,6 +566,11 @@ export function SettingsView() {
                     setLayoutDropHeaderFooter(v);
                     markDirty();
                   }}
+                  ocrTextCleanup={ocrTextCleanup}
+                  onOcrTextCleanupChange={(v) => {
+                    setOcrTextCleanup(v);
+                    markDirty();
+                  }}
                   aiOcrPrompt={aiOcrPrompt}
                   onAiOcrPromptChange={(v) => {
                     setAiOcrPrompt(v);
@@ -631,6 +645,16 @@ export function SettingsView() {
                   value={excelTablesOnly}
                   onChange={(v) => {
                     setExcelTablesOnly(v);
+                    markDirty();
+                  }}
+                  stripMdSyntax={stripMdSyntax}
+                  onStripMdSyntaxChange={(v) => {
+                    setStripMdSyntax(v);
+                    markDirty();
+                  }}
+                  writeNumeric={writeNumeric}
+                  onWriteNumericChange={(v) => {
+                    setWriteNumeric(v);
                     markDirty();
                   }}
                   disabled={loading}
@@ -850,6 +874,8 @@ function OcrSettingsPanel({
   onLayoutScoreThresholdChange,
   layoutDropHeaderFooter,
   onLayoutDropHeaderFooterChange,
+  ocrTextCleanup,
+  onOcrTextCleanupChange,
   aiOcrPrompt,
   onAiOcrPromptChange,
   drawTablePrompt,
@@ -873,6 +899,8 @@ function OcrSettingsPanel({
   onLayoutScoreThresholdChange: (v: number) => void;
   layoutDropHeaderFooter: boolean;
   onLayoutDropHeaderFooterChange: (v: boolean) => void;
+  ocrTextCleanup: boolean;
+  onOcrTextCleanupChange: (v: boolean) => void;
   aiOcrPrompt: string;
   onAiOcrPromptChange: (v: string) => void;
   drawTablePrompt: string;
@@ -1056,6 +1084,19 @@ function OcrSettingsPanel({
           <Switch
             checked={ocrLowPrecision}
             onCheckedChange={onOcrLowPrecisionChange}
+            disabled={loading}
+          />
+        </SettingRow>
+      </Panel>
+
+      <Panel>
+        <SettingRow
+          label={t("settings.ocrTextCleanup")}
+          description={t("settings.ocrTextCleanupDesc")}
+        >
+          <Switch
+            checked={ocrTextCleanup}
+            onCheckedChange={onOcrTextCleanupChange}
             disabled={loading}
           />
         </SettingRow>
@@ -1896,10 +1937,18 @@ function DrawSettingsPanel({
 function ExcelSettingsPanel({
   value,
   onChange,
+  stripMdSyntax,
+  onStripMdSyntaxChange,
+  writeNumeric,
+  onWriteNumericChange,
   disabled,
 }: {
   value: boolean;
   onChange: (v: boolean) => void;
+  stripMdSyntax: boolean;
+  onStripMdSyntaxChange: (v: boolean) => void;
+  writeNumeric: boolean;
+  onWriteNumericChange: (v: boolean) => void;
   disabled?: boolean;
 }) {
   const { t } = useI18n();
@@ -1913,6 +1962,26 @@ function ExcelSettingsPanel({
         <Switch
           checked={value}
           onCheckedChange={onChange}
+          disabled={disabled}
+        />
+      </SettingRow>
+      <SettingRow
+        label={t("settings.stripMdSyntax")}
+        description={t("settings.stripMdSyntaxDesc")}
+      >
+        <Switch
+          checked={stripMdSyntax}
+          onCheckedChange={onStripMdSyntaxChange}
+          disabled={disabled}
+        />
+      </SettingRow>
+      <SettingRow
+        label={t("settings.writeNumeric")}
+        description={t("settings.writeNumericDesc")}
+      >
+        <Switch
+          checked={writeNumeric}
+          onCheckedChange={onWriteNumericChange}
           disabled={disabled}
         />
       </SettingRow>

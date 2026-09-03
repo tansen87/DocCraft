@@ -491,6 +491,71 @@ fn median_line_len(lines: &[&str]) -> usize {
   lens[lens.len() / 2]
 }
 
+/// Normalize raw local OCR output before the paragraph policy runs
+/// (docs/design/00017 P1-1):
+/// 1. strip zero-width characters and the BOM;
+/// 2. collapse in-line whitespace runs (incl. the full-width U+3000) to a
+///    single ASCII space;
+/// 3. insert exactly one space at every direct CJK ↔ Latin/digit boundary,
+///    aligning with `connector` but applied within a line.
+///
+/// Newlines are preserved so the per-line paragraph heuristics still see the
+/// original line structure; punctuation width is left untouched.
+pub fn clean_ocr_text(input: &str) -> String {
+  input
+    .lines()
+    .map(collapse_whitespace_and_zero_width)
+    .map(|line| normalize_cjk_spacing(&line))
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
+/// Drop zero-width / BOM control characters and collapse each whitespace run
+/// (incl. full-width) to a single ASCII space.
+fn collapse_whitespace_and_zero_width(line: &str) -> String {
+  let mut out = String::new();
+  let mut in_ws = false;
+  for c in line.chars() {
+    if matches!(
+      c,
+      '\u{feff}' | '\u{200b}' | '\u{200c}' | '\u{200d}' | '\u{2060}'
+    ) {
+      continue;
+    }
+    if c.is_whitespace() {
+      if !in_ws {
+        out.push(' ');
+        in_ws = true;
+      }
+    } else {
+      out.push(c);
+      in_ws = false;
+    }
+  }
+  out
+}
+
+/// Insert exactly one space at every CJK ⟷ Latin/digit boundary. Existing
+/// spaces (collapsed to one) are left as-is - a separator already present
+/// stops the boundary test from inserting a duplicate.
+fn normalize_cjk_spacing(line: &str) -> String {
+  let mut out = String::new();
+  for c in line.chars() {
+    let cur_cjk = is_cjk(c);
+    let cur_latin = c.is_ascii_alphanumeric();
+    if let Some(prev) = out.chars().next_back() {
+      if !c.is_whitespace()
+        && !prev.is_whitespace()
+        && ((is_cjk(prev) && cur_latin) || (cur_cjk && prev.is_ascii_alphanumeric()))
+      {
+        out.push(' ');
+      }
+    }
+    out.push(c);
+  }
+  out
+}
+
 /// CJK ideographs, kana, hangul and CJK punctuation (U+3000–303F, U+FF00–FF60)
 /// are joined without a space; other scripts take a single space.
 pub fn is_cjk(c: char) -> bool {
@@ -748,5 +813,44 @@ mod tests {
       ParagraphMode::try_from("NONE".to_string()).unwrap(),
       ParagraphMode::None
     );
+  }
+
+  /// P1-1: `clean_ocr_text` strips zero-width / BOM characters, collapses
+  /// in-line whitespace runs (incl. full-width) to one space, keeps newlines,
+  /// and adds a space at CJK ⟷ Latin boundaries - but leaves plain text alone.
+  #[test]
+  fn clean_ocr_text_normalizes_noisy_local_output() {
+    let out = clean_ocr_text("日期\u{feff}  \u{200b}  2026\u{3000}年\u{200b}\n第二\u{3000}行");
+    assert_eq!(out, "日期 2026 年\n第二 行");
+
+    assert_eq!(clean_ocr_text("中A"), "中 A");
+    assert_eq!(clean_ocr_text("hello world"), "hello world");
+  }
+
+  /// P1-4: local OCR `off` mode supplies per-line geometry (y already flipped
+  /// to PDF space). G1 uses it to detect a real paragraph gap while plain close
+  /// lines of one paragraph merge - even when the textual heuristics would have
+  /// treated the short lines as headings.
+  #[test]
+  fn ocr_geometry_detects_paragraph_vs_soft_break() {
+    fn m(top: f32, h: f32) -> LineMeta {
+      LineMeta {
+        y: -top,
+        font_size: h,
+        x0: 90.0,
+        x1: 400.0,
+      }
+    }
+    // Soft break: two close flush-left lines of one paragraph → merged.
+    let pages = vec!["这是一段较长的第一行内容\n这是同一段的第二行内容".to_string()];
+    let meta = vec![vec![m(120.0, 20.0), m(145.0, 20.0)]];
+    let out = apply(&pages, Some(&meta), &[], &[], ParagraphMode::Smart);
+    assert_eq!(out[0], "这是一段较长的第一行内容这是同一段的第二行内容");
+
+    // Paragraph gap (G1): far apart lines → hard break.
+    let pages = vec!["第一段较长的第一行内容\n第二段较长的第二行内容".to_string()];
+    let meta = vec![vec![m(120.0, 20.0), m(200.0, 20.0)]];
+    let out = apply(&pages, Some(&meta), &[], &[], ParagraphMode::Smart);
+    assert_eq!(out[0], "第一段较长的第一行内容\n第二段较长的第二行内容");
   }
 }

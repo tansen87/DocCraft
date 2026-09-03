@@ -146,7 +146,7 @@
 - **方案**:`write_table` 中对每个单元格嗅探:纯整数 / 十进制数 /
   百分比 → `write_number_with_format`(数字右对齐格式);
   其余保持字符串。日期格式涉及本地化,首期不做。
-- **设置**:`app-settings.json` 增加 `writeStringFormat`(默认 `true`),
+- **设置**:`app-settings.json` 增加 `writeNumeric`(默认 `false`),
   Settings → Excel导出 组内加开关。
 - **验收**:单测——`"123"`/`"3.14"`/`"12%"` 单元格在 openpyxl/
   rust_xlsxwriter 读回时是数值类型;`"0012"`(前导零)保持文本。
@@ -237,9 +237,9 @@ P1-1/P1-4 这类改变输出的项需在 changelog 中注明迁移说明。
 - [x] 全角空格分隔的 CJK 行正确切列(P0-3)
 - [x] 1000 行 OCR 页段落处理耗时量级下降;现有单测全绿(P0-4)
 - [x] "U.S." / "J. Smith" 不再被当列表;"A. " 仍是标记(P0-5)
-- [ ] `ocrTextCleanup` 开关生效,关闭时输出逐字节一致(P1-1)
-- [ ] Excel 单元格无 `**` / `[]()` / 反引号残留(P1-2)
-- [ ] 数值单元格在 Excel 中为数字类型;前导零保持文本(P1-3)
+- [x] `ocrTextCleanup` 开关生效,关闭时输出逐字节一致(P1-1)
+- [x] Excel 单元格无 `**` / `[]()` / 反引号残留(P1-2)
+- [x] 数值单元格在 Excel 中为数字类型;前导零保持文本(P1-3)
 - [ ] 本地 OCR 页利用行几何正确断段;AI 分支行为记录在案(P1-4 / P2-2)
 - [ ] 重复页眉开关生效,3 页以上重复才移除(P2-1)
 - [ ] `pnpm exec tsc --noEmit` 与 `cargo test --manifest-path src-tauri/Cargo.toml` 全绿

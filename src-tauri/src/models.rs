@@ -476,6 +476,23 @@ pub struct AppSettings {
   /// instead of keeping them as HTML comments. `paddle` mode only.
   #[serde(default = "default_true")]
   pub layout_drop_header_footer: bool,
+  /// Normalize raw local OCR output before the paragraph policy: strip
+  /// zero-width / BOM characters, collapse in-line whitespace runs (incl.
+  /// full-width) to a single space, and normalize CJK ↔ Latin/digit spacing
+  /// (docs/design/00017 P1-1). Default on.
+  #[serde(default = "default_true")]
+  pub ocr_text_cleanup: bool,
+  /// Strip inline Markdown syntax (`**bold**`, `` `code` ``, `[text](url)`)
+  /// from cells and plain lines when writing Excel (docs/design/00017 P1-2).
+  /// Default off: Markdown is written verbatim.
+  #[serde(default)]
+  pub strip_md_syntax: bool,
+  /// Write numeric cells (plain integers / decimals / percentages) as Excel
+  /// numbers so they sort and sum. When `false` every cell is a text string;
+  /// leading-zero and culturally-formatted values always stay text
+  /// (docs/design/00017 P1-3). Default off.
+  #[serde(default)]
+  pub write_numeric: bool,
 }
 
 /// How extracted text lines are joined into paragraphs (PDF text pages and
@@ -911,6 +928,9 @@ impl Default for AppSettings {
       ocr_layout_model: default_layout_model(),
       layout_score_threshold: default_layout_score_threshold(),
       layout_drop_header_footer: true,
+      ocr_text_cleanup: true,
+      strip_md_syntax: false,
+      write_numeric: false,
     }
   }
 }
