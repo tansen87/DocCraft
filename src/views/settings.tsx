@@ -212,11 +212,11 @@ export function SettingsView() {
   const [ocrLowPrecision, setOcrLowPrecision] = useState(true);
   const [ocrModelSize, setOcrModelSize] = useState<OcrModelSize>("small");
   const [ocrLayoutMode, setOcrLayoutMode] = useState<LayoutMode>("off");
-  const [ocrLayoutModel, setOcrLayoutModel] = useState("PP-DocLayout-S");
+  const [ocrLayoutModel, setOcrLayoutModel] = useState("PP-DocLayoutV3");
   const [layoutModels, setLayoutModels] = useState<LayoutModelInfo[]>([]);
   const [layoutScoreThreshold, setLayoutScoreThreshold] = useState(0.5);
   const [layoutDropHeaderFooter, setLayoutDropHeaderFooter] = useState(true);
-  const [textSeparator, setTextSeparator] = useState("|");
+  const [textSeparator, setTextSeparator] = useState(" ");
   const [paragraphMode, setParagraphMode] = useState<ParagraphMode>("guided");
   const [aiOcrPrompt, setAiOcrPrompt] = useState("");
   const [drawTablePrompt, setDrawTablePrompt] = useState("");
@@ -257,7 +257,7 @@ export function SettingsView() {
         setOcrLowPrecision(settings.ocrLowPrecision ?? true);
         setOcrModelSize(settings.ocrModelSize ?? "small");
         setOcrLayoutMode(settings.ocrLayoutMode ?? "off");
-        setOcrLayoutModel(settings.ocrLayoutModel ?? "PP-DocLayout-S");
+        setOcrLayoutModel(settings.ocrLayoutModel ?? "PP-DocLayoutV3");
         setLayoutScoreThreshold(settings.layoutScoreThreshold ?? 0.5);
         setLayoutDropHeaderFooter(settings.layoutDropHeaderFooter ?? true);
         setTextSeparator(settings.textSeparator);
@@ -1061,7 +1061,7 @@ function OcrSettingsPanel({
         </SettingRow>
       </Panel>
 
-      {/* Layout analysis (docs/design/00016): off / rule / paddle. The
+      {/* Layout analysis (docs/design/00016): off / paddle. The
           model + sub-options only expand for the paddle tier. */}
       <Panel>
         <SettingRow
@@ -1079,9 +1079,6 @@ function OcrSettingsPanel({
             <SelectContent>
               <SelectItem value="off">
                 {t("settings.ocrLayoutMode.off")}
-              </SelectItem>
-              <SelectItem value="rule">
-                {t("settings.ocrLayoutMode.rule")}
               </SelectItem>
               <SelectItem value="paddle">
                 {t("settings.ocrLayoutMode.paddle")}

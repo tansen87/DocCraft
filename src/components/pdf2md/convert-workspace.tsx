@@ -111,7 +111,7 @@ export function ConvertWorkspace({
    */
   const [excludeMode, setExcludeMode] = useState(false);
   const [excludePages, setExcludePages] = useState<PageExclude[]>([]);
-  const [useForAllPages, setUseForAllPages] = useState(false);
+  const [useForAllPages, setUseForAllPages] = useState(true);
   /** Per-page geometry (pdfjs rawDims) captured when exclusion mode is entered. */
   const [pageGeom, setPageGeom] = useState<Record<number, PageGeometry> | null>(
     null,

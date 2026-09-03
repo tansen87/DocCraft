@@ -5,11 +5,7 @@ feature. Every subdirectory is one model:
 
 ```
 resources/models/layout/
-├─ PP-DocLayout-S/            PP-DocLayout-S.mnn + layout-meta.json + config.json (23 classes, default)
-├─ PP-DocLayoutV3/            PP-DocLayoutV3.mnn + layout-meta.json + inference.yml (DETR, 25 classes)
-├─ PicoDet-S_layout_17cls/    PicoDet-S-layout-17cls.mnn + meta + config.json     (17 classes)
-├─ PicoDet_layout_1x/         PicoDet_layout_1x.mnn + meta + config.json          (PubLayNet 5 classes)
-└─ PicoDet_layout_1x_table/   PicoDet_layout_1x_table.mnn + meta + config.json    (1 class, tables only)
+└─ PP-DocLayoutV3/            PP-DocLayoutV3.mnn + layout-meta.json (DETR, 25 classes)
 ```
 
 `config.json` is the **model's own exported config** (downloaded together with the
@@ -28,9 +24,9 @@ dropping a new directory here — **no code change needed**.
 
 ```jsonc
 {
-  "name": "PP-DocLayout-S",              // stable name (= directory name)
-  "displayName": "PP-DocLayout-S", // shown in the settings select
-  "modelFile": "PP-DocLayout-S.mnn",     // model file inside this directory
+  "name": "PP-DocLayoutV3",              // stable name (= directory name)
+  "displayName": "PP-DocLayoutV3", // shown in the settings select
+  "modelFile": "PP-DocLayoutV3.mnn",     // model file inside this directory
   "inputWidth": 480,                     // input size (from config.json)
   "inputHeight": 480,
   "keepRatio": false,                    // false = stretch (PicoDet), true = letterbox

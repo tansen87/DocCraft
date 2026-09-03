@@ -11,12 +11,10 @@
 //!   directory carries `model.mnn` + `layout-meta.json`; dropping a new
 //!   converted model in makes it appear in the settings select without code
 //!   changes (design §3.1 / §3.3).
-//! - [`LayoutEngine`]: the `paddle` mode — PicoDet inference through
-//!   `ocr_rs::InferenceEngine` (the same MNN runtime as det/rec, so no second
-//!   inference dependency).
-//! - [`rule_detect`]: the zero-model `rule` mode — column detection, heading
-//!   height heuristic and header/footer band filtering (design §3.5).
-//! - [`sort_reading_order`]: recursive XY-Cut used by both modes.
+//! - [`LayoutEngine`]: the `paddle` mode — PicoDet / PP-DocLayoutV3 inference
+//!   through `ocr_rs::InferenceEngine` (the same MNN runtime as det/rec, so no
+//!   second inference dependency) or the vendored DETR binding (`cpp/mnn`).
+//! - [`sort_reading_order`]: recursive XY-Cut used to restore reading order.
 //! - [`assemble_markdown`]: regions + OCR blocks → Markdown.
 
 use std::collections::HashMap;
@@ -75,8 +73,12 @@ impl Drop for V3Engine {
 
 impl V3Engine {
   fn new(model_path: &Path, threads: i32, low_precision: bool) -> Result<Self, String> {
-    let buffer = std::fs::read(model_path)
-      .map_err(|e| format!("Failed to read PP-DocLayoutV3 model {}: {e}", model_path.display()))?;
+    let buffer = std::fs::read(model_path).map_err(|e| {
+      format!(
+        "Failed to read PP-DocLayoutV3 model {}: {e}",
+        model_path.display()
+      )
+    })?;
     let precision = if low_precision { 1 } else { 0 };
     let ptr = unsafe { mnnv3_create(buffer.as_ptr(), buffer.len(), threads, precision) };
     if ptr.is_null() {
@@ -118,7 +120,10 @@ impl V3Engine {
 
     let rc = unsafe { mnnv3_run(self.ptr, data.as_ptr(), w, h) };
     if rc != 0 {
-      return Err(format!("PP-DocLayoutV3 inference failed: {}", self.last_error()));
+      return Err(format!(
+        "PP-DocLayoutV3 inference failed: {}",
+        self.last_error()
+      ));
     }
 
     let mut dims = [0usize; 8];
@@ -141,7 +146,16 @@ impl V3Engine {
     let slice = unsafe { std::slice::from_raw_parts(pd, len) };
     let orig_w = image.width() as f64;
     let orig_h = image.height() as f64;
-    decode_detr_rows(slice, rows, meta, score_threshold, orig_w, orig_h, in_w, in_h)
+    decode_detr_rows(
+      slice,
+      rows,
+      meta,
+      score_threshold,
+      orig_w,
+      orig_h,
+      in_w,
+      in_h,
+    )
   }
 }
 
@@ -201,7 +215,8 @@ fn decode_detr_rows(
   }
   // Greedy NMS by confidence, keeping the reading-order association.
   candidates.sort_by(|a, b| {
-    b.1.score
+    b.1
+      .score
       .partial_cmp(&a.1.score)
       .unwrap_or(std::cmp::Ordering::Equal)
   });
@@ -217,19 +232,10 @@ fn decode_detr_rows(
   Ok(keep.into_iter().map(|(_, r)| r).collect())
 }
 
-/// Width of the top / bottom strip treated as a page header / footer band.
-const BAND_RATIO: f64 = 0.08;
-/// A column narrower than this fraction of the page width is not split.
-const MIN_COLUMN_WIDTH_RATIO: f64 = 0.15;
 /// A gutter narrower than this fraction of the page width is not a split.
 const MIN_GAP_RATIO: f64 = 0.02;
 /// Absolute minimum XY-Cut gap, in page pixels.
 const MIN_GAP_PX: f64 = 12.0;
-/// Title heuristic: a block whose height is at least this multiple of the
-/// page's median block height...
-const TITLE_HEIGHT_RATIO: f64 = 1.4;
-/// ... and whose width is at most this fraction of the page width is a heading.
-const TITLE_MAX_WIDTH_RATIO: f64 = 0.6;
 /// A horizontal gap wider than this fraction of the page width separates two
 /// table / column cells within one OCR line.
 const COLUMN_GAP_RATIO: f64 = 0.02;
@@ -320,24 +326,6 @@ impl LayoutRect {
   }
   pub fn area(self) -> f64 {
     self.width * self.height
-  }
-  /// Bounding rect of `rects` (empty → a zero rect).
-  fn union(rects: &[Self]) -> Self {
-    let mut out = rects.first().copied().unwrap_or(Self {
-      x: 0.0,
-      y: 0.0,
-      width: 0.0,
-      height: 0.0,
-    });
-    for r in &rects[1..] {
-      let x = out.x.min(r.x);
-      let y = out.y.min(r.y);
-      out.width = out.right().max(r.right()) - x;
-      out.height = out.bottom().max(r.bottom()) - y;
-      out.x = x;
-      out.y = y;
-    }
-    out
   }
 }
 
@@ -698,7 +686,9 @@ impl LayoutEngine {
     // graph needs the `image` input selected by name.
     if meta.engine.as_deref() == Some("detr") {
       if meta.input_width == 0 || meta.input_height == 0 {
-        return Err("PP-DocLayoutV3 requires inputWidth/inputHeight in layout-meta.json".to_string());
+        return Err(
+          "PP-DocLayoutV3 requires inputWidth/inputHeight in layout-meta.json".to_string(),
+        );
       }
       let v3 = V3Engine::new(&model_path, threads, low_precision)?;
       let input_size = (meta.input_width, meta.input_height);
@@ -847,171 +837,6 @@ fn resolve_input_size(
     "layout model input size is unknown (shape {:?}); declare inputWidth/inputHeight in layout-meta.json",
     shape
   ))
-}
-
-// ─── Rule mode: pure geometric detection ─────────────────────────────────
-
-/// Median of a non-empty slice of `f64`.
-fn median(values: &[f64]) -> f64 {
-  let mut v = values.to_vec();
-  v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-  v[v.len() / 2]
-}
-
-/// Find the widest vertical gap that cleanly splits `blocks` into two
-/// non-empty groups, each at least `min_col_w` wide. A gap is a vertical band
-/// no block interval crosses (so a full-width table or a spanning element
-/// naturally prevents the split). Returns the cut x (middle of the band).
-fn column_cut(blocks: &[&OcrBlock], page_w: f64) -> Option<f64> {
-  if blocks.len() < 2 {
-    return None;
-  }
-  let min_gap = (page_w * MIN_GAP_RATIO).max(MIN_GAP_PX);
-  let min_col_w = page_w * MIN_COLUMN_WIDTH_RATIO;
-
-  // Sweep the interval coverage to find empty bands between block edges.
-  let mut edges: Vec<(f64, i32)> = Vec::with_capacity(blocks.len() * 2);
-  for b in blocks {
-    edges.push((b.left, 1));
-    edges.push((b.left + b.width, -1));
-  }
-  edges.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-
-  let mut coverage = 0i32;
-  let mut prev = edges[0].0;
-  let mut best: Option<(f64, f64)> = None; // (gap width, cut x)
-  for (x, delta) in edges {
-    if coverage == 0 && x > prev {
-      let gap = x - prev;
-      let mid = (prev + x) / 2.0;
-      let (left, right): (Vec<_>, Vec<_>) =
-        blocks.iter().partition(|b| b.left + b.width * 0.5 <= mid);
-      if gap >= min_gap && !left.is_empty() && !right.is_empty() {
-        let left_w = group_width(&left);
-        let right_w = group_width(&right);
-        if left_w >= min_col_w && right_w >= min_col_w {
-          if best.map_or(true, |(best_w, _)| gap > best_w) {
-            best = Some((gap, mid));
-          }
-        }
-      }
-    }
-    coverage += delta;
-    prev = x;
-  }
-  best.map(|(_, cut)| cut)
-}
-
-/// Horizontal extent (max right - min left) of a block group.
-fn group_width(blocks: &[&OcrBlock]) -> f64 {
-  let min = blocks.iter().map(|b| b.left).fold(f64::INFINITY, f64::min);
-  let max = blocks
-    .iter()
-    .map(|b| b.left + b.width)
-    .fold(f64::NEG_INFINITY, f64::max);
-  (max - min).max(0.0)
-}
-
-/// Recursively split `blocks` into columns (left → right). `page_w` is the
-/// original page width used for the thresholds.
-fn detect_columns<'a>(blocks: &[&'a OcrBlock], page_w: f64) -> Vec<Vec<&'a OcrBlock>> {
-  let Some(cut) = column_cut(blocks, page_w) else {
-    return vec![blocks.to_vec()];
-  };
-  let (left, right): (Vec<_>, Vec<_>) = blocks.iter().partition(|b| b.left + b.width * 0.5 <= cut);
-  let mut out = detect_columns(&left, page_w);
-  out.extend(detect_columns(&right, page_w));
-  out
-}
-
-/// Whether a block looks like a heading: significantly taller than the page's
-/// median block height and short enough not to be a full paragraph line.
-fn is_title(block: &OcrBlock, median_h: f64, page_w: f64) -> bool {
-  median_h > 0.0
-    && block.height >= median_h * TITLE_HEIGHT_RATIO
-    && block.width <= page_w * TITLE_MAX_WIDTH_RATIO
-}
-
-/// Zero-model geometric layout detection (design §3.5). Pure function over
-/// OCR blocks - unit-testable without any model.
-///
-/// The top / bottom 8% bands are treated as header / footer and dropped;
-/// remaining blocks are split into columns (when a clean gutter exists and
-/// each column is wide enough) and, within each column, headings are split
-/// out by the height heuristic. The returned regions are already in reading
-/// order (column-major).
-pub fn rule_detect(blocks: &[OcrBlock], page_w: f64, page_h: f64) -> Vec<LayoutRegion> {
-  let band_h = page_h * BAND_RATIO;
-  let content: Vec<&OcrBlock> = blocks
-    .iter()
-    .filter(|b| {
-      let cy = b.top + b.height * 0.5;
-      cy >= band_h && cy <= page_h - band_h
-    })
-    .collect();
-  if content.is_empty() {
-    return Vec::new();
-  }
-
-  let heights: Vec<f64> = content.iter().map(|b| b.height).collect();
-  let median_h = median(&heights);
-
-  let mut regions = Vec::new();
-  for column in detect_columns(&content, page_w) {
-    let mut column = column;
-    column.sort_by(|a, b| {
-      a.top
-        .partial_cmp(&b.top)
-        .unwrap_or(std::cmp::Ordering::Equal)
-        .then_with(|| {
-          a.left
-            .partial_cmp(&b.left)
-            .unwrap_or(std::cmp::Ordering::Equal)
-        })
-    });
-    let mut text_group: Vec<OcrBlock> = Vec::new();
-    for b in column {
-      if is_title(b, median_h, page_w) {
-        flush_text_region(&mut regions, &mut text_group);
-        regions.push(LayoutRegion {
-          class: LayoutClass::Title,
-          rect: LayoutRect {
-            x: b.left,
-            y: b.top,
-            width: b.width,
-            height: b.height,
-          },
-          score: 1.0,
-        });
-      } else {
-        text_group.push(b.clone());
-      }
-    }
-    flush_text_region(&mut regions, &mut text_group);
-  }
-  regions
-}
-
-/// Push the accumulated text blocks of one column segment as a `Text` region.
-fn flush_text_region(regions: &mut Vec<LayoutRegion>, group: &mut Vec<OcrBlock>) {
-  if group.is_empty() {
-    return;
-  }
-  let rects: Vec<LayoutRect> = group
-    .iter()
-    .map(|b| LayoutRect {
-      x: b.left,
-      y: b.top,
-      width: b.width,
-      height: b.height,
-    })
-    .collect();
-  regions.push(LayoutRegion {
-    class: LayoutClass::Text,
-    rect: LayoutRect::union(&rects),
-    score: 1.0,
-  });
-  group.clear();
 }
 
 // ─── Reading order (XY-Cut) ──────────────────────────────────────────────
@@ -1209,10 +1034,7 @@ fn build_grid(blocks: &[&OcrBlock], page_w: f64, page_h: f64) -> Vec<Vec<String>
           .unwrap_or(std::cmp::Ordering::Equal)
       });
       let mut cells: Vec<Vec<String>> = Vec::new();
-      let mut prev_right = row
-        .first()
-        .map(|b| b.left + b.width)
-        .unwrap_or(0.0);
+      let mut prev_right = row.first().map(|b| b.left + b.width).unwrap_or(0.0);
       for b in row {
         if b.left - prev_right > gap_x {
           cells.push(vec![b.text.clone()]);
@@ -1224,10 +1046,7 @@ fn build_grid(blocks: &[&OcrBlock], page_w: f64, page_h: f64) -> Vec<Vec<String>
         }
         prev_right = b.left + b.width;
       }
-      cells
-        .into_iter()
-        .map(|cell| cell.join(" "))
-        .collect()
+      cells.into_iter().map(|cell| cell.join(" ")).collect()
     })
     .collect()
 }
@@ -1262,7 +1081,11 @@ fn grid_to_markdown(grid: &[Vec<String>]) -> String {
     padded.resize(cols, String::new());
     format!(
       "| {} |",
-      padded.iter().map(|c| escape_cell(c)).collect::<Vec<_>>().join(" | ")
+      padded
+        .iter()
+        .map(|c| escape_cell(c))
+        .collect::<Vec<_>>()
+        .join(" | ")
     )
   };
   let mut rows: Vec<String> = Vec::new();
@@ -1466,10 +1289,10 @@ mod tests {
     // rows: [class, score, x1, y1, x2, y2, reading_order]
     let data = vec![
       3.0, 0.9, 400.0, 400.0, 800.0, 800.0, 2.0, // doc_title -> Title, order 2
-      1.0, 0.8, 0.0, 0.0, 400.0, 400.0, 0.0,     // seal, order 0
+      1.0, 0.8, 0.0, 0.0, 400.0, 400.0, 0.0, // seal, order 0
       4.0, 0.6, 100.0, 100.0, 600.0, 600.0, 1.0, // image, order 1
-      2.0, 0.1, 0.0, 0.0, 100.0, 100.0, 9.0,     // below threshold -> dropped
-      9.0, 0.7, 10.0, 8.0, 20.0, 10.0, 3.0,      // unknown class id -> Other
+      2.0, 0.1, 0.0, 0.0, 100.0, 100.0, 9.0, // below threshold -> dropped
+      9.0, 0.7, 10.0, 8.0, 20.0, 10.0, 3.0, // unknown class id -> Other
     ];
     let regions = decode_detr_rows(&data, 5, &meta, 0.5, 1200.0, 1600.0, 800.0, 800.0).unwrap();
     // The sub-threshold row is dropped and the valid ones are ordered by column 6.
@@ -1593,84 +1416,6 @@ mod tests {
   }
 
   #[test]
-  fn rule_detect_single_column_yields_one_text_region() {
-    let blocks = vec![
-      block("line one", 100.0, 200.0, 400.0, 12.0),
-      block("line two", 100.0, 216.0, 380.0, 12.0),
-    ];
-    let regions = rule_detect(&blocks, 600.0, 800.0);
-    assert_eq!(regions.len(), 1);
-    assert_eq!(regions[0].class, LayoutClass::Text);
-  }
-
-  #[test]
-  fn rule_detect_splits_two_columns_left_to_right() {
-    // Two columns with a clean gutter; left blocks first in the result.
-    let blocks = vec![
-      block("L1", 40.0, 200.0, 200.0, 12.0),
-      block("R1", 380.0, 200.0, 200.0, 12.0),
-      block("L2", 40.0, 260.0, 180.0, 12.0),
-      block("R2", 380.0, 260.0, 190.0, 12.0),
-    ];
-    let regions = rule_detect(&blocks, 620.0, 800.0);
-    assert_eq!(regions.len(), 2);
-    assert_eq!(regions[0].rect.x, 40.0); // left column first
-    assert_eq!(regions[1].rect.x, 380.0);
-  }
-
-  #[test]
-  fn rule_detect_keeps_single_column_when_column_too_narrow() {
-    // Right "column" is only 8% of the page width → no split.
-    let blocks = vec![
-      block("wide left", 40.0, 200.0, 500.0, 12.0),
-      block("thin right", 560.0, 200.0, 30.0, 12.0),
-    ];
-    let regions = rule_detect(&blocks, 620.0, 800.0);
-    assert_eq!(regions.len(), 1);
-    assert_eq!(regions[0].class, LayoutClass::Text);
-  }
-
-  #[test]
-  fn rule_detect_abandons_split_on_spanning_element() {
-    // A full-width block crosses the gutter → single column (conservative).
-    let blocks = vec![
-      block("left", 40.0, 200.0, 200.0, 12.0),
-      block("right", 380.0, 200.0, 200.0, 12.0),
-      block("full width table row", 40.0, 300.0, 540.0, 14.0),
-    ];
-    let regions = rule_detect(&blocks, 620.0, 800.0);
-    assert_eq!(regions.len(), 1);
-  }
-
-  #[test]
-  fn rule_detect_drops_header_footer_bands() {
-    let blocks = vec![
-      block("page header", 200.0, 10.0, 200.0, 12.0), // top 8% of 800 = 64px
-      block("body", 100.0, 200.0, 400.0, 12.0),
-      block("page footer", 200.0, 780.0, 200.0, 12.0), // bottom 8%
-    ];
-    let regions = rule_detect(&blocks, 600.0, 800.0);
-    assert_eq!(regions.len(), 1);
-    assert_eq!(regions[0].class, LayoutClass::Text);
-  }
-
-  #[test]
-  fn rule_detect_splits_headings_from_text() {
-    // A heading line (24px) vs three body lines (12px): median = 12, so the
-    // heading clears the 1.4× threshold and becomes its own region.
-    let blocks = vec![
-      block("chapter", 100.0, 100.0, 200.0, 24.0), // heading
-      block("body one", 100.0, 140.0, 400.0, 12.0),
-      block("body two", 100.0, 156.0, 380.0, 12.0),
-      block("body three", 100.0, 172.0, 390.0, 12.0),
-    ];
-    let regions = rule_detect(&blocks, 600.0, 800.0);
-    assert_eq!(regions.len(), 2);
-    assert_eq!(regions[0].class, LayoutClass::Title);
-    assert_eq!(regions[1].class, LayoutClass::Text);
-  }
-
-  #[test]
   fn xy_cut_orders_columns_left_to_right() {
     let mut regions = vec![
       region(LayoutClass::Text, rect(380.0, 100.0, 200.0, 400.0)),
@@ -1777,10 +1522,7 @@ mod tests {
       block("r1c2", 400.0, 160.0, 100.0, 12.0),
     ];
     let md = assemble_markdown(&regions, &blocks, 620.0, 800.0, "|", true);
-    assert_eq!(
-      md,
-      "| h1 | h2 |\n| --- | --- |\n| r1c1 | r1c2 |"
-    );
+    assert_eq!(md, "| h1 | h2 |\n| --- | --- |\n| r1c1 | r1c2 |");
   }
 
   #[test]

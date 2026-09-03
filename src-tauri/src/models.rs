@@ -457,16 +457,15 @@ pub struct AppSettings {
   #[serde(default)]
   pub local_ocr_threads: u32,
   /// Layout analysis applied to local OCR pages (docs/design/00016).
-  /// `off` keeps the current behaviour (pure Y→X sorting), `rule` runs the
-  /// zero-model geometric heuristics (columns / headings / header-footer
-  /// bands), `paddle` runs the selected MNN layout model and falls back to
-  /// `rule` when the model is missing.
+  /// `off` keeps the current behaviour (pure Y→X sorting), `paddle` runs the
+  /// selected MNN layout model and falls back to `off` when the model is
+  /// missing.
   #[serde(default)]
   pub ocr_layout_mode: LayoutMode,
   /// Selected layout model: the subdirectory name under
   /// `resources/models/layout/` that carries a `model.mnn` +
   /// `layout-meta.json`. Missing / unknown values make `paddle` mode degrade
-  /// to `rule` (with a notification) instead of failing the conversion.
+  /// to `off` (with a notice) instead of failing the conversion.
   #[serde(default = "default_layout_model")]
   pub ocr_layout_model: String,
   /// Confidence threshold (0..1) for Paddle layout detections (PicoDet
@@ -549,7 +548,7 @@ pub enum OcrModelSize {
 }
 
 /// Layout analysis mode applied to local OCR pages (docs/design/00016).
-/// Serialized as a lowercase string (`"off"` / `"rule"` / `"paddle"`).
+/// Serialized as a lowercase string (`"off"` / `"paddle"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", try_from = "String")]
 pub enum LayoutMode {
@@ -557,11 +556,8 @@ pub enum LayoutMode {
   /// to previous behaviour. Default, zero regression risk.
   #[default]
   Off,
-  /// Pure geometric heuristics (no model): XY-Cut column detection, heading
-  /// font-size heuristic, top/bottom header-footer band filtering.
-  Rule,
-  /// Paddle layout detection model (PicoDet) via MNN. Falls back to `rule`
-  /// when the selected model directory is missing.
+  /// Paddle layout detection model (PicoDet / PP-DocLayoutV3) via MNN. Falls
+  /// back to `off` when the selected model directory is missing.
   Paddle,
 }
 
@@ -569,7 +565,6 @@ impl TryFrom<String> for LayoutMode {
   type Error = std::convert::Infallible;
   fn try_from(s: String) -> Result<Self, Self::Error> {
     Ok(match s.trim().to_ascii_lowercase().as_str() {
-      "rule" | "geometric" | "xycut" => Self::Rule,
       "paddle" | "model" | "mnn" => Self::Paddle,
       // Unknown / pre-existing configs fall back to off (no behaviour change).
       _ => Self::Off,
@@ -871,11 +866,11 @@ fn default_screenshot_hotkey() -> Option<String> {
 }
 
 fn default_text_separator() -> String {
-  "|".to_string()
+  " ".to_string()
 }
 
 fn default_layout_model() -> String {
-  "PP-DocLayout-S".to_string()
+  "PP-DocLayoutV3".to_string()
 }
 
 fn default_layout_score_threshold() -> f32 {

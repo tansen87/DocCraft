@@ -198,23 +198,12 @@ const en = {
   "settings.ocrLayoutMode.off": "None",
   "settings.ocrLayoutMode.offDesc":
     "Keep the current Y→X line output - no layout analysis",
-  "settings.ocrLayoutMode.rule": "Geometric",
-  "settings.ocrLayoutMode.ruleDesc":
-    "Zero-model heuristics: column split, heading levels, header/footer bands",
-  "settings.ocrLayoutMode.paddle": "Paddle model",
+  "settings.ocrLayoutMode.paddle": "Paddle",
   "settings.ocrLayoutMode.paddleDesc":
-    "Paddle layout model (MNN). Degrades to geometric when the model is not bundled",
+    "Paddle layout model (MNN). Uses plain Y→X output when the model is not bundled",
   "settings.ocrLayoutModel": "Layout model",
   "settings.ocrLayoutModelDesc":
     "Model pool under models/layout - pick the model that matches your document type",
-  "settings.layoutModelDesc.PP-DocLayout-S":
-    "General-purpose default (23 classes) - broadest training domain (papers, reports, exams, books, magazines, contracts, newspapers)",
-  "settings.layoutModelDesc.PicoDet-S_layout_17cls":
-    "Papers / reports (17 classes) - higher accuracy than PP-DocLayout-S at the same size",
-  "settings.layoutModelDesc.PicoDet_layout_1x":
-    "Regular layouts (5 classes, PubLayNet) - few precise classes (text / title / list / table / figure)",
-  "settings.layoutModelDesc.PicoDet_layout_1x_table":
-    "Tables only (1 class) - for table region detection",
   "settings.layoutModelDesc.PP-DocLayoutV3":
     "DETR layout module for PaddleOCR-VL (25 classes, 800x800) - multi-point boxes and reading order for skewed / curved / photographed documents",
   "settings.layoutModelMissing": "model files not installed",
@@ -616,23 +605,12 @@ const zh: Record<TranslationKey, string> = {
   "settings.ocrLayoutMode": "版面分析",
   "settings.ocrLayoutMode.off": "不使用",
   "settings.ocrLayoutMode.offDesc": "保持现状的 Y→X 拼行输出,不做版面分析",
-  "settings.ocrLayoutMode.rule": "纯几何",
-  "settings.ocrLayoutMode.ruleDesc":
-    "零模型启发式:分栏拆分、标题层级、页眉页脚条带过滤",
-  "settings.ocrLayoutMode.paddle": "Paddle 模型",
+  "settings.ocrLayoutMode.paddle": "Paddle",
   "settings.ocrLayoutMode.paddleDesc":
-    "Paddle 版面模型(MNN).模型未捆绑时自动降级为纯几何档",
+    "Paddle 版面模型(MNN).模型未捆绑时自动降级为纯 Y→X 输出",
   "settings.ocrLayoutModel": "版面模型",
   "settings.ocrLayoutModelDesc":
     "模型池位于 models/layout,按文档类型选择最合适的模型",
-  "settings.layoutModelDesc.PP-DocLayout-S":
-    "通用默认(23类)-训练域最广(中英文论文/研报/试卷/书籍/杂志/合同/报纸)",
-  "settings.layoutModelDesc.PicoDet-S_layout_17cls":
-    "论文/研报(17类)-同体积下精度高于 PP-DocLayout-S",
-  "settings.layoutModelDesc.PicoDet_layout_1x":
-    "规整版面(5类 PubLayNet)-类别少而准(文字/标题/列表/表格/图片)",
-  "settings.layoutModelDesc.PicoDet_layout_1x_table":
-    "仅表格(1类)-用于表格区域检测",
   "settings.layoutModelDesc.PP-DocLayoutV3":
     "PaddleOCR-VL 统一版面模块(25类, 800x800)-多点多边形框与阅读顺序,适合倾斜/弯曲/翻拍文档",
   "settings.layoutModelMissing": "未安装模型文件",
