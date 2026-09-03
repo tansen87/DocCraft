@@ -147,14 +147,22 @@ and Simplified Chinese - switchable at runtime.
   selected **paragraph mode** and can optionally show a glassmorphism result
   popup (pin / copy / clear) and auto-copy to clipboard. Performance notes
   live in [design/00001_snip-performance.md](./design/00001_snip-performance.md).
-- **Local layout analysis** - for OCR pages, three layout analysis modes
-  (`ocrLayoutMode`): **off** (default, pure Y→X line sorting), **rule**
-  (zero-model geometric heuristics: XY-Cut column detection, heading font-size
-  heuristic, header/footer band filtering), and **paddle** (MNN PicoDet layout
-  model with configurable confidence threshold; degrades to `rule` when the
-  model is missing). Four bundled layout models are available under
-  `resources/models/layout/`. See
+- **Local layout analysis** - for OCR pages, a layout analysis mode selector
+  (`ocrLayoutMode`): **off** (default, pure Y→X line sorting) or **paddle**
+  (MNN layout model with configurable confidence threshold; degrades to `off`
+  when the model is missing). The bundled **PP-DocLayoutV3** DETR model
+  (25 classes) emits regions in predicted reading order, so skewed / curved
+  layouts keep their original order. See
   [design/00016_local-ocr-layout-analysis.md](./design/00016_local-ocr-layout-analysis.md).
+- **Text cleanup & Excel export options** - raw local OCR output is normalized
+  before the paragraph policy (strip zero-width / BOM characters, collapse
+  whitespace runs incl. full-width U+3000, normalize CJK ↔ Latin/digit
+  spacing; toggleable via `ocrTextCleanup`, default on). The Markdown → Excel
+  exporter can strip inline Markdown syntax from cells (`stripMdSyntax`,
+  default off) and write numeric-looking cells as real Excel numbers
+  (`writeNumeric`, default off). Tables inside code fences (backtick or tilde)
+  are never exported. See
+  [design/00017_text-processing-optimizations.md](./design/00017_text-processing-optimizations.md).
 - **Local usage statistics** - every conversion / extraction / screenshot is
   logged locally (JSONL) with file count, page count, OCR pages, engine type,
   and wall-clock duration. The Settings page shows aggregated counters for
@@ -200,7 +208,7 @@ and Simplified Chinese - switchable at runtime.
 | Package manager   | pnpm 10 |
 | PDF engine        | `pdf-inspector` 1.17 (pure Rust, `lopdf`) |
 | Local OCR engine  | `ocr-rs` 2.4 (PaddleOCR, pure Rust) - engine cached in-process (toggleable); tiny / small / medium tiers |
-| Layout analysis   | 4 bundled PicoDet / PP-DocLayout models via MNN (optional, `ocrLayoutMode` = `paddle`) |
+| Layout analysis   | PP-DocLayoutV3 DETR model via MNN (optional, `ocrLayoutMode` = `paddle`) |
 | Screen capture    | `xcap` 0.9 (monitor snapshots) + `tauri-plugin-global-shortcut` (hotkey) |
 | PDF preview / OCR images | `pdfjs-dist` 6.x (renders preview pages; also renders OCR pages to PNG for the backend) |
 | Markdown / Excel  | `react-markdown` + GFM on the frontend; `rust_xlsxwriter` on the backend for `.xlsx` export |
@@ -289,13 +297,13 @@ doccraft/
 │  │     ├─ grid_rebuild.rs      # Grid/region reconstruction from drawn lines
 │  │     ├─ page_marker.rs       # `<!-- Page N -->` marker parsing + page attribution
 │  │     ├─ extract_cache.rs     # Per-document text extraction cache for draw-table
-│  │     ├─ layout.rs            # Local layout analysis (off / rule / paddle modes)
-│  │     ├─ paragraph.rs         # Paragraph line-break mode logic (guided / smart / none)
+│  │     ├─ layout.rs            # Local layout analysis (off / paddle modes)
+│  │     ├─ paragraph.rs         # Paragraph line-break mode logic (guided / smart / none) + OCR text cleanup
 │  │     ├─ region_exclude.rs    # PDF region exclusion backend
 │  │     └─ usage_stats.rs       # Local usage statistics (JSONL log + aggregation)
 │  ├─ resources/models/
 │  │  ├─ *.mnn                   # Tiny + Small PaddleOCR model tiers
-│  │  └─ layout/                 # 4 bundled layout models (PP-DocLayout-S, PicoDet-*)
+│  │  └─ layout/                 # Bundled layout model (PP-DocLayoutV3)
 │  ├─ capabilities/              # Permissions (main window + snip-* overlays)
 │  ├─ tauri.conf.json            # assetProtocol enabled for PDF preview
 │  └─ Cargo.toml
@@ -469,8 +477,12 @@ cargo check --manifest-path src-tauri/Cargo.toml
   **Paragraph mode**: configurable line-break policy (guided / smart / none)
   for PDF text pages and OCR results; guided mode merges within user-selected
   table columns.
-  **Local layout analysis**: off / rule (geometric heuristics) / paddle (MNN
-  PicoDet model) for OCR page reading order; 4 bundled layout models.
+  **Local layout analysis**: off / paddle (MNN PP-DocLayoutV3 DETR model,
+  reading-order preserving) for OCR page reading order; degrades to off when
+  the model is missing.
+  **Text cleanup & Excel export options**: OCR text cleanup (zero-width char
+  stripping, whitespace collapsing, CJK ↔ Latin spacing) plus optional
+  strip-Markdown-syntax and numeric-cell writing in the Excel export.
   **Usage statistics**: local JSONL logging with aggregated counters in
   Settings (today / month / total).
   **Custom AI prompts**: configurable prompts for document OCR and draw-table
@@ -480,7 +492,7 @@ cargo check --manifest-path src-tauri/Cargo.toml
   **Tiny model tier**: new fastest PaddleOCR tier alongside small (default)
   and medium.
 - **Design docs** - numbered proposals live under
-  [docs/design/](./design/) (`00001` through `00016`).
+  [docs/design/](./design/) (`00001` through `00017`).
 - **Changelogs** - version release notes live under
   [docs/changelog/](./changelog/).
 
@@ -535,11 +547,11 @@ cargo check --manifest-path src-tauri/Cargo.toml
   - `localOcrThreads` (default `0` = auto-detect; 1–16 for explicit thread
     count for local PaddleOCR MNN inference)
   - `ocrLayoutMode` (default `"off"` - layout analysis for local OCR pages:
-    `"off"` (pure Y→X sorting), `"rule"` (geometric heuristics: XY-Cut
-    columns, heading detection, header/footer filtering), `"paddle"` (MNN
-    PicoDet model, degrades to `"rule"` when model is missing))
-  - `ocrLayoutModel` (default `"PP-DocLayout-S"` - subdirectory under
-    `resources/models/layout/` carrying `model.mnn` + `layout-meta.json`)
+    `"off"` (pure Y→X sorting) or `"paddle"` (MNN layout model, degrades to
+    `"off"` when the model is missing))
+  - `ocrLayoutModel` (default `"PP-DocLayoutV3"` - subdirectory under
+    `resources/models/layout/` carrying `PP-DocLayoutV3.mnn` +
+    `layout-meta.json`)
   - `layoutScoreThreshold` (default `0.5` - confidence threshold for Paddle
     layout detections; `paddle` mode only)
   - `layoutDropHeaderFooter` (default `true` - drop `page_header` /
@@ -553,6 +565,15 @@ cargo check --manifest-path src-tauri/Cargo.toml
   - `mainWindowOpacity` (default `100` - glassmorphism opacity for main
     window, 0–100)
   - `glassBlurEnabled` (default `true` - frosted-glass blur effect toggle)
+  - `ocrTextCleanup` (default `true` - normalize raw local OCR output before
+    the paragraph policy: strip zero-width / BOM characters, collapse
+    whitespace runs incl. full-width U+3000, normalize CJK ↔ Latin/digit
+    spacing)
+  - `stripMdSyntax` (default `false` - strip inline Markdown syntax
+    (`**bold**`, `` `code` ``, `[text](url)`) from cells when writing Excel)
+  - `writeNumeric` (default `false` - write plain integers / decimals /
+    percentages as numeric Excel cells so they sort and sum; leading-zero and
+    culturally formatted values always stay text)
 
 Both live in the Tauri `app_config_dir` directory. No third-party store plugin
 is required. For privacy, only pages that need OCR (detected or empty
