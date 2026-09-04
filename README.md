@@ -89,6 +89,32 @@ pnpm build                           # frontend production build
 cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
+## Model Conversion
+
+The bundled layout model (**PP-DocLayoutV3**, MNN) is converted from the original PaddlePaddle inference model via the pipeline documented in [script/README.md](./script/README.md): `Paddle (inference.json / .pdmodel + .pdiparams) → ONNX → MNN`.
+
+Pre-converted MNN weights are published on ModelScope: [tansen87/PP-DocLayoutV3_mnn](https://www.modelscope.cn/models/tansen87/PP-DocLayoutV3_mnn/files) — you can download them directly instead of converting on your own.
+
+### Installing a model
+
+Each layout model lives in its own subdirectory named after the model, containing the MNN weights and its `layout-meta.json`:
+
+```
+<resources>/models/layout/
+└─ PP-DocLayoutV3/
+   ├─ PP-DocLayoutV3.mnn
+   └─ layout-meta.json
+```
+
+In **build mode** the resources are mirrored to `doccraft_resources/models/layout/` next to the executable (Tauri copies `src-tauri/resources/` to `<target>/<profile>/doccraft_resources/`, see `src-tauri/build.rs`), so a manually installed model goes to:
+
+```
+doccraft_resources/models/layout/PP-DocLayoutV3/PP-DocLayoutV3.mnn
+doccraft_resources/models/layout/PP-DocLayoutV3/layout-meta.json
+```
+
+The engine discovers any directory under `models/layout/` that contains a valid `layout-meta.json` — dropping a new directory is enough, no code change needed. See `src-tauri/resources/models/layout/README.md` for the `layout-meta.json` format.
+
 ## Configuration
 
 - `ocr-config.json` — per-vendor name, base URL, protected API key, models.

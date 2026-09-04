@@ -93,6 +93,32 @@ pnpm build                           # 前端生产构建
 cargo check --manifest-path src-tauri/Cargo.toml  # Rust 代码检查
 ```
 
+## 模型转换
+
+内置的版面分析模型(**PP-DocLayoutV3**, MNN)由原始 PaddlePaddle 推理模型转换而来,转换流程见 [script/README_ZH.md](./script/README_ZH.md): `Paddle (inference.json / .pdmodel + .pdiparams) → ONNX → MNN`.
+
+已转换好的 MNN 模型发布在 ModelScope: [tansen87/PP-DocLayoutV3_mnn](https://www.modelscope.cn/models/tansen87/PP-DocLayoutV3_mnn/files),可直接下载使用,无需自行转换.
+
+### 模型安装
+
+每个版面模型放在以其命名的子目录中,包含 MNN 权重和对应的 `layout-meta.json`:
+
+```
+<resources>/models/layout/
+└─ PP-DocLayoutV3/
+   ├─ PP-DocLayoutV3.mnn
+   └─ layout-meta.json
+```
+
+**build 模式**下,资源会被镜像到可执行文件旁的 `doccraft_resources/models/layout/`(Tauri 将 `src-tauri/resources/` 复制到 `<target>/<profile>/doccraft_resources/`,见 `src-tauri/build.rs`),因此手动安装的模型放置路径为:
+
+```
+doccraft_resources/models/layout/PP-DocLayoutV3/PP-DocLayoutV3.mnn
+doccraft_resources/models/layout/PP-DocLayoutV3/layout-meta.json
+```
+
+引擎会自动扫描 `models/layout/` 下包含有效 `layout-meta.json` 的目录---放入新目录即可,无需改动代码.`layout-meta.json` 的格式说明见 `src-tauri/resources/models/layout/README.md`.
+
 ## 配置
 
 - `ocr-config.json`: 每个供应商的名称、Base URL、受保护的 API Key、模型列表.
