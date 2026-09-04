@@ -415,6 +415,8 @@ export interface DrawTableResult {
   ocrPages: number[];
   /** 1-indexed pages that had no text layer and no usable OCR result. */
   emptyTextPages: number[];
+  /** 1-indexed pages whose drawn lines touch an embedded image region and that need a rendered page image for the OCR fallback (00019). */
+  imagePages: number[];
   /** Average confidence (0..1) of the local PaddleOCR fallback; absent for pure text / AI / disabled. */
   ocrConfidence?: number | null;
 }

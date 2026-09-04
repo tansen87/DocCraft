@@ -112,7 +112,16 @@ and Simplified Chinese - switchable at runtime.
   percentages) and parse the GFM answer directly - the model is asked to cut
   the table by the user-drawn lines. `disabled` keeps draw-table extraction
   text-layer-only, and missing local models or an unconfigured provider degrade
-  silently to empty results instead of failing. Exclusion regions can be
+  silently to empty results instead of failing. Pages that are **partly a
+  photo** (photo on one side, text elsewhere) still carry a text layer, so the
+  empty-page route alone never OCR'd them and lines drawn over the photo cut
+  nothing: when the drawn lines touch an embedded image region (pdf-inspector
+  reports image bounding boxes), the page is routed through the same
+  rendered-image OCR path - the image shows exactly what the user drew the
+  lines over - and the frontend re-renders any page the backend flags
+  (`imagePages`) before retrying
+  ([design/00018_draw-table-image-region-ocr.md](./design/00018_draw-table-image-region-ocr.md)).
+  Exclusion regions can be
   applied to draw-table extraction as well
   ([design/00011_draw-line-exclude-region.md](./design/00011_draw-line-exclude-region.md)).
   A **high-precision** mode (configurable) renders scanned-page OCR images at

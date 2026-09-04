@@ -80,6 +80,75 @@ fn to_text_elements(items: &[TextItem], page_num: u32) -> Vec<TextElement> {
     .collect()
 }
 
+/// Bounding boxes of raster images placed on a page, in viewport-relative PDF
+/// points (viewBox origin subtracted), same space as the drawn lines.
+///
+/// pdf-inspector emits a positional `[Image: ImN]` placeholder for every image
+/// XObject drawn on the page (bbox from the placement CTM). `to_text_elements`
+/// drops them for text extraction; this sibling keeps the geometry so the
+/// draw-table router can tell whether the user's lines touch a photo region
+/// (00018: a page that is PARTLY a photo still has a text layer elsewhere, so
+/// the old "elements.is_empty()" route never OCR'd it and the lines drawn over
+/// the photo cut nothing).
+fn page_image_bboxes(
+  items: &[TextItem],
+  page_num: u32,
+  origin_x: f64,
+  origin_y: f64,
+) -> Vec<(f64, f64, f64, f64)> {
+  items
+    .iter()
+    .filter(|it| it.page == page_num && matches!(it.item_type, ItemType::Image))
+    .filter(|it| it.width > 0.0 && it.font_size > 0.0)
+    .map(|it| {
+      // TextItem packs an image bbox as x/y + width with the height in
+      // font_size (see pdf-inspector content_stream.rs "Do" handler). PDF y
+      // points up, so the box spans [y, y + height].
+      (
+        it.x as f64 - origin_x,
+        it.y as f64 - origin_y,
+        it.x as f64 + it.width as f64 - origin_x,
+        it.y as f64 + it.font_size as f64 - origin_y,
+      )
+    })
+    .collect()
+}
+
+/// Whether the user's drawn lines intersect any image region on the page.
+///
+/// Vertical lines span the full page height, so their shared x-extent is
+/// `[min_v, max_v]`; a hit means a line was drawn over / around a photo (the
+/// photo falls inside the table the user cut). Horizontal lines mirror this on
+/// y. Rectangles check their bbox directly. An epsilon of 1pt absorbs
+/// rendering rounding; degenerate (< 1pt²) image boxes are ignored by the
+/// caller so stray 1px images cannot force a whole page through OCR.
+fn lines_touch_image(page_draw: &PageDrawTable, image_bboxes: &[(f64, f64, f64, f64)]) -> bool {
+  const EPS: f64 = 1.0;
+  let vertical = &page_draw.vertical_lines;
+  let horizontal = &page_draw.horizontal_lines;
+  if vertical.is_empty() && horizontal.is_empty() {
+    // Rectangle-only draws: bbox check against each rect.
+    return page_draw.rectangles.as_ref().is_some_and(|rects| {
+      rects.iter().any(|r| {
+        image_bboxes.iter().any(|&(ix1, iy1, ix2, iy2)| {
+          r.x < ix2 + EPS
+            && r.x + r.width > ix1 - EPS
+            && r.y < iy2 + EPS
+            && r.y + r.height > iy1 - EPS
+        })
+      })
+    });
+  }
+  let v_min = vertical.iter().cloned().fold(f64::INFINITY, f64::min);
+  let v_max = vertical.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+  let h_min = horizontal.iter().cloned().fold(f64::INFINITY, f64::min);
+  let h_max = horizontal.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+  image_bboxes.iter().any(|&(ix1, iy1, ix2, iy2)| {
+    (!vertical.is_empty() && v_min <= ix2 + EPS && v_max >= ix1 - EPS)
+      || (!horizontal.is_empty() && h_min <= iy2 + EPS && h_max >= iy1 - EPS)
+  })
+}
+
 /// Map recognized OCR blocks from image pixel space into the same
 /// viewport-relative PDF point space the drawn lines use.
 ///
@@ -964,6 +1033,7 @@ pub fn extract_tables_from_draw_lines(
       total_rows: 0,
       ocr_pages: Vec::new(),
       empty_text_pages: Vec::new(),
+      image_pages: Vec::new(),
       ocr_confidence: None,
     });
   }
@@ -1061,6 +1131,7 @@ pub fn extract_tables_from_draw_lines(
   let mut regions = Vec::new();
   let mut ocr_pages = Vec::new();
   let mut empty_text_pages = Vec::new();
+  let mut image_pages = Vec::new();
   let mut ocr_confidence_sum = 0.0f64;
   let mut ocr_confidence_count = 0u32;
 
@@ -1085,6 +1156,26 @@ pub fn extract_tables_from_draw_lines(
       })
       .collect();
 
+    // 00018: a page that is PARTLY a photo (photo on the right, text on the
+    // left, or a whole-page photo scan carrying an invisible OCR text layer)
+    // still has text items, so the empty-page route alone never OCR'd it and
+    // lines drawn over the photo cut nothing - or worse, cut the unreliable
+    // hidden text. When the user's lines touch an image region, the rendered
+    // page image is the authoritative source (it shows exactly what the user
+    // drew the lines over).
+    let image_bboxes = page_image_bboxes(&items, page_num, origin_x, origin_y);
+    let needs_image_ocr = !image_bboxes.is_empty() && lines_touch_image(page_draw, &image_bboxes);
+    let has_image = page_images.contains_key(&page_num);
+    if needs_image_ocr && !has_image {
+      // Tell the frontend to render this page and call again. The text layer
+      // must NOT be cut on this pass: for a photo-scan page with an invisible
+      // OCR text layer the text geometry is unreliable, and emitting a table
+      // from it now would DUPLICATE the correct table the follow-up OCR run
+      // produces. The page therefore yields nothing here except the
+      // `image_pages` marker.
+      image_pages.push(page_num);
+    }
+
     // Scanned / image-only pages have no text layer at all. When the frontend
     // supplied a rendered PNG for this page, run the mode-selected OCR
     // fallback: local PaddleOCR yields positioned text blocks that feed the
@@ -1094,25 +1185,42 @@ pub fn extract_tables_from_draw_lines(
     // In force modes (`forceLocal` / `forceAi`) OCR runs for EVERY page and the
     // rendered image is authoritative, so a text-based PDF is still recognized
     // from its image instead of being read from the text layer.
-    let force_ocr = ocr_engines.is_some_and(|e| e.force_ocr) && page_images.contains_key(&page_num);
+    let force_ocr = ocr_engines.is_some_and(|e| e.force_ocr) && has_image;
     let mut ai_yielded = false;
-    if elements.is_empty() || force_ocr {
+    // Whether the local engine delivered positioned blocks for this page. On
+    // a 00018 photo page the remaining text layer is unreliable, so when the
+    // local engine misses the page yields nothing instead of cutting the
+    // hidden text (no cross-engine fallback: the user picked local OCR, and
+    // results must stay attributable to the selected engine).
+    let mut local_ocr_missed = false;
+    if elements.is_empty() || force_ocr || (needs_image_ocr && has_image) {
       if let Some(img) = page_images.get(&page_num) {
         if let Some(engines) = ocr_engines {
           if let Some(engine) = engines.local {
-            if let Ok((ocr_elements, confidence)) = ocr_text_elements(engine, img) {
-              if !ocr_elements.is_empty() {
-                elements = ocr_elements;
-                ocr_pages.push(page_num);
-                ocr_confidence_sum += confidence as f64;
-                ocr_confidence_count += 1;
+            match ocr_text_elements(engine, img) {
+              Ok((ocr_elements, confidence)) => {
+                if !ocr_elements.is_empty() {
+                  elements = ocr_elements;
+                  ocr_pages.push(page_num);
+                  ocr_confidence_sum += confidence as f64;
+                  ocr_confidence_count += 1;
+                } else if needs_image_ocr || elements.is_empty() {
+                  local_ocr_missed = true;
+                }
               }
+              Err(_) => local_ocr_missed = true,
             }
           }
-          // Remote AI vision: parse the model's markdown answer directly. In
-          // force + remote mode there is no local engine, so this runs even
-          // when the text layer is present.
-          if elements.is_empty() || (force_ocr && engines.local.is_none()) {
+          // Remote AI vision: parse the model's markdown answer directly.
+          // Runs ONLY when the remote provider is the engine the user
+          // selected (local modes never cross over to AI on failure - the
+          // `resolve_draw_ocr` command layer hands us at most one engine).
+          // In force + remote mode this runs even when the text layer is
+          // present, and the photo-page route keeps AI as its authority too.
+          if elements.is_empty()
+            || (force_ocr && engines.local.is_none())
+            || (needs_image_ocr && engines.local.is_none())
+          {
             if let Some(provider) = engines.remote {
               match ai_tables_for_page(provider, engines.remote_prompt, img, page_draw) {
                 Ok(ai_tables) => {
@@ -1141,6 +1249,36 @@ pub fn extract_tables_from_draw_lines(
     }
     if elements.is_empty() && !ai_yielded {
       empty_text_pages.push(page_num);
+    }
+
+    // The AI vision path already produced tables for this page; cutting the
+    // text layer afterwards would DUPLICATE them (force AI mode previously
+    // had this double-count bug).
+    if ai_yielded {
+      continue;
+    }
+
+    // 00018: a page awaiting its rendered image (the user's lines touched a
+    // photo but the request carried no image for it) must NOT be cut from the
+    // text layer: for a whole-page photo scan with an invisible OCR text
+    // layer the text geometry is unreliable, and a table produced here would
+    // DUPLICATE the correct table the follow-up OCR run emits. Skip the
+    // extraction below; only the `image_pages` marker goes back to the
+    // frontend.
+    if needs_image_ocr && !has_image {
+      continue;
+    }
+
+    // 00018: on a photo page whose local OCR missed (error / zero blocks),
+    // the remaining `elements` may be the page's hidden OCR text layer -
+    // exactly the unreliable geometry the user reported ("result does not
+    // follow the lines"). Yield nothing instead of cutting it; the page stays
+    // in `image_pages` for the retry. No cross-engine fallback: if the user
+    // selected an AI mode, `engines.local` is `None` and the remote path
+    // above already handled the page.
+    if needs_image_ocr && local_ocr_missed {
+      image_pages.push(page_num);
+      continue;
     }
 
     // Exclusion regions: drop the content the user masked out. Applied after
@@ -1237,6 +1375,7 @@ pub fn extract_tables_from_draw_lines(
     total_rows,
     ocr_pages,
     empty_text_pages,
+    image_pages,
     ocr_confidence: (ocr_confidence_count > 0)
       .then(|| (ocr_confidence_sum / ocr_confidence_count as f64) as f32),
   })
@@ -1336,6 +1475,112 @@ pub fn extract_tables_and_merge(
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  // ── Image-region routing (docs/design/00018) ─────────────────────────────
+
+  /// Build a pdf-inspector-style item: text items carry text metrics, image
+  /// placeholders carry the bbox in x/y/width with the height in font_size.
+  fn item(page: u32, text: &str, x: f32, y: f32, width: f32, height: f32, image: bool) -> TextItem {
+    TextItem {
+      text: text.to_string(),
+      x,
+      y,
+      width,
+      font: String::new(),
+      font_tag: String::new(),
+      font_size: height,
+      height,
+      page,
+      is_bold: false,
+      is_italic: false,
+      is_underline: false,
+      is_strikeout: false,
+      item_type: if image {
+        ItemType::Image
+      } else {
+        ItemType::Text
+      },
+      mcid: None,
+    }
+  }
+
+  fn page_draw(vertical: &[f64], horizontal: &[f64]) -> PageDrawTable {
+    PageDrawTable {
+      page: 1,
+      vertical_lines: vertical.to_vec(),
+      horizontal_lines: horizontal.to_vec(),
+      rectangles: None,
+      merge_columns: Vec::new(),
+      page_x: 0.0,
+      page_y: 0.0,
+      page_width: 595.0,
+      page_height: 842.0,
+    }
+  }
+
+  #[test]
+  fn test_page_image_bboxes_shifts_origin_and_excludes_text() {
+    // A photo on the right half of an A4 page plus a text item on the left.
+    let items = vec![
+      item(1, "[Image: Im0]", 300.0, 100.0, 295.0, 642.0, true),
+      item(1, "left text", 20.0, 50.0, 60.0, 12.0, false),
+    ];
+    let bboxes = page_image_bboxes(&items, 1, 0.0, 0.0);
+    assert_eq!(bboxes.len(), 1);
+    assert_eq!(bboxes[0], (300.0, 100.0, 595.0, 742.0));
+    // Non-zero viewBox origin is subtracted.
+    let shifted = page_image_bboxes(&items, 1, 10.0, 20.0);
+    assert_eq!(shifted[0], (290.0, 80.0, 585.0, 722.0));
+    // Other pages contribute nothing.
+    assert!(page_image_bboxes(&items, 2, 0.0, 0.0).is_empty());
+  }
+
+  #[test]
+  fn test_lines_touch_image_vertical() {
+    // Photo occupies x ∈ [300, 595] (right half).
+    let photo = vec![(300.0, 100.0, 595.0, 742.0)];
+    // A line drawn over the photo.
+    assert!(lines_touch_image(&page_draw(&[400.0], &[]), &photo));
+    // Lines bracketing the photo (table with a photo column spanning it).
+    assert!(lines_touch_image(&page_draw(&[250.0, 560.0], &[]), &photo));
+    // Left edge of the photo exactly on a line still counts (epsilon).
+    assert!(lines_touch_image(&page_draw(&[300.0], &[]), &photo));
+    // Lines entirely left of the photo cut only the text column.
+    assert!(!lines_touch_image(&page_draw(&[100.0, 200.0], &[]), &photo));
+  }
+
+  #[test]
+  fn test_lines_touch_image_horizontal_and_rect() {
+    let photo = vec![(300.0, 100.0, 595.0, 742.0)];
+    // Horizontal band overlapping the photo's y-range.
+    assert!(lines_touch_image(&page_draw(&[], &[500.0, 800.0]), &photo));
+    // Horizontal lines below the photo do not count.
+    assert!(!lines_touch_image(&page_draw(&[], &[10.0, 90.0]), &photo));
+    // Rectangle draw over the photo.
+    let mut rect_draw = page_draw(&[], &[]);
+    rect_draw.rectangles = Some(vec![RegionRect {
+      x: 320.0,
+      y: 120.0,
+      width: 200.0,
+      height: 300.0,
+    }]);
+    assert!(lines_touch_image(&rect_draw, &photo));
+    // Rectangle draw away from the photo.
+    let mut away = page_draw(&[], &[]);
+    away.rectangles = Some(vec![RegionRect {
+      x: 10.0,
+      y: 10.0,
+      width: 100.0,
+      height: 50.0,
+    }]);
+    assert!(!lines_touch_image(&away, &photo));
+  }
+
+  #[test]
+  fn test_lines_touch_image_no_lines_no_hit() {
+    let photo = vec![(300.0, 100.0, 595.0, 742.0)];
+    assert!(!lines_touch_image(&page_draw(&[], &[]), &photo));
+  }
 
   #[test]
   fn test_filter_text_by_region() {

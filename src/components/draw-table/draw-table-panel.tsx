@@ -166,6 +166,7 @@ function mergeDrawResults(
     emptyTextPages: Array.from(
       new Set([...a.emptyTextPages, ...b.emptyTextPages]),
     ),
+    imagePages: Array.from(new Set([...a.imagePages, ...b.imagePages])),
     ocrConfidence: mergeConfidence(
       a.ocrConfidence,
       a.ocrPages.length,
@@ -553,12 +554,20 @@ export function DrawTablePanel({
             processingTimeMs: 0,
             ocrPages: [],
             emptyTextPages: [],
+            imagePages: [],
             ocrConfidence: null,
           }
         : await extractDrawTable(pdfPath, request);
       const ocrNeeded = forceAllOcr
         ? targetPages
-        : result.emptyTextPages.filter((p) => targetPages.includes(p));
+        : [
+            ...new Set([
+              ...result.emptyTextPages.filter((p) => targetPages.includes(p)),
+              // 00019: pages whose lines touch an embedded photo also need a
+              // rendered image before the OCR fallback can run.
+              ...result.imagePages.filter((p) => targetPages.includes(p)),
+            ]),
+          ];
       for (let i = 0; i < ocrNeeded.length; i += OCR_BATCH_SIZE) {
         const batch = ocrNeeded.slice(i, i + OCR_BATCH_SIZE);
         onProgress?.({
@@ -622,8 +631,12 @@ export function DrawTablePanel({
         // false for a pure-text document) must not gate OCR off.
         const isForce =
           settings.ocrMode === "forceLocal" || settings.ocrMode === "forceAi";
-        const useOcr =
-          settings.ocrMode !== "disabled" && (isForce || (mayNeedOcr ?? true));
+        // 00019: pages that are PARTLY a photo still carry a text layer, so
+        // `mayNeedOcr` (false for a TextBased document) can no longer gate OCR
+        // off either - a photo region can hide inside any page. Multi-page
+        // runs stay cheap: the first call goes without images, and only pages
+        // the backend reports (`emptyTextPages` / `imagePages`) get rendered.
+        const useOcr = settings.ocrMode !== "disabled";
         // High-precision mode renders OCR page images at a higher DPI; the
         // backend pairs this with width-weighted character cutting.
         const renderScale = settings.drawTableHighPrecision

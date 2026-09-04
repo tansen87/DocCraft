@@ -363,6 +363,11 @@ pub struct DrawTableResult {
   /// 1-indexed pages that had no text layer and no usable OCR result - they
   /// were processed but produced nothing.
   pub empty_text_pages: Vec<u32>,
+  /// 1-indexed pages whose drawn lines touch an embedded image region and that
+  /// need a rendered page image for the OCR fallback (00019). Empty when the
+  /// request already carried those images or no line touched a photo.
+  #[serde(default)]
+  pub image_pages: Vec<u32>,
   /// Average confidence (0..1) of the local PaddleOCR fallback across the
   /// pages that went through it. `None` when no page used local OCR (pure
   /// text-layer extraction, remote AI vision, or OCR disabled).
