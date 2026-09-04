@@ -206,7 +206,6 @@ export function SettingsView() {
   const [maxConcurrent, setMaxConcurrent] = useState(1);
   const [localOcrThreads, setLocalOcrThreads] = useState(0);
   const [cacheExtracted, setCacheExtracted] = useState(true);
-  const [drawTableHighPrecision, setDrawTableHighPrecision] = useState(false);
   const [excelTablesOnly, setExcelTablesOnly] = useState(true);
   const [screenshotHotkey, setScreenshotHotkey] = useState("");
   const [ocrLowPrecision, setOcrLowPrecision] = useState(true);
@@ -261,7 +260,6 @@ export function SettingsView() {
         setMaxConcurrent(clampThread(settings.maxConcurrent));
         setLocalOcrThreads(settings.localOcrThreads ?? 0);
         setCacheExtracted(settings.cacheExtractedText);
-        setDrawTableHighPrecision(settings.drawTableHighPrecision ?? false);
         setExcelTablesOnly(settings.excelTablesOnly);
         setScreenshotHotkey(settings.screenshotHotkey ?? "");
         setOcrLowPrecision(settings.ocrLowPrecision ?? true);
@@ -339,7 +337,6 @@ export function SettingsView() {
         Number.isFinite(localOcrThreads) ? localOcrThreads : 0,
       ),
       cacheExtractedText: cacheExtracted,
-      drawTableHighPrecision,
       excelTablesOnly,
       ocrMode,
       screenshotHotkey: screenshotHotkey.trim() || null,
@@ -646,11 +643,6 @@ export function SettingsView() {
                   value={cacheExtracted}
                   onChange={(v) => {
                     setCacheExtracted(v);
-                    markDirty();
-                  }}
-                  highPrecision={drawTableHighPrecision}
-                  onHighPrecisionChange={(v) => {
-                    setDrawTableHighPrecision(v);
                     markDirty();
                   }}
                   disabled={loading}
@@ -1920,14 +1912,10 @@ function HotkeyInput({
 function DrawSettingsPanel({
   value,
   onChange,
-  highPrecision,
-  onHighPrecisionChange,
   disabled,
 }: {
   value: boolean;
   onChange: (v: boolean) => void;
-  highPrecision: boolean;
-  onHighPrecisionChange: (v: boolean) => void;
   disabled?: boolean;
 }) {
   const { t } = useI18n();
@@ -1941,16 +1929,6 @@ function DrawSettingsPanel({
         <Switch
           checked={value}
           onCheckedChange={onChange}
-          disabled={disabled}
-        />
-      </SettingRow>
-      <SettingRow
-        label={t("settings.drawTableHighPrecision")}
-        description={t("settings.drawTableHighPrecisionDesc")}
-      >
-        <Switch
-          checked={highPrecision}
-          onCheckedChange={onHighPrecisionChange}
           disabled={disabled}
         />
       </SettingRow>

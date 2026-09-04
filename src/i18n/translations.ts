@@ -259,10 +259,6 @@ const en = {
   "settings.cacheExtracted": "Cache extracted text",
   "settings.cacheExtractedDesc":
     "When enabled, store the decoded text of the current PDF in memory to accelerate PDF extraction",
-  "settings.drawTableHighPrecision":
-    "High-precision draw-table extraction (scanned pages)",
-  "settings.drawTableHighPrecisionDesc":
-    "When enabled, renders scanned pages at a higher DPI (~288) and cuts recognized text by character width, so drawn lines match column boundaries more accurately. Slower and uses more memory.",
   "settings.drawTable": "Draw Table",
   "settings.excel": "Excel Export",
   "settings.excelTablesOnly": "Only convert tables to Excel",
@@ -673,9 +669,6 @@ const zh: Record<TranslationKey, string> = {
   "settings.cacheExtracted": "缓存提取文本",
   "settings.cacheExtractedDesc":
     "开启时,将当前PDF解码后的文本驻留在内存中,加速PDF提取",
-  "settings.drawTableHighPrecision": "高精度模式(扫描页)",
-  "settings.drawTableHighPrecisionDesc":
-    "开启时,以更高DPI(~288)渲染扫描页,并按字宽加权切分识别文本,使划线与列边界更吻合.速度更慢,内存占用更高",
   "settings.drawTable": "划线表格",
   "settings.excel": "Excel 导出",
   "settings.excelTablesOnly": "仅将表格转换为 Excel",

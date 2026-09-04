@@ -26,8 +26,6 @@ import { cn } from "@/lib/utils";
 
 /** Default render DPI multiplier for OCR page images (~180 DPI). */
 const OCR_RENDER_SCALE = 2.5;
-/** High-precision render DPI multiplier (~288 DPI). */
-const OCR_RENDER_SCALE_HQ = 4.0;
 /** Max pages rendered per OCR batch to bound peak IPC payload size. */
 const OCR_BATCH_SIZE = 6;
 
@@ -270,8 +268,7 @@ export function DrawTablePanel({
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           await page.render({ canvas, viewport }).promise;
           // Paint the excluded rects white before the PNG is captured: local
-          // OCR and remote vision then never see that content. The render
-          // scale varies (2.5 / 4.0) with the high-precision setting.
+          // OCR and remote vision then never see that content.
           maskExclusions(ctx, canvas, pageNum, exclusions, renderScale);
           const dataUrl = canvas.toDataURL("image/png");
           const comma = dataUrl.indexOf(",");
@@ -637,13 +634,8 @@ export function DrawTablePanel({
         // runs stay cheap: the first call goes without images, and only pages
         // the backend reports (`emptyTextPages` / `imagePages`) get rendered.
         const useOcr = settings.ocrMode !== "disabled";
-        // High-precision mode renders OCR page images at a higher DPI; the
-        // backend pairs this with width-weighted character cutting.
-        const renderScale = settings.drawTableHighPrecision
-          ? OCR_RENDER_SCALE_HQ
-          : OCR_RENDER_SCALE;
         const result = useOcr
-          ? await extractWithOcr(request, renderScale, isForce)
+          ? await extractWithOcr(request, OCR_RENDER_SCALE, isForce)
           : await extractDrawTable(pdfPath, request);
 
         const ocrEngine = engineForMode(settings.ocrMode);

@@ -368,27 +368,6 @@ fn group_by_text_lines(elements: &[TextElement]) -> Vec<Vec<&TextElement>> {
   lines
 }
 
-/// Relative advance width of a character for center estimation, expressed in
-/// half-width cells. CJK ideographs, Hangul, Kana and full-width forms are
-/// double-width; everything else (ASCII digits, Latin letters, spaces,
-/// punctuation) is single-width. This mirrors how OCR-detected runs of mixed
-/// Chinese/digit text actually distribute their width - far better than the
-/// uniform per-character advance used for plain text-layer items.
-fn char_weight(c: char) -> f64 {
-  let u = c as u32;
-  let wide = matches!(u,
-    0x1100..=0x115F     // Hangul Jamo
-    | 0x2E80..=0xA4CF   // CJK radicals .. Yi syllables (incl. Kana)
-    | 0xAC00..=0xD7A3   // Hangul syllables
-    | 0xF900..=0xFAFF   // CJK compatibility ideographs
-    | 0xFE30..=0xFE4F   // CJK compatibility forms
-    | 0xFF00..=0xFF60   // full-width forms
-    | 0xFFE0..=0xFFE6   // full-width signs
-    | 0x20000..=0x3FFFD // CJK extensions B and beyond
-  );
-  if wide { 2.0 } else { 1.0 }
-}
-
 /// Extract the portion of a text line that falls inside the column `[left, right)`.
 ///
 /// pdf-inspector merges same-style items on a line into a single item when the
@@ -396,51 +375,22 @@ fn char_weight(c: char) -> f64 {
 /// as ONE item whose center would land in a single column. Instead of assigning
 /// whole items by center, estimate each character's x position from the item's
 /// advance width and keep the characters whose centers fall inside the column.
-///
-/// When `high_precision` is set, characters are weighted by their relative
-/// width (CJK = 2 half-width cells) before distributing the item's advance -
-/// this keeps mixed Chinese/digit rows aligned with the drawn boundaries even
-/// when the item comes from an OCR bounding box instead of exact glyph metrics.
-fn extract_line_segment(
-  line: &[&TextElement],
-  left: f64,
-  right: f64,
-  high_precision: bool,
-) -> String {
+fn extract_line_segment(line: &[&TextElement], left: f64, right: f64) -> String {
   let mut out = String::new();
   for e in line {
     let chars: Vec<char> = e.text.chars().collect();
     if chars.is_empty() {
       continue;
     }
-    if high_precision {
-      let weights: Vec<f64> = chars.iter().map(|&c| char_weight(c)).collect();
-      let total: f64 = weights.iter().sum();
-      if total <= 0.0 {
-        continue;
-      }
-      let unit = e.width / total;
-      let mut consumed = 0.0;
-      for (k, c) in chars.iter().enumerate() {
-        let start = e.x + consumed * unit;
-        let center = start + weights[k] * unit * 0.5;
-        consumed += weights[k];
-        // Use a small epsilon (1e-6) to avoid floating-point boundary exclusion.
-        if center >= left - 1e-6 && center < right + 1e-6 {
-          out.push(*c);
-        }
-      }
-    } else {
-      let advance = e.width / chars.len() as f64;
-      for (k, c) in chars.iter().enumerate() {
-        let center = e.x + (k as f64 + 0.5) * advance;
-        // Use a small epsilon (1e-6) to avoid floating-point boundary exclusion.
-        // This is critical for the last column where right == page_width and
-        // character centers computed from pdf-inspector positions may fall at
-        // the exact boundary due to rounding.
-        if center >= left - 1e-6 && center < right + 1e-6 {
-          out.push(*c);
-        }
+    let advance = e.width / chars.len() as f64;
+    for (k, c) in chars.iter().enumerate() {
+      let center = e.x + (k as f64 + 0.5) * advance;
+      // Use a small epsilon (1e-6) to avoid floating-point boundary exclusion.
+      // This is critical for the last column where right == page_width and
+      // character centers computed from pdf-inspector positions may fall at
+      // the exact boundary due to rounding.
+      if center >= left - 1e-6 && center < right + 1e-6 {
+        out.push(*c);
       }
     }
   }
@@ -456,7 +406,6 @@ fn extract_table_from_vertical_lines(
   vertical_lines: &[f64],
   page_width: f64,
   _page_height: f64,
-  high_precision: bool,
   mode: ParagraphMode,
   merge_columns: &[usize],
 ) -> MdTable {
@@ -486,7 +435,7 @@ fn extract_table_from_vertical_lines(
     .iter()
     .map(|line| {
       let cells: Vec<String> = (0..ncols)
-        .map(|col| extract_line_segment(line, col_bounds[col], col_bounds[col + 1], high_precision))
+        .map(|col| extract_line_segment(line, col_bounds[col], col_bounds[col + 1]))
         .collect();
       VisualRow::new(
         // PDF y points up, so the largest y is the top of the line.
@@ -742,7 +691,6 @@ fn extract_table_from_grid(
   vertical_lines: &[f64],
   page_width: f64,
   page_height: f64,
-  high_precision: bool,
 ) -> MdTable {
   let row_bounds = build_row_boundaries(horizontal_lines, page_height);
   let col_bounds = build_col_boundaries(vertical_lines, page_width);
@@ -781,9 +729,7 @@ fn extract_table_from_grid(
     let mut merged: Vec<Vec<String>> = vec![Vec::new(); ncols];
     for line in group_text_line_refs(band) {
       for (col, cell) in (0..ncols)
-        .map(|col| {
-          extract_line_segment(&line, col_bounds[col], col_bounds[col + 1], high_precision)
-        })
+        .map(|col| extract_line_segment(&line, col_bounds[col], col_bounds[col + 1]))
         .enumerate()
       {
         if !cell.is_empty() {
@@ -998,15 +944,10 @@ fn extract_table_from_rectangle(elements: &[TextElement], rect: &DrawTableRegion
 /// [`extract_cache`]): when on, the first full extraction decodes the whole
 /// document and later calls reuse it; when off, only the pages in the request
 /// are decoded each time.
-///
-/// `high_precision` selects the width-weighted character cutting for OCR
-/// blocks (see [`extract_line_segment`]); it mirrors the frontend setting that
-/// also renders OCR page images at a higher DPI.
 pub fn extract_tables_from_draw_lines(
   path: &str,
   request: &DrawTableRequest,
   use_cache: bool,
-  high_precision: bool,
   ocr_engines: Option<&DrawOcrEngines>,
   text_separator: &str,
   paragraph_mode: ParagraphMode,
@@ -1326,7 +1267,6 @@ pub fn extract_tables_from_draw_lines(
           &page_draw.vertical_lines,
           page_width,
           page_height,
-          high_precision,
           paragraph_mode,
           &page_draw.merge_columns,
         );
@@ -1348,7 +1288,6 @@ pub fn extract_tables_from_draw_lines(
           &page_draw.vertical_lines,
           page_width,
           page_height,
-          high_precision,
         );
         if !table.columns.is_empty() {
           tables.push(table);
@@ -1387,7 +1326,6 @@ pub fn extract_tables_and_merge(
   request: &DrawTableRequest,
   existing_markdown: Option<&str>,
   use_cache: bool,
-  high_precision: bool,
   ocr_engines: Option<&DrawOcrEngines>,
   text_separator: &str,
   paragraph_mode: ParagraphMode,
@@ -1396,7 +1334,6 @@ pub fn extract_tables_and_merge(
     path,
     request,
     use_cache,
-    high_precision,
     ocr_engines,
     text_separator,
     paragraph_mode,
@@ -1652,7 +1589,6 @@ mod tests {
       &[200.0, 330.0],
       595.0,
       842.0,
-      false,
       ParagraphMode::Guided,
       &[],
     )
@@ -1806,7 +1742,7 @@ mod tests {
   }
 
   fn cut_wrapped_cell(elements: &[TextElement], mode: ParagraphMode) -> MdTable {
-    extract_table_from_vertical_lines(elements, &[200.0], 600.0, 842.0, false, mode, &[])
+    extract_table_from_vertical_lines(elements, &[200.0], 600.0, 842.0, mode, &[])
   }
 
   /// Guided: same two-column wrapped fixture, but only column 1 is selected.
@@ -1816,7 +1752,6 @@ mod tests {
       &[200.0],
       600.0,
       842.0,
-      false,
       ParagraphMode::Guided,
       merge_columns,
     )
@@ -1865,7 +1800,6 @@ mod tests {
       &[100.0, 200.0],
       600.0,
       842.0,
-      false,
       ParagraphMode::Guided,
       &[2],
     );
@@ -1992,7 +1926,6 @@ mod tests {
       &[40.0, 76.0],
       120.0,
       150.0,
-      false,
       ParagraphMode::Guided,
       &[],
     );
@@ -2079,7 +2012,6 @@ mod tests {
       &[80.0, 180.0],
       300.0,
       150.0,
-      false,
       ParagraphMode::Guided,
       &[],
     );
@@ -2177,7 +2109,6 @@ mod tests {
       &[80.0, 180.0],
       300.0,
       300.0,
-      true,
       ParagraphMode::Guided,
       &[],
     );
@@ -2187,53 +2118,6 @@ mod tests {
     assert_eq!(table.rows.len(), 1);
     assert_eq!(table.rows[0][0], "张三");
     assert_eq!(table.rows[0][1], "28");
-  }
-
-  #[test]
-  fn test_high_precision_weighted_cutting_handles_mixed_width_rows() {
-    // One OCR block spanning a whole row: two CJK cells + one numeric cell.
-    // Uniform advance misplaces the digit centers; width weighting fixes it.
-    let elements = vec![TextElement {
-      text: "姓名 128 年龄".to_string(),
-      x: 20.0,
-      y: 100.0,
-      // Real layout: 姓名(2 CJK = 4 units) + space + 128 (3 digits) +
-      // space + 年龄 (4 units) => 13 half-width units over 130pt.
-      width: 130.0,
-      font_size: 12.0,
-    }];
-
-    // Column boundary between the digits (weighted center 95) and the
-    // trailing cell (weighted centers >= 105). The single text line becomes
-    // the table's header row.
-    let table = extract_table_from_vertical_lines(
-      &elements,
-      &[97.0],
-      200.0,
-      150.0,
-      true,
-      ParagraphMode::Guided,
-      &[],
-    );
-    assert_eq!(table.columns[0], "姓名 128");
-    assert_eq!(table.columns[1], "年龄");
-
-    // The uniform-advance estimate drifts the same row across the boundary
-    // (documents the regression the weighted mode fixes).
-    let uniform = extract_table_from_vertical_lines(
-      &elements,
-      &[97.0],
-      200.0,
-      150.0,
-      false,
-      ParagraphMode::Guided,
-      &[],
-    );
-    assert_ne!(
-      (uniform.columns[0].as_str(), uniform.columns[1].as_str()),
-      ("姓名 128", "年龄"),
-      "uniform advance should mis-cut this mixed-width row"
-    );
   }
 
   #[test]
@@ -2273,7 +2157,7 @@ mod tests {
 
     // Column boundary between the two columns; row boundary at y=100 splits
     // the header band from the data band.
-    let table = extract_table_from_grid(&elements, &[100.0], &[45.0], 100.0, 150.0, false);
+    let table = extract_table_from_grid(&elements, &[100.0], &[45.0], 100.0, 150.0);
     assert_eq!(table.columns, vec!["姓名", "年龄"]);
     assert_eq!(table.rows.len(), 1);
     assert_eq!(table.rows[0], vec!["张三", "28"]);
@@ -2322,7 +2206,7 @@ mod tests {
       },
     ];
 
-    let table = extract_table_from_grid(&elements, &[100.0], &[45.0], 100.0, 150.0, false);
+    let table = extract_table_from_grid(&elements, &[100.0], &[45.0], 100.0, 150.0);
     // Header merges the two stacked lines of its band; the leaking element
     // never reaches the data row. CJK fragments take no connector, so the
     // wrapped header reads as one continuous phrase.

@@ -436,12 +436,6 @@ pub struct AppSettings {
   /// Which PaddleOCR model tier the local engine loads.
   #[serde(default)]
   pub ocr_model_size: OcrModelSize,
-  /// High-precision draw-table extraction on scanned pages: renders OCR page
-  /// images at a higher DPI (~288 vs ~180) and cuts recognized text blocks by
-  /// width-weighted character centers instead of a uniform advance. More
-  /// accurate column boundaries at the cost of speed and memory.
-  #[serde(default = "default_true")]
-  pub draw_table_high_precision: bool,
   /// Custom prompt for the remote AI document-OCR path (PDF pages, images,
   /// screenshots). Empty string falls back to the built-in default prompt.
   #[serde(default)]
@@ -924,7 +918,6 @@ impl Default for AppSettings {
       glass_blur_enabled: false,
       ocr_low_precision: true,
       ocr_model_size: OcrModelSize::default(),
-      draw_table_high_precision: true,
       ai_ocr_prompt: String::new(),
       draw_table_prompt: String::new(),
       paragraph_mode: ParagraphMode::default(),

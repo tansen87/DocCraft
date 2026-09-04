@@ -70,8 +70,7 @@ export function countRects(spec: ExcludeRegions | null | undefined): number {
  * OCR nor AI vision ever sees the excluded content. Rects are
  * viewport-relative PDF points (origin lower-left) while the canvas is
  * top-left pixels, so `scale` (pixels per point) is a parameter - the
- * conversion pipeline renders at 2.5 and the draw-table pipeline at 2.5 or
- * 4.0 depending on its high-precision setting.
+ * conversion pipeline renders at 2.5 and the draw-table pipeline also renders at 2.5.
  */
 export function maskExclusions(
   ctx: CanvasRenderingContext2D,

@@ -124,9 +124,6 @@ and Simplified Chinese - switchable at runtime.
   Exclusion regions can be
   applied to draw-table extraction as well
   ([design/00011_draw-line-exclude-region.md](./design/00011_draw-line-exclude-region.md)).
-  A **high-precision** mode (configurable) renders scanned-page OCR images at
-  ~288 DPI and cuts recognized text blocks by width-weighted character centers
-  for more accurate column boundaries.
 - **Image → Markdown** - a dedicated workspace tab accepts PNG / JPEG images
   (drag & drop anywhere or file picker, deduplicated list with thumbnails).
   Each image is recognized by the OCR engine selected by the current
@@ -542,9 +539,6 @@ cargo check --manifest-path src-tauri/Cargo.toml
   - `ocrModelSize` (`"tiny"` / `"small"` (default) / `"medium"` - which
     bundled PaddleOCR tier to load; tiny is fastest, small is ~2–3× faster
     than medium)
-  - `drawTableHighPrecision` (default `true` - renders scanned-page OCR
-    images at ~288 DPI and cuts by width-weighted character centers for more
-    accurate column boundaries)
   - `aiOcrPrompt` (custom prompt for remote AI document-OCR path; empty
     string uses built-in default)
   - `drawTablePrompt` (custom prompt for remote AI draw-table path; empty

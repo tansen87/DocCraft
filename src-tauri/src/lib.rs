@@ -471,7 +471,6 @@ async fn extract_draw_table(
   tauri::async_runtime::spawn_blocking(move || {
     let settings = core::settings::get_app_settings(&app)?;
     let use_cache = settings.cache_extracted_text;
-    let high_precision = settings.draw_table_high_precision;
     let text_separator = settings.text_separator;
     let paragraph_mode = settings.paragraph_mode;
     let (local, remote) = resolve_draw_ocr(&app, &draw_data)?;
@@ -487,7 +486,6 @@ async fn extract_draw_table(
       &path,
       &draw_data,
       use_cache,
-      high_precision,
       Some(&engines),
       &text_separator,
       paragraph_mode,
@@ -508,7 +506,6 @@ async fn extract_draw_table_to_markdown(
   tauri::async_runtime::spawn_blocking(move || {
     let settings = core::settings::get_app_settings(&app)?;
     let use_cache = settings.cache_extracted_text;
-    let high_precision = settings.draw_table_high_precision;
     let text_separator = settings.text_separator;
     let paragraph_mode = settings.paragraph_mode;
     let (local, remote) = resolve_draw_ocr(&app, &draw_data)?;
@@ -525,7 +522,6 @@ async fn extract_draw_table_to_markdown(
       &draw_data,
       existing_markdown.as_deref(),
       use_cache,
-      high_precision,
       Some(&engines),
       &text_separator,
       paragraph_mode,

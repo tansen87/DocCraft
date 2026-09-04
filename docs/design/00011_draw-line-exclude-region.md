@@ -36,7 +36,7 @@
 | 3 | 协议与后端不支持:`DrawTableRequest` 无 `exclusions` 字段,`line_draw.rs` 无排除逻辑,划线模式自己实现的 `renderPageImages` 也没有遮罩 | `models.rs:259-279`、`line_draw.rs`、`draw-table-panel.tsx:192-226` |
 
 补充:划线模式的 OCR 渲染是**另一套平行实现**(不复用 `render-pdf-pages.ts`),
-且渲染倍率有 `2.5` / `4.0` 两档(`draw-table-panel.tsx:24-26`,由 `settings.drawTableHighPrecision` 选 `:484-486`),
+  且渲染倍率为 `2.5`(`draw-table-panel.tsx:24-26`),
 所以遮罩函数必须把倍率作为参数,不能直接抄 `render-pdf-pages.ts:39-58` 里硬编码 `2.5` 的版本。
 
 ---

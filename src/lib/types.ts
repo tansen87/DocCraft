@@ -109,13 +109,6 @@ export interface AppSettings {
    * "tiny" is the fastest, "medium" prioritizes accuracy.
    */
   ocrModelSize?: OcrModelSize;
-  /**
-   * High-precision draw-table extraction on scanned pages: renders OCR page
-   * images at a higher DPI (~288 vs ~180) and cuts recognized text by
-   * width-weighted character centers. More accurate column boundaries,
-   * slower and more memory-hungry (default false).
-   */
-  drawTableHighPrecision?: boolean;
   /** Separator between text blocks within a single OCR line. */
   textSeparator: string;
   /**

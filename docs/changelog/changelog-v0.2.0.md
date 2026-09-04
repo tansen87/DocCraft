@@ -31,8 +31,6 @@ statistics**, and a more useful **update-check** dialog.
   small, the `cacheOcrEngine` toggle removed (the engine is always cached now),
   and new image-to-md components under `src/components/img2md/`
   (`226ce84`).
-- **Draw-table: high-precision extraction mode** for scanned pages
-  (`af0f8a7`).
 - **Draw-table: horizontal row lines** in PDF & image table extraction, with
   grid-row bucketing and long-filename list-overflow fixes (`8b0bf0c`).
 - **Draw-table: tri-state tool** — a unified draw / vertical / horizontal /
