@@ -234,6 +234,13 @@ export function SettingsView() {
   const [loaded, setLoaded] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [usageStats, setUsageStats] = useState<UsageStats | null>(null);
+  /**
+   * Height of the scroll viewport. Used to size the bottom scroll spacer so
+   * even the last sections (glass / tray) can be scrolled to the top when
+   * clicked — without it, the browser stops at max scroll and short trailing
+   * sections never reach the first row.
+   */
+  const [viewportHeight, setViewportHeight] = useState(0);
   /** Bumped after a config import so the load effect re-runs. */
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -403,6 +410,17 @@ export function SettingsView() {
   useEffect(() => {
     const vp = scrollAreaViewport();
     if (!vp) return;
+    // Track the viewport height so the trailing scroll spacer can be sized to
+    // guarantee the last sections can reach the top when clicked.
+    const ro = new ResizeObserver(() => setViewportHeight(vp.clientHeight));
+    ro.observe(vp);
+    setViewportHeight(vp.clientHeight);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const vp = scrollAreaViewport();
+    if (!vp) return;
     const viewport: HTMLElement = vp;
     const containerEl = containerRef.current;
 
@@ -475,7 +493,6 @@ export function SettingsView() {
       vp.scrollTo({ top: Math.max(top - 12, 0), behavior: "smooth" });
     }
   }
-
   return (
     <div
       ref={containerRef}
@@ -623,7 +640,7 @@ export function SettingsView() {
                   disabled={loading}
                 />
               </section>
-              <section id="settings-drawTable" className="scroll-mt-3">
+              <section id="settings-draw" className="scroll-mt-3">
                 <SectionHeader title={t("settings.drawTable")} />
                 <DrawSettingsPanel
                   value={cacheExtracted}
@@ -745,6 +762,13 @@ export function SettingsView() {
                   disabled={loading}
                 />
               </section>
+              {/* Trailing spacer: lets the last sections (glass / tray) scroll
+                  all the way to the top of the viewport when clicked, even
+                  when the content below them is shorter than the viewport. */}
+              <div
+                aria-hidden
+                style={{ height: Math.max(viewportHeight - 96, 0) }}
+              />
             </div>
           </div>
         </ScrollArea>

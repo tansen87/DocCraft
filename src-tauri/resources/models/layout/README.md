@@ -27,8 +27,8 @@ dropping a new directory here — **no code change needed**.
   "name": "PP-DocLayoutV3",              // stable name (= directory name)
   "displayName": "PP-DocLayoutV3", // shown in the settings select
   "modelFile": "PP-DocLayoutV3.mnn",     // model file inside this directory
-  "inputWidth": 480,                     // input size (from config.json)
-  "inputHeight": 480,
+  "inputWidth": 800,                     // input size (from config.json)
+  "inputHeight": 800,
   "keepRatio": false,                    // false = stretch (PicoDet), true = letterbox
   "mean": [0.485, 0.456, 0.406],         // RGB mean for normalization
   "std":  [0.229, 0.224, 0.225],         // RGB std  for normalization
