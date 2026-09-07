@@ -498,7 +498,7 @@ export function MdToXlsxView() {
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Table2 className="size-4" />
           </span>
-          <div className="min-w-0 flex-1 space-y-1">
+          <div className="min-w-0 flex-1 space-y-1 select-none">
             <p className="truncate text-sm font-medium">{item.name}</p>
             <p className="text-xs text-muted-foreground">
               {item.result
@@ -558,7 +558,7 @@ export function MdToXlsxView() {
   }
 
   return (
-    <div ref={rootRef} className="relative flex min-h-0 flex-1 flex-col gap-1">
+    <div ref={rootRef} className="relative flex min-h-0 flex-1 flex-col gap-1 select-none">
       {dragging ? (
         <DragOverlay
           title={t("overlay.releaseToAdd")}

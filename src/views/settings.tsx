@@ -6,29 +6,19 @@ import {
 } from "@tauri-apps/plugin-dialog";
 import { emitTo } from "@tauri-apps/api/event";
 import {
-  Camera,
   ChevronDown,
-  Cpu,
-  PencilSparkles,
   Download,
   Eye,
   EyeOff,
-  FileSpreadsheet,
   KeyRound,
   Loader2,
-  Minimize2,
   Plus,
-  RotateCcw,
   Save,
-  ScanText,
-  SeparatorHorizontal,
   ShieldCheck,
-  Sparkles,
   Star,
   Trash2,
   Upload,
   X,
-  BarChart3,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -118,57 +108,46 @@ const SECTIONS: {
     | "settings.backup"
     | "settings.glass"
     | "settings.stats";
-  icon: typeof ScanText;
 }[] = [
   {
     id: "ocr",
     labelKey: "settings.ocr",
-    icon: ScanText,
   },
   {
     id: "snip",
     labelKey: "snip.capture",
-    icon: Camera,
   },
   {
     id: "textSep",
     labelKey: "settings.textAndLineBreak",
-    icon: SeparatorHorizontal,
   },
   {
     id: "draw",
     labelKey: "settings.drawTable",
-    icon: PencilSparkles,
   },
   {
     id: "excel",
     labelKey: "settings.excel",
-    icon: FileSpreadsheet,
   },
   {
     id: "threads",
     labelKey: "settings.threads",
-    icon: Cpu,
   },
   {
     id: "backup",
     labelKey: "settings.backup",
-    icon: RotateCcw,
   },
   {
     id: "stats",
     labelKey: "settings.stats",
-    icon: BarChart3,
   },
   {
     id: "glass",
     labelKey: "settings.glass",
-    icon: Sparkles,
   },
   {
     id: "tray",
     labelKey: "settings.tray",
-    icon: Minimize2,
   },
 ];
 
@@ -495,9 +474,8 @@ export function SettingsView() {
       ref={containerRef}
       className="relative flex w-full min-h-0 flex-1 gap-3"
     >
-      <aside className="flex w-14 shrink-0 flex-col gap-1 md:w-52">
+      <aside className="flex w-8 shrink-0 flex-col gap-1 md:w-40">
         {SECTIONS.map((s) => {
-          const Icon = s.icon;
           const active = section === s.id;
           return (
             <button
@@ -505,26 +483,14 @@ export function SettingsView() {
               type="button"
               onClick={() => jumpTo(s.id)}
               className={cn(
-                "flex items-center justify-center gap-3 rounded-xl px-0 py-2 text-left transition-colors duration-150 md:justify-start md:px-2.5",
+                "flex items-center justify-center gap-3 rounded-xl px-0 py-2 text-center transition-colors duration-150 md:justify-center md:px-2.5",
                 active
                   ? "bg-primary/[0.08] text-foreground"
                   : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
               )}
             >
-              <span
-                className={cn(
-                  "flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors duration-150",
-                  active
-                    ? "bg-primary/10 text-primary"
-                    : "bg-transparent text-muted-foreground",
-                )}
-              >
-                <Icon className="size-4" />
-              </span>
-              <span className="hidden min-w-0 md:block">
-                <span className="block truncate text-sm font-medium">
-                  {t(s.labelKey)}
-                </span>
+              <span className="block truncate text-sm font-medium flex select-none text-center justify-center py-0.5">
+                {t(s.labelKey)}
               </span>
             </button>
           );
@@ -1553,7 +1519,7 @@ function GlassSettingsPanel({
             disabled={disabled}
             className={rangeClass}
           />
-          <span className="w-8 text-right text-sm tabular-nums text-muted-foreground">
+          <span className="w-8 text-right text-sm tabular-nums text-muted-foreground select-none">
             {mainOpacity}%
           </span>
         </div>
@@ -1573,7 +1539,7 @@ function GlassSettingsPanel({
             disabled={disabled}
             className={rangeClass}
           />
-          <span className="w-8 text-right text-sm tabular-nums text-muted-foreground">
+          <span className="w-8 text-right text-sm tabular-nums text-muted-foreground select-none">
             {resultOpacity}%
           </span>
         </div>
@@ -2272,7 +2238,7 @@ function VendorCard({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 select-none"
       >
         <ChevronDown
           className={cn(

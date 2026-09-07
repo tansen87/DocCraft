@@ -8,7 +8,7 @@ import {
   MoveHorizontal,
   MoveVertical,
   RotateCcw,
-  SquareDashed,
+  SquareDashedMousePointer,
   Trash2,
 } from "lucide-react";
 
@@ -80,7 +80,7 @@ export function DrawTableToolbar({
 }: DrawTableToolbarProps) {
   const { t } = useI18n();
   return (
-    <GlassPanel className="flex items-center gap-1 rounded-lg px-2 py-1.5">
+    <GlassPanel className="flex items-center gap-1 rounded-lg px-2 py-1.5 select-none">
       {/* Instruction */}
       <span className="px-1 text-xs text-muted-foreground">
         {t(
@@ -142,7 +142,7 @@ export function DrawTableToolbar({
             )}
             onClick={() => onModeChange("exclude")}
           >
-            <SquareDashed className="size-3.5" />
+            <SquareDashedMousePointer className="size-3.5" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>{t("drawtable.excludeMode")}</TooltipContent>

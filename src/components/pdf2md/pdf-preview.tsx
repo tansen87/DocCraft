@@ -377,7 +377,7 @@ export function PdfPreview({
   return (
     <GlassPanel
       className={cn(
-        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl",
+        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl select-none",
         className,
       )}
     >

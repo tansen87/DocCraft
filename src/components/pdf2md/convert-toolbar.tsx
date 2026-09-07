@@ -58,7 +58,7 @@ export function ConvertToolbar({
   const { t } = useI18n();
 
   return (
-    <GlassPanel className="flex items-center gap-2 rounded-xl px-2 py-1">
+    <GlassPanel className="flex items-center gap-2 rounded-xl px-2 py-1 select-none">
       <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
         <FileText className="size-4" />
       </span>

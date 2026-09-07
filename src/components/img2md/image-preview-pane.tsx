@@ -130,7 +130,7 @@ export function ImagePreviewPane({
     <GlassPanel
       ref={rootRef}
       className={cn(
-        "flex h-full min-h-0 flex-col overflow-hidden rounded-xl",
+        "flex h-full min-h-0 flex-col overflow-hidden rounded-xl select-none",
         className,
       )}
     >

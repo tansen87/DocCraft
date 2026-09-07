@@ -66,7 +66,7 @@ export function DropZone({
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       className={cn(
-        "flex w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-12 text-center transition-all",
+        "flex w-full flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed px-6 py-12 text-center transition-all select-none",
         hover
           ? "border-primary bg-primary/5 shadow-md"
           : "border-border hover:border-primary/40 hover:bg-muted/40",

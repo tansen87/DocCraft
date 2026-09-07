@@ -736,7 +736,7 @@ export function ImageToMdView() {
 
   if (total === 0) {
     return (
-      <div className="relative flex min-h-0 flex-1 flex-col gap-1">
+      <div className="relative flex min-h-0 flex-1 flex-col gap-1 select-none">
         {dragging ? (
           <DragOverlay
             title={t("overlay.releaseToAdd")}
@@ -772,7 +772,7 @@ export function ImageToMdView() {
       ) : null}
 
       {/* Summary / control bar */}
-      <GlassPanel className="flex flex-wrap items-center gap-2 rounded-xl px-2 py-1">
+      <GlassPanel className="flex flex-wrap items-center gap-2 rounded-xl px-2 py-1 select-none">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <FileImage className="size-4" />
         </span>
@@ -877,7 +877,7 @@ export function ImageToMdView() {
                 gets "panel width minus fixed right side" via flex-1/truncate
                 and the right-side controls are never squeezed. */}
             <ScrollArea className="img-list-scroll h-full">
-              <div className="p-2">
+              <div className="p-2 select-none">
                 {items.map((item, index) => (
                   <div
                     key={item.id}
@@ -918,10 +918,7 @@ export function ImageToMdView() {
                     {/* The filename is the only flexible element: it is
                         length-capped (ellipsised) so the right-side badge +
                         buttons are always rendered in full. */}
-                    <span
-                      className="min-w-0 flex-1 truncate text-sm"
-                      title={item.name}
-                    >
+                    <span className="min-w-0 flex-1 truncate text-sm">
                       {displayName(item.name)}
                     </span>
                     <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
