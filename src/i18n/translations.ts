@@ -210,6 +210,9 @@ const en = {
   "settings.layoutModelDesc.PP-DocLayoutV3":
     "DETR layout module for PaddleOCR-VL (25 classes, 800x800) - multi-point boxes and reading order for skewed / curved / photographed documents",
   "settings.layoutModelMissing": "model files not installed",
+  "settings.layoutModelDownloadHint":
+    "The layout model files are not installed. Only PP-DocLayoutV3.mnn and layout-meta.json need to be downloaded - place them in doccraft_resources\\models\\layout after downloading",
+  "settings.layoutModelDownload": "Download from ModelScope",
   "settings.layoutScoreThreshold": "Score threshold",
   "settings.layoutScoreThresholdDesc": "Detection confidence threshold (0-1)",
   "settings.layoutDropHeaderFooter": "Filter header/footer",
@@ -620,6 +623,9 @@ const zh: Record<TranslationKey, string> = {
   "settings.layoutModelDesc.PP-DocLayoutV3":
     "PaddleOCR-VL 统一版面模块(25类, 800x800)-多点多边形框与阅读顺序,适合倾斜/弯曲/翻拍文档",
   "settings.layoutModelMissing": "未安装模型文件",
+  "settings.layoutModelDownloadHint":
+    "版面模型文件未安装,只需下载 PP-DocLayoutV3.mnn 和 layout-meta.json,下载后放到 doccraft_resources\\models\\layout 目录",
+  "settings.layoutModelDownload": "从 ModelScope 下载",
   "settings.layoutScoreThreshold": "置信度阈值",
   "settings.layoutScoreThresholdDesc": "版面检测置信度阈值(0-1)",
   "settings.layoutDropHeaderFooter": "过滤页眉页脚",

@@ -4,6 +4,7 @@ import {
   open as openFileDialog,
   save as saveFileDialog,
 } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { emitTo } from "@tauri-apps/api/event";
 import {
   ChevronDown,
@@ -21,6 +22,10 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+
+/** ModelScope page hosting the PP-DocLayoutV3 MNN files (model + meta). */
+const MODELSCOPE_LAYOUT_URL =
+  "https://www.modelscope.cn/models/tansen87/PP-DocLayoutV3_mnn/files";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1141,6 +1146,24 @@ function OcrSettingsPanel({
                 </SelectContent>
               </Select>
             </SettingRow>
+            {ocrLayoutMode === "paddle" &&
+            (layoutModels.length === 0 ||
+              layoutModels.every((m) => !m.available)) ? (
+              <div className="flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+                <span className="text-muted-foreground">
+                  {t("settings.layoutModelDownloadHint")}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => void openUrl(MODELSCOPE_LAYOUT_URL)}
+                >
+                  <Download className="mr-1.5 h-4 w-4" />
+                  {t("settings.layoutModelDownload")}
+                </Button>
+              </div>
+            ) : null}
             <SettingRow
               label={t("settings.layoutScoreThreshold")}
               description={t("settings.layoutScoreThresholdDesc")}

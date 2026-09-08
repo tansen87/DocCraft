@@ -158,7 +158,11 @@ and Simplified Chinese - switchable at runtime.
   (MNN layout model with configurable confidence threshold; degrades to `off`
   when the model is missing). The bundled **PP-DocLayoutV3** DETR model
   (25 classes) emits regions in predicted reading order, so skewed / curved
-  layouts keep their original order. See
+  layouts keep their original order. When the model files are missing, the
+  Settings page shows a download hint (only `PP-DocLayoutV3.mnn` and
+  `layout-meta.json` are needed) linking to the ModelScope model page
+  (https://www.modelscope.cn/models/tansen87/PP-DocLayoutV3_mnn/files);
+  after download the files go into `doccraft_resources\models\layout`. See
   [design/00016_local-ocr-layout-analysis.md](./design/00016_local-ocr-layout-analysis.md).
 - **Text cleanup & Excel export options** - raw local OCR output is normalized
   before the paragraph policy (strip zero-width / BOM characters, collapse

@@ -3,6 +3,7 @@
   "productName": "DocCraft",
   "version": "0.2.0",
   "identifier": "com.doccraft.app",
+  "mainBinaryName": "DocCraft",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
