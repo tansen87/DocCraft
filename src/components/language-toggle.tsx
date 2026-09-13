@@ -14,14 +14,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import type { LangPreference, TranslationKey } from "@/i18n/translations";
 
-const LANGUAGES = [
+const LANGUAGES: { value: LangPreference; label?: string; key?: string }[] = [
+  { value: "system", key: "language.system" },
   { value: "en", label: "English" },
   { value: "zh", label: "中文" },
-] as const;
+];
 
 export function LanguageToggle() {
-  const { lang, setLang, t } = useI18n();
+  const { preference, setLang, t } = useI18n();
 
   return (
     <DropdownMenu>
@@ -42,8 +44,8 @@ export function LanguageToggle() {
             key={item.value}
             onClick={() => setLang(item.value)}
           >
-            {item.label}
-            {lang === item.value && (
+            {item.key ? t(item.key as TranslationKey) : item.label}
+            {preference === item.value && (
               <span className="ml-auto text-xs text-muted-foreground">✓</span>
             )}
           </DropdownMenuItem>

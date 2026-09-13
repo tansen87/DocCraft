@@ -7,36 +7,55 @@ import {
   type ReactNode,
 } from "react";
 
-import { translations, type Lang, type TranslationKey } from "./translations";
+import {
+  translations,
+  type Lang,
+  type LangPreference,
+  type TranslationKey,
+} from "./translations";
 
 const STORAGE_KEY = "doccraft-language";
 const DEFAULT_LANG: Lang = "en";
 
-function loadLang(): Lang {
+function loadPreference(): LangPreference {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === "en" || stored === "zh") return stored;
+    if (stored === "en" || stored === "zh" || stored === "system") {
+      return stored;
+    }
   } catch {
     // ignore storage errors
   }
-  return DEFAULT_LANG;
+  // No stored value (new user) or invalid value -> follow the system language
+  return "system";
+}
+
+function resolveLang(pref: LangPreference): Lang {
+  if (pref === "system") {
+    return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+  }
+  return pref;
 }
 
 type Interpolations = Record<string, string | number>;
 
 interface I18nContextValue {
   lang: Lang;
-  setLang: (lang: Lang) => void;
+  preference: LangPreference;
+  setLang: (pref: LangPreference) => void;
   t: (key: TranslationKey, params?: Interpolations) => string;
 }
 
 const I18nContext = createContext<I18nContextValue | null>(null);
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(loadLang);
+  const [preference, setPreferenceState] =
+    useState<LangPreference>(loadPreference);
+  const [lang, setLangState] = useState<Lang>(() => resolveLang(preference));
 
-  const setLang = useCallback((next: Lang) => {
-    setLangState(next);
+  const setLang = useCallback((next: LangPreference) => {
+    setPreferenceState(next);
+    setLangState(resolveLang(next));
     try {
       localStorage.setItem(STORAGE_KEY, next);
     } catch {
@@ -58,7 +77,10 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     [lang],
   );
 
-  const value = useMemo(() => ({ lang, setLang, t }), [lang, setLang, t]);
+  const value = useMemo(
+    () => ({ lang, preference, setLang, t }),
+    [lang, preference, setLang, t],
+  );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }

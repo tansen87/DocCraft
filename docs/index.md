@@ -182,8 +182,9 @@ and Simplified Chinese - switchable at runtime.
 - **System tray** - optional tray icon (on by default) with Open DocCraft /
   Start Screenshot / Exit menu items; closing the window hides to tray
   instead of quitting when enabled.
-- **Bilingual UI (i18n)** - English (default) and 中文 (Simplified Chinese)
-  switched via a dropdown next to the theme toggle; the choice persists in
+- **Bilingual UI (i18n)** - English and 中文 (Simplified Chinese), defaulting
+  to follow the system language, switched via a dropdown next to the theme
+  toggle; the choice persists in
   `localStorage` and every string goes through a typed translation layer.
 - **Settings page** - sidebar navigation over scroll-synced sections styled as
   grouped panels with hairline-separated setting rows ("Soft Rows" layout, see
@@ -416,12 +417,17 @@ A small custom layer (no external dependency) keeps every UI string bilingual:
   type-check until it exists in both.
 - `src/i18n/index.tsx` - `LanguageProvider` + the `useI18n()` hook. It exposes
   `t(key, params?)` which interpolates `{param}` placeholders (e.g.
-  `t("batch.completed", { done, total })`). The active language is persisted in
-  `localStorage` (`doccraft-language`, default `en`).
+  `t("batch.completed", { done, total })`), plus `lang` (the resolved render
+  language) and `preference` (the user-chosen mode). The preference is a
+  three-state value (`system` / `en` / `zh`) persisted in `localStorage`
+  (`doccraft-language`). New users and invalid values fall back to `system`,
+  which resolves through `navigator.language` (zh → Chinese, anything else →
+  English); an explicit `en` / `zh` stays fixed. Set via `setLang(pref)`.
 - `src/components/language-toggle.tsx` - a dropdown button next to the theme
-  toggle in the app header (English / 中文, native labels). Views and shared
-  components consume translations through `t()`; toasts, tooltips, dialogs,
-  drag-drop overlays and status badges are all covered.
+  toggle in the app header (system / English / Chinese). The check mark follows
+  `preference`. Views and shared components consume translations through
+  `t()`; toasts, tooltips, dialogs, drag-drop overlays and status badges are
+  all covered.
 
 ## Getting Started
 

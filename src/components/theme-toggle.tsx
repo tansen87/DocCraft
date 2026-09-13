@@ -1,4 +1,4 @@
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 
 import { useI18n } from "@/i18n";
@@ -35,21 +35,21 @@ export function ThemeToggle() {
       </Tooltip>
       <DropdownMenuContent align="end">
         <DropdownMenuSeparator className="hidden" />
+        <DropdownMenuItem onClick={() => setTheme("system")}>
+          {t("theme.system")}
+          {theme === "system" && (
+            <span className="ml-auto text-xs text-muted-foreground">✓</span>
+          )}
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setTheme("light")}>
-          <Sun /> {t("theme.light")}
+          {t("theme.light")}
           {theme === "light" && (
             <span className="ml-auto text-xs text-muted-foreground">✓</span>
           )}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setTheme("dark")}>
-          <Moon /> {t("theme.dark")}
+          {t("theme.dark")}
           {theme === "dark" && (
-            <span className="ml-auto text-xs text-muted-foreground">✓</span>
-          )}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme("system")}>
-          <Monitor /> {t("theme.system")}
-          {theme === "system" && (
             <span className="ml-auto text-xs text-muted-foreground">✓</span>
           )}
         </DropdownMenuItem>

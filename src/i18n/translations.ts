@@ -1,4 +1,5 @@
 export type Lang = "en" | "zh";
+export type LangPreference = "system" | "en" | "zh";
 
 const en = {
   "tabs.pdftomd": "PDF to MD",
@@ -11,6 +12,7 @@ const en = {
   "theme.system": "System",
   "theme.toggle": "Theme",
   "language.toggle": "Language",
+  "language.system": "System",
 
   "status.converting": "Converting",
   "status.done": "Done",
@@ -437,6 +439,7 @@ const zh: Record<TranslationKey, string> = {
   "theme.system": "跟随系统",
   "theme.toggle": "主题",
   "language.toggle": "语言",
+  "language.system": "跟随系统",
 
   "status.converting": "转换中",
   "status.done": "完成",
