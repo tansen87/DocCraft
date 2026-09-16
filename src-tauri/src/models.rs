@@ -429,10 +429,6 @@ pub struct AppSettings {
   /// `glass-blur-always` regardless.
   #[serde(default)]
   pub glass_blur_enabled: bool,
-  /// Run the local PaddleOCR engine in MNN low-precision (f16) mode -
-  /// roughly 30–50% faster on CPU with negligible accuracy loss.
-  #[serde(default = "default_true")]
-  pub ocr_low_precision: bool,
   /// Which PaddleOCR model tier the local engine loads.
   #[serde(default)]
   pub ocr_model_size: OcrModelSize,
@@ -916,7 +912,6 @@ impl Default for AppSettings {
       snip_result_opacity: 60,
       main_window_opacity: 100,
       glass_blur_enabled: false,
-      ocr_low_precision: true,
       ocr_model_size: OcrModelSize::default(),
       ai_ocr_prompt: String::new(),
       draw_table_prompt: String::new(),

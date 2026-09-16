@@ -100,11 +100,6 @@ export interface AppSettings {
   /** Whether to show the system tray icon. */
   enableTray: boolean;
   /**
-   * Low-precision (f16) MNN inference for the local PaddleOCR engine -
-   * ~30–50% faster on CPU with negligible accuracy loss (default true).
-   */
-  ocrLowPrecision?: boolean;
-  /**
    * Which local PaddleOCR model tier to load (default "small").
    * "tiny" is the fastest, "medium" prioritizes accuracy.
    */

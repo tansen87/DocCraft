@@ -544,8 +544,6 @@ cargo check --manifest-path src-tauri/Cargo.toml
     tab / `"^"`, default `"|"`)
   - `enableTray` (default `true`, system tray icon with close-to-tray
     behaviour)
-  - `ocrLowPrecision` (default `true` - MNN f16 mode, ~30–50% faster on CPU);
-    changing rebuilds the resident engine(s)
   - `ocrModelSize` (`"tiny"` / `"small"` (default) / `"medium"` - which
     bundled PaddleOCR tier to load; tiny is fastest, small is ~2–3× faster
     than medium)

@@ -192,7 +192,6 @@ export function SettingsView() {
   const [cacheExtracted, setCacheExtracted] = useState(true);
   const [excelTablesOnly, setExcelTablesOnly] = useState(true);
   const [screenshotHotkey, setScreenshotHotkey] = useState("");
-  const [ocrLowPrecision, setOcrLowPrecision] = useState(true);
   const [ocrModelSize, setOcrModelSize] = useState<OcrModelSize>("small");
   const [ocrLayoutMode, setOcrLayoutMode] = useState<LayoutMode>("off");
   const [ocrLayoutModel, setOcrLayoutModel] = useState("PP-DocLayoutV3");
@@ -246,7 +245,6 @@ export function SettingsView() {
         setCacheExtracted(settings.cacheExtractedText);
         setExcelTablesOnly(settings.excelTablesOnly);
         setScreenshotHotkey(settings.screenshotHotkey ?? "");
-        setOcrLowPrecision(settings.ocrLowPrecision ?? true);
         setOcrModelSize(settings.ocrModelSize ?? "small");
         setOcrLayoutMode(settings.ocrLayoutMode ?? "off");
         setOcrLayoutModel(settings.ocrLayoutModel ?? "PP-DocLayoutV3");
@@ -325,7 +323,6 @@ export function SettingsView() {
       ocrMode,
       screenshotHotkey: screenshotHotkey.trim() || null,
       enableTray,
-      ocrLowPrecision,
       ocrModelSize,
       ocrLayoutMode,
       ocrLayoutModel,
@@ -520,11 +517,6 @@ export function SettingsView() {
                     markDirty();
                   }}
                   loading={loading}
-                  ocrLowPrecision={ocrLowPrecision}
-                  onOcrLowPrecisionChange={(v) => {
-                    setOcrLowPrecision(v);
-                    markDirty();
-                  }}
                   ocrModelSize={ocrModelSize}
                   onOcrModelSizeChange={(v) => {
                     setOcrModelSize(v);
@@ -848,8 +840,6 @@ function OcrSettingsPanel({
   ocrMode,
   onOcrModeChange,
   loading,
-  ocrLowPrecision,
-  onOcrLowPrecisionChange,
   ocrModelSize,
   onOcrModelSizeChange,
   ocrLayoutMode,
@@ -873,8 +863,6 @@ function OcrSettingsPanel({
   ocrMode: OcrMode;
   onOcrModeChange: (v: OcrMode) => void;
   loading: boolean;
-  ocrLowPrecision: boolean;
-  onOcrLowPrecisionChange: (v: boolean) => void;
   ocrModelSize: OcrModelSize;
   onOcrModelSizeChange: (v: OcrModelSize) => void;
   ocrLayoutMode: LayoutMode;
@@ -1063,16 +1051,6 @@ function OcrSettingsPanel({
               </SelectItem>
             </SelectContent>
           </Select>
-        </SettingRow>
-        <SettingRow
-          label={t("settings.ocrLowPrecision")}
-          description={t("settings.ocrLowPrecisionDesc")}
-        >
-          <Switch
-            checked={ocrLowPrecision}
-            onCheckedChange={onOcrLowPrecisionChange}
-            disabled={loading}
-          />
         </SettingRow>
       </Panel>
 

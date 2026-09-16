@@ -70,14 +70,16 @@ impl Drop for V3Engine {
 }
 
 impl V3Engine {
-  fn new(model_path: &Path, threads: i32, low_precision: bool) -> Result<Self, String> {
+  fn new(model_path: &Path, threads: i32) -> Result<Self, String> {
     let buffer = std::fs::read(model_path).map_err(|e| {
       format!(
         "Failed to read PP-DocLayoutV3 model {}: {e}",
         model_path.display()
       )
     })?;
-    let precision = if low_precision { 1 } else { 0 };
+    // Normal (fp32) precision. Low-precision (fp16 via MNN Precision_Low) adds
+    // no speedup on x86 CPUs, so the layout engine always runs at `precision=0`.
+    let precision = 0;
     let ptr = unsafe { mnnv3_create(buffer.as_ptr(), buffer.len(), threads, precision) };
     if ptr.is_null() {
       return Err("PP-DocLayoutV3: failed to create MNN engine".to_string());
@@ -640,15 +642,10 @@ pub struct LayoutEngine {
 
 impl LayoutEngine {
   /// Load a layout model directory (must contain its declared model file +
-  /// `layout-meta.json`). `threads` and `low_precision` mirror the OCR engine
-  /// settings so the layout model follows the same CPU / fp16 policy. Only
-  /// DETR models (`meta.engine == "detr"`, e.g. PP-DocLayoutV3) are supported.
-  pub fn new(
-    model_dir: &Path,
-    threads: i32,
-    low_precision: bool,
-    score_threshold: f32,
-  ) -> Result<Self, String> {
+  /// `layout-meta.json`). `threads` mirrors the OCR engine thread setting.
+  /// Only DETR models (`meta.engine == "detr"`, e.g. PP-DocLayoutV3) are
+  /// supported.
+  pub fn new(model_dir: &Path, threads: i32, score_threshold: f32) -> Result<Self, String> {
     let meta = LayoutModelMeta::load(&model_dir.join("layout-meta.json"))?;
     let model_path = model_dir.join(&meta.model_file);
     if !model_path.is_file() {
@@ -665,7 +662,7 @@ impl LayoutEngine {
     if meta.input_width == 0 || meta.input_height == 0 {
       return Err("PP-DocLayoutV3 requires inputWidth/inputHeight in layout-meta.json".to_string());
     }
-    let v3 = V3Engine::new(&model_path, threads, low_precision)?;
+    let v3 = V3Engine::new(&model_path, threads)?;
     Ok(Self {
       meta,
       score_threshold,

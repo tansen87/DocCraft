@@ -175,9 +175,6 @@ const en = {
 
   "settings.threads": "Concurrency",
   "settings.ocrEnabled": "OCR Mode",
-  "settings.ocrLowPrecision": "Low-precision inference",
-  "settings.ocrLowPrecisionDesc":
-    "When enabled, run local PaddleOCR in MNN f16 mode",
   "settings.ocrTextCleanup": "Clean OCR text",
   "settings.ocrTextCleanupDesc":
     "When enabled, normalize raw OCR output (strip zero-width/BOM characters, collapse in-line whitespace runs to one space, and add a space between CJK and Latin text)",
@@ -592,8 +589,6 @@ const zh: Record<TranslationKey, string> = {
 
   "settings.threads": "并发线程",
   "settings.ocrEnabled": "OCR 模式",
-  "settings.ocrLowPrecision": "低精度推理加速",
-  "settings.ocrLowPrecisionDesc": "开启时,本地 PaddleOCR 使用 MNN f16 模式推理",
   "settings.ocrTextCleanup": "清理 OCR 文本",
   "settings.ocrTextCleanupDesc":
     "开启时,规整 OCR 原始输出 (去除零宽字符与 BOM,将行内连续空白压缩为单个空格,在 CJK 与拉丁/数字之间补一个空格)",
