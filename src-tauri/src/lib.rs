@@ -45,6 +45,7 @@ fn setup_tray(app: &tauri::AppHandle) -> Result<TrayIcon, Box<dyn std::error::Er
   let tray = TrayIconBuilder::new()
     .icon(icon)
     .menu(&menu)
+    .show_menu_on_left_click(false)
     .tooltip("DocCraft")
     .on_menu_event(|app, event| match event.id().as_ref() {
       "open" => {
@@ -71,11 +72,13 @@ fn setup_tray(app: &tauri::AppHandle) -> Result<TrayIcon, Box<dyn std::error::Er
         ..
       } = event
       {
+        // Left-clicking the tray icon starts a screenshot (same path as the
+        // screen-capture hotkey / "Screenshot" menu item).
         let app = tray.app_handle();
-        if let Some(window) = app.get_webview_window("main") {
-          let _ = window.show();
-          let _ = window.set_focus();
-        }
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+          crate::core::snip::capture_and_emit(app).await;
+        });
       }
     })
     .build(app)?;
