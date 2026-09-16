@@ -1438,6 +1438,10 @@ mod tests {
         ItemType::Text
       },
       mcid: None,
+      rotation: 0.0,
+      advance_known: false,
+      legacy_symbol_rewrite: false,
+      baseline_shift: 0.0,
     }
   }
 

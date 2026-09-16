@@ -11,9 +11,8 @@
 //!   directory carries `model.mnn` + `layout-meta.json`; dropping a new
 //!   converted model in makes it appear in the settings select without code
 //!   changes (design §3.1 / §3.3).
-//! - [`LayoutEngine`]: the `paddle` mode — PicoDet / PP-DocLayoutV3 inference
-//!   through `ocr_rs::InferenceEngine` (the same MNN runtime as det/rec, so no
-//!   second inference dependency) or the vendored DETR binding (`cpp/mnn`).
+//! - [`LayoutEngine`]: the `paddle` mode — PP-DocLayoutV3 inference through the
+//!   vendored MNN binding (`cpp/mnn`, built by `build.rs`).
 //! - [`sort_reading_order`]: recursive XY-Cut used to restore reading order.
 //! - [`assemble_markdown`]: regions + OCR blocks → Markdown.
 
@@ -24,7 +23,6 @@ use std::path::{Path, PathBuf};
 
 use image::DynamicImage;
 use ndarray::Array4;
-use ocr_rs::{InferenceConfig, InferenceEngine, PrecisionMode};
 use serde::{Deserialize, Serialize};
 
 use crate::core::get_resources_dir;
@@ -629,43 +627,22 @@ fn iou(a: LayoutRect, b: LayoutRect) -> f64 {
   if union <= 0.0 { 0.0 } else { inter / union }
 }
 
-/// Remove near-duplicate detections (score-descending greedy NMS). PicoDet
-/// exports usually already bake NMS in; this keeps the list clean regardless.
-fn nms(regions: Vec<LayoutRegion>) -> Vec<LayoutRegion> {
-  let mut sorted = regions;
-  sorted.sort_by(|a, b| {
-    b.score
-      .partial_cmp(&a.score)
-      .unwrap_or(std::cmp::Ordering::Equal)
-  });
-  let mut keep: Vec<LayoutRegion> = Vec::new();
-  for r in sorted {
-    if keep.iter().any(|k| iou(k.rect, r.rect) > 0.5) {
-      continue;
-    }
-    keep.push(r);
-  }
-  keep
-}
-
-/// The `paddle` mode engine: PicoDet layout detection through the same MNN
-/// runtime that runs det/rec (design §3.3).
+/// The `paddle` mode engine: PP-DocLayoutV3 detection through the vendored
+/// MNN binding (`cpp/mnn`, design §3.3). Only DETR models are supported.
 pub struct LayoutEngine {
-  engine: Option<InferenceEngine>,
   meta: LayoutModelMeta,
   score_threshold: f32,
-  /// Resolved input size (width, height) for the PicoDet engine path. Taken
-  /// from the meta, or read from the model's own input shape when the meta
-  /// leaves it unset.
-  input_size: (u32, u32),
-  /// Present only for DETR models (`meta.engine == "detr"`, e.g. PP-DocLayoutV3).
-  v3: Option<V3Engine>,
+  /// PP-DocLayoutV3 (DETR) runs on the standalone MNN binding, because its
+  /// output is `[N,7]` (with a reading-order column) and its graph needs the
+  /// `image` input selected by name.
+  v3: V3Engine,
 }
 
 impl LayoutEngine {
   /// Load a layout model directory (must contain its declared model file +
   /// `layout-meta.json`). `threads` and `low_precision` mirror the OCR engine
-  /// settings so the layout model follows the same CPU / fp16 policy.
+  /// settings so the layout model follows the same CPU / fp16 policy. Only
+  /// DETR models (`meta.engine == "detr"`, e.g. PP-DocLayoutV3) are supported.
   pub fn new(
     model_dir: &Path,
     threads: i32,
@@ -680,45 +657,19 @@ impl LayoutEngine {
         model_path.display()
       ));
     }
-
-    // DETR models (PP-DocLayoutV3) use the standalone MNN binding instead of
-    // `ocr_rs`, since their output is `[N,7]` rather than rows-of-6 and their
-    // graph needs the `image` input selected by name.
-    if meta.engine.as_deref() == Some("detr") {
-      if meta.input_width == 0 || meta.input_height == 0 {
-        return Err(
-          "PP-DocLayoutV3 requires inputWidth/inputHeight in layout-meta.json".to_string(),
-        );
-      }
-      let v3 = V3Engine::new(&model_path, threads, low_precision)?;
-      let input_size = (meta.input_width, meta.input_height);
-      return Ok(Self {
-        engine: None,
-        meta,
-        score_threshold,
-        input_size,
-        v3: Some(v3),
-      });
+    if meta.engine.as_deref() != Some("detr") {
+      return Err(
+        "DETR layout model required: set \"engine\": \"detr\" in layout-meta.json (only PP-DocLayoutV3 is supported)".to_string(),
+      );
     }
-
-    let mut config = InferenceConfig::new().with_threads(threads);
-    if low_precision {
-      config = config.with_precision(PrecisionMode::Low);
+    if meta.input_width == 0 || meta.input_height == 0 {
+      return Err("PP-DocLayoutV3 requires inputWidth/inputHeight in layout-meta.json".to_string());
     }
-    let engine = InferenceEngine::from_file(&model_path, Some(config))
-      .map_err(|e| format!("Failed to load layout model {}: {e}", model_path.display()))?;
-
-    // Input size: prefer the meta declaration; otherwise read it from the
-    // model's own input tensor (NCHW [1, C, H, W] → the last two dims), so
-    // bundled models don't need a hardcoded size.
-    let input_size = resolve_input_size(&meta, &engine)?;
-
+    let v3 = V3Engine::new(&model_path, threads, low_precision)?;
     Ok(Self {
-      engine: Some(engine),
       meta,
       score_threshold,
-      input_size,
-      v3: None,
+      v3,
     })
   }
 
@@ -726,117 +677,16 @@ impl LayoutEngine {
   /// order (DETR models do). When true, callers should NOT apply the geometric
   /// XY-Cut re-sort, so skewed / curved documents keep the model's order.
   pub fn reading_order(&self) -> bool {
-    self.v3.is_some()
+    true
   }
 
-  /// Detect layout regions on a page image.
-  ///
-  /// DETR models are routed to the standalone `[N, 7]` decode; the PicoDet
-  /// path expects one tensor whose last dimension is 6:
-  /// `[class_id, score, x1, y1, x2, y2]` in the model input (letterboxed)
-  /// coordinate space. Coordinates are mapped back to the original image. This
-  /// decode must be validated against the converted models (design acceptance:
-  /// bbox IoU > 0.95 vs PaddleX).
+  /// Detect layout regions on a page image via the DETR `[N, 7]` decode.
+  /// Coordinates are mapped back to the original image. This decode must be
+  /// validated against the converted models (design acceptance: bbox IoU >
+  /// 0.95 vs PaddleX).
   pub fn detect(&self, image: &DynamicImage) -> Result<Vec<LayoutRegion>, String> {
-    if let Some(v3) = &self.v3 {
-      return v3.detect(image, &self.meta, self.score_threshold);
-    }
-    let engine = self
-      .engine
-      .as_ref()
-      .ok_or_else(|| "layout engine not initialized".to_string())?;
-    let (orig_w, orig_h) = (image.width() as f64, image.height() as f64);
-    let (in_w, in_h) = (self.input_size.0 as f64, self.input_size.1 as f64);
-
-    let input = preprocess_layout_image(image, &self.meta, in_w, in_h)?;
-    let output = engine
-      .run_dynamic(input.view().into_dyn())
-      .map_err(|e| format!("Layout inference failed: {e}"))?;
-
-    let shape = output.shape();
-    let row_len = *shape.last().unwrap_or(&0);
-    if row_len != 6 {
-      return Err(format!(
-        "Unexpected layout model output shape {:?} (expected rows of 6)",
-        shape
-      ));
-    }
-    let rows = shape[..shape.len() - 1].iter().product::<usize>();
-    let data = output
-      .as_slice()
-      .ok_or_else(|| "layout output tensor is not contiguous".to_string())?;
-
-    let mut regions = Vec::new();
-    for r in 0..rows {
-      let base = r * 6;
-      let class_id = data[base] as usize;
-      let score = data[base + 1];
-      if !(score >= self.score_threshold) {
-        continue;
-      }
-      // Model coordinates live in the resized input space; map them back to
-      // the original image (stretch or letterbox depending on keep_ratio).
-      let (x1, y1) = map_model_point(
-        data[base + 2] as f64,
-        data[base + 3] as f64,
-        orig_w,
-        orig_h,
-        in_w,
-        in_h,
-        self.meta.keep_ratio,
-      );
-      let (x2, y2) = map_model_point(
-        data[base + 4] as f64,
-        data[base + 5] as f64,
-        orig_w,
-        orig_h,
-        in_w,
-        in_h,
-        self.meta.keep_ratio,
-      );
-      if x2 <= x1 || y2 <= y1 {
-        continue;
-      }
-      regions.push(LayoutRegion {
-        class: self.meta.class_bucket(class_id),
-        rect: LayoutRect {
-          x: x1,
-          y: y1,
-          width: x2 - x1,
-          height: y2 - y1,
-        },
-        score: score as f64,
-      });
-    }
-    Ok(nms(regions))
+    self.v3.detect(image, &self.meta, self.score_threshold)
   }
-}
-
-/// Resolve the model input size (width, height). The meta declaration wins;
-/// when it is unset (0), read the last two dims of the model's input tensor
-/// (`[1, C, H, W]` NCHW). Dynamic-shape models report huge sentinel values,
-/// which are rejected so the caller degrades to `rule` instead of letterboxing
-/// into a garbage size.
-fn resolve_input_size(
-  meta: &LayoutModelMeta,
-  engine: &InferenceEngine,
-) -> Result<(u32, u32), String> {
-  if meta.input_width > 0 && meta.input_height > 0 {
-    return Ok((meta.input_width, meta.input_height));
-  }
-  const SENTINEL: usize = 100_000;
-  let shape = engine.input_shape();
-  if shape.len() >= 2 {
-    let h = shape[shape.len() - 2];
-    let w = shape[shape.len() - 1];
-    if h > 0 && h < SENTINEL && w > 0 && w < SENTINEL {
-      return Ok((w as u32, h as u32));
-    }
-  }
-  Err(format!(
-    "layout model input size is unknown (shape {:?}); declare inputWidth/inputHeight in layout-meta.json",
-    shape
-  ))
 }
 
 // ─── Reading order (XY-Cut) ──────────────────────────────────────────────

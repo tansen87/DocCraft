@@ -482,6 +482,11 @@ mod tests {
       item_type: ItemType::Text,
       mcid: None,
       font_tag: "F2".to_string(),
+      rotation: 0.0,
+      advance_known: false,
+      legacy_symbol_rewrite: false,
+      baseline_shift: 0.0,
+      
     }
   }
 
