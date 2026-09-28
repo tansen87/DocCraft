@@ -126,7 +126,7 @@ cargo check --manifest-path src-tauri/Cargo.toml  # Rust 代码检查
    └─ layout-meta.json
 ```
 
-**build 模式**下,资源会被镜像到可执行文件旁(与 exe 同级的 `models/`,见 `src-tauri/build.rs`);**安装包不带模型**,模型由用户自行提供(后续会支持在线安装/拖放).手动安装的模型放置路径为:
+**build 模式**下,资源会被镜像到可执行文件旁(与 exe 同级的 `models/`,见 `src-tauri/build.rs`);**安装包不带模型**,需要在应用内 **设置 → 模型** 里下载(来自 ModelScope,逐文件校验大小与 SHA-256),或把模型文件/文件夹直接拖进该分组.手动安装的模型放置路径为:
 
 ```
 models/layout/PP-DocLayoutV3/PP-DocLayoutV3.mnn

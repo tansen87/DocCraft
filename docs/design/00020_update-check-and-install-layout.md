@@ -351,16 +351,15 @@ FunctionEnd
 > 改成 7 个文件的显式清单后是 21MB。**如果将来要恢复随包，务必用显式文件清单，
 > 不要用目录映射**；并且在 CI 里核对安装包体积。
 
-- **后续要做的模型获取方式**（本期不做，仅记录接口约定，避免将来再动运行时代码）：
-  ① 在线安装 —— 在设置页加"下载模型"入口，把官方 MNN 权重落到
-  `<安装目录>\models\<tier>\` / `models\layout\<模型>\`；
-  ② 拖放 —— 把模型文件或目录拖进设置页/主窗口，后端复制到同一批目标目录。
-  两者都只需调用 `core::models_dir()`，且不需要重新打包或签名。
-  参考现有实现：设置页的版面模型缺失提示已经指引用户去 ModelScope 下载
-  （`settings.layoutModelDownloadHint` / `MODELSCOPE_LAYOUT_URL`）。
+- **模型获取方式**：已由
+  [00022_model-download.md](./00022_model-download.md) 落地 —— ① 设置页「模型」分组
+  在线下载（ModelScope，逐文件校验 size + SHA-256）；② 拖放/选择本地文件导入。
+  两者都只调用 `core::models_dir()`，与打包、签名解耦。
+  （本期预留的"设置页版面模型缺失提示 + ModelScope 外链"在 00022 里已删除，
+  下载入口统一到「模型」分组。）
 - medium 档（det+rec 67MB）与 `PP-DocLayoutV3.mnn`（125MB）本来就被
-  `src-tauri/.gitignore` 排除、不入库；现在**任何档位都不随包**，用户在设置页按提示
-  自行下载后放入 `<安装目录>\models\`（OCR 档）或
+  `src-tauri/.gitignore` 排除、不入库；现在**任何档位都不随包**，在设置页「模型」分组
+  下载后落到 `<安装目录>\models\`（OCR 档）或
   `<安装目录>\models\layout\PP-DocLayoutV3\`（版面模型）。
 - `build.rs::sync_resources()` 的镜像目标从 `<target>/<profile>/doccraft_resources/`
   改为 `<target>/<profile>/models`（dev 运行时的目录结构与安装后一致，避免两套路径假设）。

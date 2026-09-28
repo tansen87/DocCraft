@@ -14,6 +14,9 @@ import type {
   LayoutModelInfo,
   MdAnalyzeResult,
   MdExportResult,
+  ModelProgress,
+  ModelsSnapshot,
+  LocalImportResult,
   OcrImageResult,
   OcrVendor,
   OcrVendorInput,
@@ -151,6 +154,21 @@ export const takeVersionNotice = () =>
 /** Subscribe to update snapshots pushed by the backend. */
 export const onUpdateState = (cb: (snapshot: UpdateSnapshot) => void) =>
   listen<UpdateSnapshot>("update://state", (event) => cb(event.payload));
+
+/** Available model groups and whether their files are on disk. */
+export const listModels = () => invoke<ModelsSnapshot>("list_models");
+
+/** Download one model group (verified by size + SHA-256 before it is kept). */
+export const downloadModels = (group: string) =>
+  invoke<ModelsSnapshot>("download_models", { group });
+
+/** Import model files the user dropped in or picked. */
+export const addLocalModels = (paths: string[]) =>
+  invoke<LocalImportResult>("add_local_models", { paths });
+
+/** Subscribe to model download progress. */
+export const onModelProgress = (cb: (progress: ModelProgress) => void) =>
+  listen<ModelProgress>("models://progress", (event) => cb(event.payload));
 
 /** Analyze the tables contained in a Markdown file. */
 export const analyzeMarkdown = (path: string) =>

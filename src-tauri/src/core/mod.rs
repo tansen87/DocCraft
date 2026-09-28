@@ -6,6 +6,7 @@ pub mod layout;
 pub mod line_draw;
 pub mod md_to_xlsx;
 pub mod migrate;
+pub mod model_files;
 pub mod ocr;
 pub mod page_marker;
 pub mod paragraph;

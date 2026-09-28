@@ -158,13 +158,13 @@ and Simplified Chinese - switchable at runtime.
   (MNN layout model with configurable confidence threshold; degrades to `off`
   when the model is missing). The bundled **PP-DocLayoutV3** DETR model
   (25 classes) emits regions in predicted reading order, so skewed / curved
-  layouts keep their original order. When the model files are missing, the
-  Settings page shows a download hint (only `PP-DocLayoutV3.mnn` and
-  `layout-meta.json` are needed) linking to the ModelScope model page
-  (https://www.modelscope.cn/models/tansen87/PP-DocLayoutV3_mnn/files);
-  after download the files go into `<install dir>\models\layout` (the
-  `doccraft_resources` wrapper directory is gone - see
-  [design/00020_update-check-and-install-layout.md](./design/00020_update-check-and-install-layout.md)).
+  layouts keep their original order. The model files are **not bundled**: the
+  Settings → **Models** section downloads them (or takes dragged-in files), and
+  the layout model select marks entries whose weights are still missing
+  (`model files not installed`). The files live in `<install dir>\models\layout`
+  (the `doccraft_resources` wrapper directory is gone - see
+  [design/00020_update-check-and-install-layout.md](./design/00020_update-check-and-install-layout.md),
+  download flow in [design/00022_model-download.md](./design/00022_model-download.md)).
   See
   [design/00016_local-ocr-layout-analysis.md](./design/00016_local-ocr-layout-analysis.md).
 - **Text cleanup & Excel export options** - raw local OCR output is normalized
@@ -221,6 +221,15 @@ and Simplified Chinese - switchable at runtime.
   [design/00021_auto-download-install.md](./design/00021_auto-download-install.md)
   (installer layout: [design/00020_update-check-and-install-layout.md](./design/00020_update-check-and-install-layout.md)).
 
+- **Model downloads & local import** - models are not shipped with the installer
+  (see below), so the Settings **Models** section lists every group (OCR tiny /
+  small / medium, the layout model) with its size and installed state. Each group
+  is fetched from **ModelScope** on demand and verified against a pinned size +
+  SHA-256 before it is put in place (`core/model_files.rs`, progress over
+  `models://progress`); files a user already has can be dropped in or picked
+  (recognised by name, verified the same way, only copied - never moved). See
+  [design/00022_model-download.md](./design/00022_model-download.md).
+
 ## Tech Stack
 
 | Layer   | Choice |
@@ -241,7 +250,7 @@ and Simplified Chinese - switchable at runtime.
 | Secret storage    | DPAPI via `windows-sys` (Win32_Security_Cryptography) on Windows |
 | Concurrency       | frontend worker pool (limit from app settings) |
 | Config storage    | JSON files in `<install dir>/data` next to the executable (`ocr-config.json`, `app-settings.json`, `usage-*.jsonl`) |
-| Models            | `<install dir>/models` - **not shipped in the installer**; models are user-provided (planned: online install / drag & drop). Dev builds get them from `build.rs` mirroring `src-tauri/resources/models` |
+| Models            | `<install dir>/models` - **not shipped in the installer**; fetched on demand from ModelScope (Settings → Models) or imported by drag & drop, always verified against a pinned size + SHA-256. Dev builds get them from `build.rs` mirroring `src-tauri/resources/models` |
 | Installer         | NSIS (`installMode: currentUser`, no admin), always installs into `<chosen>\DocCraft` via `installerHooks` |
 
 ## Project Structure
@@ -318,6 +327,7 @@ doccraft/
 │  │     ├─ config_transfer.rs   # Configuration export / import (merge by id)
 │  │     ├─ update.rs            # Startup / manual release check + update://state snapshot
 │  │     ├─ migrate.rs           # One-time flattening of the legacy doccraft_resources/ layout
+│  │     ├─ model_files.rs       # On-demand model downloads (ModelScope) + local import
 │  │     ├─ secret.rs            # API key protection (DPAPI / obfuscation)
 │  │     ├─ line_draw.rs         # Manual "draw-a-table" vertical-line extraction
 │  │     ├─ md_to_xlsx.rs        # Markdown → Excel table parsing + export
@@ -372,6 +382,9 @@ Commands (invoked from `src/lib/ipc.ts`):
 | `skip_update_version` | `{ version }`                          | `UpdateSnapshot` (phase becomes `skipped`) |
 | `clear_skipped_version` | -                                    | `UpdateSnapshot` |
 | `take_version_notice` | -                                      | `VersionNotice \| null` (`from`, `to`) - consumed once, drives the "updated to vX.Y.Z" toast |
+| `list_models`        | -                                       | `ModelsSnapshot` (`root`, `groups[]` with per-file `installed`, `active` progress) |
+| `download_models`    | `{ group }` - `ocr.tiny` / `ocr.small` / `ocr.medium` / `layout.PP-DocLayoutV3` | `ModelsSnapshot` - streams each file from ModelScope, verifies size + SHA-256, then renames it into `<install dir>/models` |
+| `add_local_models`   | `{ paths }` - files or folders        | `LocalImportResult` (`imported`, `ignored`, `failed`) - user-provided model files are recognised by name, verified and copied into place |
 | `analyze_markdown`   | `{ path }`                              | `MdAnalyzeResult` (`tableCount`, `tables[]` with columns/rows/page, `totalRows`, `totalLines`, `content`, `processingTimeMs`) |
 | `export_markdown_tables` | `{ mdPath, xlsxPath }`              | `MdExportResult` (`tableCount`, `totalRows`, `processingTimeMs`) |
 | `extract_draw_table` | `{ path, drawData }` - `drawData` may carry `totalPages`, `onlyPages` (batching), `pageImages[]` (`{page, imagePng, renderScale}`) for the mode-selected OCR fallback, and `exclusions` | `DrawTableResult` (`tableCount`, `tables[]`, `regions[]`, `totalRows`, `ocrPages`, `emptyTextPages`, `ocrConfidence`, `processingTimeMs`) |
@@ -530,7 +543,7 @@ cargo check --manifest-path src-tauri/Cargo.toml
   **Tiny model tier**: new fastest PaddleOCR tier alongside small (default)
   and medium.
 - **Design docs** - numbered proposals live under
-  [docs/design/](./design/) (`00001` through `00021`).
+  [docs/design/](./design/) (`00001` through `00022`).
 - **Changelogs** - version release notes live under
   [docs/changelog/](./changelog/).
 

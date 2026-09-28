@@ -641,6 +641,55 @@ export interface VersionNotice {
   to: string;
 }
 
+// ─── Model files (settings → Models) ─────────────────────────────────────
+
+/** One file of a model group, as tracked by the backend. */
+export interface ModelFileDto {
+  /** File name (also what a dragged-in file must be called). */
+  name: string;
+  /** Path relative to `<install dir>/models`. */
+  target: string;
+  size: number;
+  /** Present on disk with the expected size. */
+  installed: boolean;
+}
+
+/** A downloadable unit: an OCR tier (det + rec + keys) or the layout model. */
+export interface ModelGroupDto {
+  /** `ocr.tiny` / `ocr.small` / `ocr.medium` / `layout.PP-DocLayoutV3`. */
+  id: string;
+  kind: "ocr" | "layout";
+  files: ModelFileDto[];
+  totalBytes: number;
+  installed: boolean;
+}
+
+/** Progress of the running download (one file at a time). */
+export interface ModelProgress {
+  group: string;
+  file: string;
+  downloaded: number;
+  total: number;
+}
+
+/** Model groups plus the running download, pushed over `models://progress`. */
+export interface ModelsSnapshot {
+  /** Absolute directory the model files live in. */
+  root: string;
+  groups: ModelGroupDto[];
+  active: ModelProgress | null;
+}
+
+/** Outcome of importing files the user dropped in or picked. */
+export interface LocalImportResult {
+  /** Targets written (relative to `<install dir>/models`). */
+  imported: string[];
+  /** Files that match no known model file name. */
+  ignored: string[];
+  /** Files that matched but failed verification (`name: reason`). */
+  failed: string[];
+}
+
 // ─── Local usage statistics ───────────────────────────────────────────────
 
 /** What kind of operation produced a usage log entry. */

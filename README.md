@@ -124,7 +124,7 @@ Each layout model lives in its own subdirectory named after the model, containin
    └─ layout-meta.json
 ```
 
-In **build mode** the resources are mirrored next to the executable (a `models/` directory, see `src-tauri/build.rs`). The **installer ships without models** — they are user-provided, so a manually installed model goes to:
+In **build mode** the resources are mirrored next to the executable (a `models/` directory, see `src-tauri/build.rs`). The **installer ships without models**: download them in the app under **Settings → Models** (fetched from ModelScope, verified against a pinned size + SHA-256), or drop the files / a folder into that section. A manually installed model goes to:
 
 ```
 models/layout/PP-DocLayoutV3/PP-DocLayoutV3.mnn

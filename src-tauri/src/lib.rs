@@ -423,6 +423,33 @@ fn take_version_notice(app: tauri::AppHandle) -> Option<core::update::VersionNot
   core::update::take_version_notice(&app)
 }
 
+/// Every downloadable model group with its on-disk state (settings → Models).
+#[tauri::command]
+fn list_models(app: tauri::AppHandle) -> core::model_files::ModelsSnapshot {
+  core::model_files::snapshot(&app)
+}
+
+/// Download every file of one model group from ModelScope, verifying size and
+/// SHA-256 before a file is put in place (docs/design/00022).
+#[tauri::command]
+async fn download_models(
+  app: tauri::AppHandle,
+  group: String,
+) -> Result<core::model_files::ModelsSnapshot, String> {
+  core::model_files::download_group(app, group).await
+}
+
+/// Import model files the user dropped in or picked (verified the same way).
+#[tauri::command]
+async fn add_local_models(
+  app: tauri::AppHandle,
+  paths: Vec<String>,
+) -> Result<core::model_files::LocalImportResult, String> {
+  tauri::async_runtime::spawn_blocking(move || core::model_files::add_local(&app, paths))
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Convert one standalone image file (PNG / JPEG) to Markdown via the OCR
 /// engine selected by the current mode.
 #[tauri::command]
@@ -619,6 +646,7 @@ pub fn run() {
     .manage(TrayState::default())
     .manage(core::update::UpdateState::default())
     .manage(core::update::VersionNoticeState::default())
+    .manage(core::model_files::ModelsState::default())
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_clipboard_manager::init())
@@ -730,6 +758,9 @@ pub fn run() {
       skip_update_version,
       clear_skipped_version,
       take_version_notice,
+      list_models,
+      download_models,
+      add_local_models,
       analyze_markdown,
       export_markdown_tables,
       ocr_image_to_md,

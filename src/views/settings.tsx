@@ -6,6 +6,7 @@ import {
 } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { emitTo } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   ChevronDown,
   Download,
@@ -24,10 +25,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-/** ModelScope page hosting the PP-DocLayoutV3 MNN files (model + meta). */
-const MODELSCOPE_LAYOUT_URL =
-  "https://www.modelscope.cn/models/tansen87/PP-DocLayoutV3_mnn/files";
-
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,11 +41,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { GlassPanel } from "@/components/ui/glass-panel";
+import { Progress } from "@/components/ui/progress";
 import type {
   OcrMode,
   OcrModelSize,
   ParagraphMode,
   LayoutMode,
+  LocalImportResult,
+  ModelGroupDto,
+  ModelProgress,
+  ModelsSnapshot,
 } from "@/lib/types";
 import {
   Tooltip,
@@ -62,8 +64,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  addLocalModels,
   checkForUpdate,
   clearSkippedVersion,
+  downloadModels,
   exportConfig,
   getAppSettings,
   getOcrConfig,
@@ -71,6 +75,8 @@ import {
   getUsageStats,
   importConfig,
   listLayoutModels,
+  listModels,
+  onModelProgress,
   revealOcrKey,
   saveOcrConfig,
   setAppSettings,
@@ -95,6 +101,7 @@ import { cn } from "@/lib/utils";
 
 type SettingsSection =
   | "ocr"
+  | "models"
   | "threads"
   | "snip"
   | "textSep"
@@ -110,6 +117,7 @@ const SECTIONS: {
   id: SettingsSection;
   labelKey:
     | "settings.ocr"
+    | "settings.modelFiles"
     | "settings.threads"
     | "snip.capture"
     | "settings.textAndLineBreak"
@@ -124,6 +132,10 @@ const SECTIONS: {
   {
     id: "ocr",
     labelKey: "settings.ocr",
+  },
+  {
+    id: "models",
+    labelKey: "settings.modelFiles",
   },
   {
     id: "snip",
@@ -587,6 +599,12 @@ export function SettingsView() {
                     markDirty();
                   }}
                 />
+              </section>
+              <section id="settings-models" className="scroll-mt-3">
+                <SectionHeader
+                  title={t("settings.modelFiles")}
+                />
+                <ModelsPanel />
               </section>
               <section id="settings-snip" className="scroll-mt-3">
                 <SectionHeader title={t("snip.capture")} />
@@ -1167,24 +1185,6 @@ function OcrSettingsPanel({
                 </SelectContent>
               </Select>
             </SettingRow>
-            {ocrLayoutMode === "paddle" &&
-            (layoutModels.length === 0 ||
-              layoutModels.every((m) => !m.available)) ? (
-              <div className="flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
-                <span className="text-muted-foreground">
-                  {t("settings.layoutModelDownloadHint")}
-                </span>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() => void openUrl(MODELSCOPE_LAYOUT_URL)}
-                >
-                  <Download className="mr-1.5 h-4 w-4" />
-                  {t("settings.layoutModelDownload")}
-                </Button>
-              </div>
-            ) : null}
             <SettingRow
               label={t("settings.layoutScoreThreshold")}
               description={t("settings.layoutScoreThresholdDesc")}
@@ -1815,7 +1815,7 @@ function UpdateSettingsPanel({
           {currentVersion ? `v${currentVersion}` : "-"}
         </span>
         <Button
-          variant="outline"
+          variant="secondary"
           size="sm"
           disabled={disabled || checking}
           onClick={() => void checkNow()}
@@ -1847,6 +1847,246 @@ function UpdateSettingsPanel({
         </SettingRow>
       ) : null}
     </Panel>
+  );
+}
+
+/** i18n keys for the backend's model group ids. */
+const MODEL_GROUP_KEYS: Record<string, TranslationKey> = {
+  "ocr.tiny": "settings.modelGroupOcrTiny",
+  "ocr.small": "settings.modelGroupOcrSmall",
+  "ocr.medium": "settings.modelGroupOcrMedium",
+  "layout.PP-DocLayoutV3": "settings.modelGroupLayout",
+};
+
+/** `3.1 MB` / `812 KB`. */
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+/**
+ * Model files (docs/design/00022): models are not shipped with the installer,
+ * so every group can be downloaded from ModelScope here - or fed in by dropping
+ * files / picking a folder. The backend verifies size + SHA-256 before a file
+ * is accepted, so a wrong or truncated file is reported instead of silently
+ * breaking OCR.
+ */
+function ModelsPanel() {
+  const { t } = useI18n();
+  const [snapshot, setSnapshot] = useState<ModelsSnapshot | null>(null);
+  const [progress, setProgress] = useState<ModelProgress | null>(null);
+  const [busyGroup, setBusyGroup] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const refresh = useCallback(async () => {
+    const next = await listModels().catch(() => null);
+    if (next) setSnapshot(next);
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    const unlisten = onModelProgress((next) => setProgress(next));
+    return () => {
+      void unlisten.then((fn) => fn()).catch(() => {});
+    };
+  }, [refresh]);
+
+  /** Drops must stay inert while another settings section is on screen. */
+  function panelVisible(): boolean {
+    return panelRef.current?.offsetParent !== null;
+  }
+
+  async function importPaths(paths: string[]) {
+    if (paths.length === 0) return;
+    setImporting(true);
+    try {
+      const result: LocalImportResult = await addLocalModels(paths);
+      await refresh();
+      if (result.imported.length > 0) {
+        toast.success(
+          t("settings.modelImported", { count: result.imported.length }),
+        );
+      }
+      if (result.failed.length > 0) {
+        toast.error(
+          t("settings.modelImportFailed", { count: result.failed.length }),
+          { description: result.failed.join("\n") },
+        );
+      }
+      if (result.ignored.length > 0) {
+        toast.info(
+          t("settings.modelIgnored", { count: result.ignored.length }),
+        );
+      }
+    } catch (e) {
+      toast.error(t("settings.modelImportError"), { description: String(e) });
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  // Whole-window drag & drop: real paths come from Tauri, not the HTML5 API.
+  useEffect(() => {
+    let stopped = false;
+    let unlisten: (() => void) | undefined;
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        const { type } = event.payload;
+        if (type === "leave") {
+          setDragging(false);
+          return;
+        }
+        if (type === "over" || type === "enter") {
+          if (panelVisible()) setDragging(true);
+          return;
+        }
+        if (type !== "drop") return;
+        setDragging(false);
+        if (panelVisible()) void importPaths(event.payload.paths);
+      })
+      .then((fn) => {
+        if (stopped) fn();
+        else unlisten = fn;
+      });
+    return () => {
+      stopped = true;
+      if (unlisten) unlisten();
+    };
+    // `importPaths` is recreated per render but only uses stable setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function download(group: string) {
+    setBusyGroup(group);
+    try {
+      const next = await downloadModels(group);
+      setSnapshot(next);
+      setProgress(null);
+      toast.success(t("settings.modelDownloaded"));
+    } catch (e) {
+      toast.error(t("settings.modelDownloadFailed"), {
+        description: String(e),
+      });
+    } finally {
+      setBusyGroup(null);
+      void refresh();
+    }
+  }
+
+  async function pick(useFolder: boolean) {
+    try {
+      if (useFolder) {
+        const dir = await openFileDialog({ directory: true, multiple: false });
+        if (dir) await importPaths([dir as string]);
+      } else {
+        const files = await openFileDialog({
+          multiple: true,
+          filters: [{ name: "Model files", extensions: ["mnn", "json", "txt"] }],
+        });
+        if (files) await importPaths(Array.isArray(files) ? files : [files]);
+      }
+    } catch {
+      /* dialog cancelled */
+    }
+  }
+
+  const groups: ModelGroupDto[] = snapshot?.groups ?? [];
+  const activeGroup = progress?.group ?? null;
+  const percent =
+    progress && progress.total > 0
+      ? Math.min(100, Math.round((progress.downloaded / progress.total) * 100))
+      : null;
+
+  return (
+    <div ref={panelRef} className="space-y-2">
+      <Panel>
+        {groups.map((group) => {
+          const running = busyGroup === group.id || activeGroup === group.id;
+          return (
+            <div key={group.id} className="flex flex-col gap-2 px-4 py-3">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0 space-y-0.5">
+                  <Label>{t(MODEL_GROUP_KEYS[group.id] ?? "settings.modelFiles")}</Label>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {formatSize(group.totalBytes)} ·{" "}
+                    {group.files.map((file) => file.name).join(", ")}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span
+                    className={cn(
+                      "text-xs",
+                      group.installed
+                        ? "text-muted-foreground"
+                        : "text-warning",
+                    )}
+                  >
+                    {group.installed
+                      ? t("settings.modelInstalled")
+                      : t("settings.modelNotInstalled")}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={running || importing}
+                    onClick={() => void download(group.id)}
+                  >
+                    {group.installed
+                      ? t("settings.modelRedownload")
+                      : t("settings.modelDownload")}
+                  </Button>
+                </div>
+              </div>
+              {running && percent !== null ? (
+                <div className="space-y-1">
+                  <Progress value={percent} className="h-1.5" />
+                  <p className="text-[11px] text-muted-foreground">
+                    {t("settings.modelDownloading", { percent })}
+                    {progress?.file ? ` · ${progress.file}` : ""}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </Panel>
+
+      <div
+        className={cn(
+          "flex flex-col items-center gap-2 rounded-2xl border border-dashed px-4 py-4 text-center transition-colors",
+          dragging ? "border-primary bg-primary/5" : "border-border/60",
+        )}
+      >
+        <p className="text-xs text-muted-foreground">
+          {t("settings.modelDragHint")}
+        </p>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={importing}
+            onClick={() => void pick(false)}
+          >
+            {t("settings.modelPickFiles")}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={importing}
+            onClick={() => void pick(true)}
+          >
+            {t("settings.modelPickFolder")}
+          </Button>
+        </div>
+        {snapshot?.root ? (
+          <p className="break-all text-[11px] text-muted-foreground/80">
+            {t("settings.modelTargetHint", { path: snapshot.root })}
+          </p>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
