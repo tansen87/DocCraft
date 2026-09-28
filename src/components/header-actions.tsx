@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { AlertTriangle, RefreshCw } from "lucide-react";
+import { AlertTriangle, CloudDownload } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -171,8 +171,10 @@ export function HeaderActions() {
                 : t("update.check")
             }
           >
-            <RefreshCw
-              className={checking || running ? "size-4 animate-spin" : "size-4"}
+            <CloudDownload
+              // A rotating cloud reads as broken, so the in-flight state
+              // pulses instead of spinning.
+              className={checking || running ? "size-4 animate-pulse" : "size-4"}
             />
             {hasUpdate ? (
               // Small green dot on the icon's top-right corner; the ring keeps

@@ -15,7 +15,6 @@ import {
   KeyRound,
   Loader2,
   Plus,
-  RefreshCw,
   Save,
   ShieldCheck,
   Star,
@@ -1823,7 +1822,6 @@ function UpdateSettingsPanel({
           disabled={disabled || checking}
           onClick={() => void checkNow()}
         >
-          <RefreshCw className={checking ? "animate-spin" : undefined} />
           {t("update.checkNow")}
         </Button>
       </SettingRow>

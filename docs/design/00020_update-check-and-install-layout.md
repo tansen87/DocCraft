@@ -163,12 +163,12 @@ pub struct UpdateSnapshot {
 
 ### 3.2 绿点提示（UI）
 
-**位置**：顶栏右侧「检查更新」按钮（现 `RefreshCw` 图标）右上角；用户已确认。
+**位置**：顶栏右侧「检查更新」按钮（现 `CloudDownload` 图标）右上角；用户已确认。
 
 ```tsx
 // header-actions.tsx（示意）
 <Button variant="ghost" size="icon" className="relative" onClick={onClick}>
-  <RefreshCw className={checking ? "size-4 animate-spin" : "size-4"} />
+  <CloudDownload className={checking ? "size-4 animate-pulse" : "size-4"} />
   {hasUpdate && (
     <span
       className="pointer-events-none absolute right-1 top-1 size-1.5 rounded-full bg-green-500
