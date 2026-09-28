@@ -55,6 +55,30 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
+      # The release notes double as the `notes` field of latest.json, which is
+      # what the in-app update dialog renders - so they come from the checked-in
+      # changelog rather than a hard-coded string.
+      - name: Read the changelog for this tag
+        id: changelog
+        shell: bash
+        run: |
+          file="docs/changelog/changelog-${GITHUB_REF_NAME}.md"
+          if [ -f "$file" ]; then
+            echo "using $file"
+            {
+              echo "body<<CHANGELOG_EOF"
+              cat "$file"
+              echo "CHANGELOG_EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "$file not found - falling back to a generic body"
+            {
+              echo "body<<CHANGELOG_EOF"
+              echo "See the assets below to download and install this version."
+              echo "CHANGELOG_EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -63,9 +87,6 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "DocCraft ${{ github.ref_name }}"
-          # Becomes the `notes` field of latest.json and is rendered in the
-          # in-app update dialog (markdown).
-          releaseBody: |
-            See the assets below to download and install this version.
+          releaseBody: ${{ steps.changelog.outputs.body }}
           releaseDraft: true
           prerelease: false
