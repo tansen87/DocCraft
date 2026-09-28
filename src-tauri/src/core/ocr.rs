@@ -10,9 +10,7 @@ use uuid::Uuid;
 
 use crate::core::page_marker::page_marker;
 use crate::core::settings;
-use crate::core::{
-  extract_cache, get_resources_dir, grid_rebuild, grid_rebuild::LineMeta, layout, paragraph,
-};
+use crate::core::{extract_cache, grid_rebuild, grid_rebuild::LineMeta, layout, paragraph};
 use crate::models::{
   ConvertResult, DetectResult, ExcludeRegions, HybridSessionInfo, LayoutDto, LayoutMode,
   OcrImageResult, OcrMode, OcrModelSize, OcrVendor, PdfTypeDto,
@@ -271,7 +269,7 @@ impl LocalOcrEngine {
 
 /// Helper to build the resource directory path for OCR models.
 fn ocr_resource_dir(_app: &AppHandle) -> Result<PathBuf, String> {
-  let base = get_resources_dir().join("models");
+  let base = crate::core::models_dir();
   if base.exists() {
     return Ok(base);
   }

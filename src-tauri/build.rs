@@ -63,18 +63,17 @@ fn build_mnn_v3() {
   println!("cargo:rustc-link-arg={}/MNN.lib", lib_dir.display());
 }
 
-/// Mirror `src-tauri/resources/` into `<target>/<profile>/doccraft_resources/`
-/// so the runtime layout (`exe_dir/doccraft_resources`, see
-/// `core::get_resources_dir`) is populated for dev / non-bundled builds.
-///
-/// The folder is not wired through Tauri's bundler `resources` config, so
-/// without this every new model file had to be copied by hand (which is how
-/// the small PaddleOCR tier went missing and OCR failed with "系统找不到指定
-/// 的文件"). Files are copied only when missing or older than the source.
+/// Mirror `src-tauri/resources/models/` into `<target>/<profile>/models/` so
+/// the runtime layout (`exe_dir/models`, see `core::models_dir`) is populated
+/// for dev / non-bundled builds. The same mapping is used for installers
+/// through `bundle.resources` in `tauri.conf.json`
+/// (`"resources/models" -> "models"`), so dev and installed builds resolve
+/// exactly the same paths (docs/design/00020_update-check-and-install-layout.md
+/// §3.4.2). Files are copied only when missing or older than the source.
 fn sync_resources() {
   let manifest_dir =
     PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set"));
-  let src = manifest_dir.join("resources");
+  let src = manifest_dir.join("resources").join("models");
   if !src.is_dir() {
     return;
   }
@@ -85,10 +84,10 @@ fn sync_resources() {
   let Some(dest_root) = out_dir.ancestors().nth(3).map(Path::to_path_buf) else {
     return;
   };
-  let dest_root = dest_root.join("doccraft_resources");
+  let dest_root = dest_root.join("models");
 
   if copy_tree(&src, &dest_root) {
-    println!("cargo:rerun-if-changed=resources");
+    println!("cargo:rerun-if-changed=resources/models");
   }
 }
 

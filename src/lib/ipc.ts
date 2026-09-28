@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type {
   AppSettings,
   ConfigImportResult,
@@ -20,7 +21,8 @@ import type {
   ShotRegion,
   UsageInput,
   UsageStats,
-  UpdateInfo,
+  UpdateSnapshot,
+  VersionNotice,
 } from "./types";
 
 export const detectPdf = (path: string) =>
@@ -121,9 +123,34 @@ export const exportConfig = (path: string, includeSecrets: boolean) =>
 export const importConfig = (path: string) =>
   invoke<ConfigImportResult>("import_config", { path });
 
-/** Check the release endpoint for a newer version (null when up-to-date). */
-export const checkForUpdate = () =>
-  invoke<UpdateInfo | null>("check_for_update");
+/** Trigger a release check and return the resulting snapshot. `force` skips
+ *  the once-per-session guard (the manual header button passes true). */
+export const checkForUpdate = (force = true) =>
+  invoke<UpdateSnapshot>("check_for_update", { force });
+
+/** Current update snapshot (first frame, before events arrive). */
+export const getUpdateState = () => invoke<UpdateSnapshot>("get_update_state");
+
+/** Download the announced update, verify its signature and install it.
+ *  On Windows the app exits while the installer runs (the call does not
+ *  return); errors (download / verification / protected install dir) do. */
+export const updateNow = () => invoke<UpdateSnapshot>("update_now");
+
+/** Stop reminding about one version until something newer is published. */
+export const skipUpdateVersion = (version: string) =>
+  invoke<UpdateSnapshot>("skip_update_version", { version });
+
+/** Clear the skipped version so it shows up again. */
+export const clearSkippedVersion = () =>
+  invoke<UpdateSnapshot>("clear_skipped_version");
+
+/** Consume the pending "you just updated" notice, if any (one shot). */
+export const takeVersionNotice = () =>
+  invoke<VersionNotice | null>("take_version_notice");
+
+/** Subscribe to update snapshots pushed by the backend. */
+export const onUpdateState = (cb: (snapshot: UpdateSnapshot) => void) =>
+  listen<UpdateSnapshot>("update://state", (event) => cb(event.payload));
 
 /** Analyze the tables contained in a Markdown file. */
 export const analyzeMarkdown = (path: string) =>

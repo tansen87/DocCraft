@@ -25,7 +25,7 @@ use image::DynamicImage;
 use ndarray::Array4;
 use serde::{Deserialize, Serialize};
 
-use crate::core::get_resources_dir;
+use crate::core::models_dir;
 use crate::core::ocr::OcrBlock;
 
 // ─── Standalone MNN binding for PP-DocLayoutV3 (DETR) ─────────────────────
@@ -340,9 +340,10 @@ pub struct LayoutRegion {
 // ─── Model discovery & metadata ──────────────────────────────────────────
 
 /// Default resource location of the layout model pool:
-/// `<resources>/models/layout/<model-dir>/model.mnn + layout-meta.json`.
+/// `<install_dir>/models/layout/<model-dir>/model.mnn + layout-meta.json`
+/// (flattened layout, docs/design/00020 §3.4).
 pub fn layout_models_dir() -> PathBuf {
-  get_resources_dir().join("models").join("layout")
+  models_dir().join("layout")
 }
 
 /// Metadata of one layout model (design §3.1 / §3.3). Every difference

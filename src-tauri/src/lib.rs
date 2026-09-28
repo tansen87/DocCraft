@@ -25,6 +25,11 @@ impl Default for TrayState {
   }
 }
 
+/// Delay before the background update check fires on startup: late enough to
+/// stay clear of the first render and the settings load, early enough to feel
+/// instant (docs/design/00020 §3.1).
+const STARTUP_CHECK_DELAY_SECS: u64 = 3;
+
 /// Create the system tray icon with menu items.
 fn setup_tray(app: &tauri::AppHandle) -> Result<TrayIcon, Box<dyn std::error::Error>> {
   let open = MenuItemBuilder::with_id("open", "Open").build(app)?;
@@ -371,13 +376,51 @@ async fn import_config(
   })
 }
 
-/// Ask the configured update endpoint whether a newer release exists.
-/// Network / parse failures return an error string; the frontend ignores it.
+/// Trigger a release check and return the resulting snapshot. `force` skips
+/// the once-per-session guard (the manual header button passes `true`).
+/// Network / parse failures are reported inside the snapshot, not as errors.
 #[tauri::command]
 async fn check_for_update(
   app: tauri::AppHandle,
-) -> Result<Option<core::update::UpdateInfo>, String> {
-  core::update::check_for_update(&app).await
+  force: Option<bool>,
+) -> Result<core::update::UpdateSnapshot, String> {
+  Ok(core::update::check(&app, force.unwrap_or(true)).await)
+}
+
+/// Current update snapshot (used for the first frame, before events arrive).
+#[tauri::command]
+fn get_update_state(app: tauri::AppHandle) -> core::update::UpdateSnapshot {
+  core::update::snapshot(&app)
+}
+
+/// Download the announced update, verify its signature and install it
+/// (docs/design/00021). On Windows the process exits while the installer runs
+/// and the new version comes back up by itself, so this call does not return.
+#[tauri::command]
+async fn update_now(app: tauri::AppHandle) -> Result<core::update::UpdateSnapshot, String> {
+  core::update::update_now(app).await
+}
+
+/// Stop reminding about one version until something newer is published.
+#[tauri::command]
+fn skip_update_version(
+  app: tauri::AppHandle,
+  version: String,
+) -> Result<core::update::UpdateSnapshot, String> {
+  core::update::skip_version(&app, version)
+}
+
+/// Clear the skipped version so it shows up again (settings page).
+#[tauri::command]
+fn clear_skipped_version(app: tauri::AppHandle) -> Result<core::update::UpdateSnapshot, String> {
+  core::update::clear_skipped_version(&app)
+}
+
+/// Consume the pending "you just updated" notice, if any (pull-based so it
+/// cannot race the frontend's listener registration).
+#[tauri::command]
+fn take_version_notice(app: tauri::AppHandle) -> Option<core::update::VersionNotice> {
+  core::update::take_version_notice(&app)
 }
 
 /// Convert one standalone image file (PNG / JPEG) to Markdown via the OCR
@@ -574,9 +617,15 @@ pub fn run() {
     .manage(core::ocr::SnipEngineCache::default())
     .manage(core::ocr::LayoutEngineCache::default())
     .manage(TrayState::default())
+    .manage(core::update::UpdateState::default())
+    .manage(core::update::VersionNoticeState::default())
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_clipboard_manager::init())
+    // Signed auto-updates: the check/download/install APIs are driven from
+    // `core::update`, never from the webview, so no `updater:*` capability is
+    // granted (docs/design/00021).
+    .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(
       tauri_plugin_global_shortcut::Builder::new()
         .with_handler(|app, _shortcut, event| {
@@ -591,6 +640,13 @@ pub fn run() {
         .build(),
     )
     .setup(|app| {
+      // Flatten the legacy `doccraft_resources/` layout before anything reads
+      // settings or models (docs/design/00020 §3.4.4). Idempotent and
+      // additive - it never overwrites or deletes anything.
+      crate::core::migrate::migrate_once();
+      // Remember the version we started with so a completed manual upgrade can
+      // be announced once on the next launch.
+      crate::core::update::record_run_version(app.handle());
       let handle = app.handle().clone();
       if let Err(e) = crate::core::snip::apply_hotkey(&handle) {
         eprintln!("Failed to register screenshot hotkey: {e}");
@@ -637,6 +693,16 @@ pub fn run() {
           }
         });
       }
+      // Startup update check: delayed and off the render path, so the first
+      // frame never waits on DNS/TLS (docs/design/00020 §3.1). The check only
+      // reports - installing is a manual, user-driven step.
+      let check_handle = app.handle().clone();
+      std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(STARTUP_CHECK_DELAY_SECS));
+        tauri::async_runtime::block_on(async move {
+          crate::core::update::startup_check(check_handle).await;
+        });
+      });
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -659,6 +725,11 @@ pub fn run() {
       export_config,
       import_config,
       check_for_update,
+      get_update_state,
+      update_now,
+      skip_update_version,
+      clear_skipped_version,
+      take_version_notice,
       analyze_markdown,
       export_markdown_tables,
       ocr_image_to_md,

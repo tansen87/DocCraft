@@ -1,0 +1,71 @@
+name: release
+
+# Builds the signed NSIS installer + updater manifest (latest.json) and attaches
+# them to a draft GitHub Release. Publish the draft to make the release visible
+# to the in-app updater - `releases/latest` never serves drafts or prereleases.
+#
+# Required repository secrets:
+#   TAURI_SIGNING_PRIVATE_KEY           - content of ~/.tauri/doccraft.key
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  - only if the key has a password
+#
+# See docs/design/00021_auto-download-install.md.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the bundled version
+        id: version
+        shell: bash
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tauri.conf.json version: $version"
+
+      # The updater compares versions, so a tag that disagrees with the bundle
+      # version would ship an artifact the app believes it already has.
+      - name: Fail when the tag does not match the bundle version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$tag" != "${{ steps.version.outputs.version }}" ]; then
+            echo "::error::tag $GITHUB_REF_NAME != tauri.conf.json version ${{ steps.version.outputs.version }}"
+            exit 1
+          fi
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "DocCraft ${{ github.ref_name }}"
+          # Becomes the `notes` field of latest.json and is rendered in the
+          # in-app update dialog (markdown).
+          releaseBody: |
+            See the assets below to download and install this version.
+          releaseDraft: true
+          prerelease: false

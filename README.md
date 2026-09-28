@@ -81,6 +81,24 @@ pnpm tauri dev     # run the desktop app
 pnpm tauri build   # package the project
 ```
 
+> **Release builds need the signing key**: auto-updates require a minisign-signed
+> installer (see [docs/design/00021_auto-download-install.md](./docs/design/00021_auto-download-install.md)),
+> so `pnpm tauri build` must be given the private key or it fails on the last step:
+>
+> ```bash
+> TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/doccraft.key)" pnpm tauri build
+> # output: src-tauri/target/release/bundle/nsis/DocCraft_<version>_x64-setup.exe (+ .exe.sig)
+> ```
+>
+> The private key is not in the repository (`~/.tauri/doccraft.key`) - back it up
+> offline: **losing it means no further updates can reach installed users**.
+> `pnpm tauri dev` does not need it. Releases are best produced by the GitHub
+> Actions workflow (push a `v*` tag) which builds, signs, generates `latest.json`
+> and opens a draft release.
+>
+> Note: the signing step calls `wmic.exe` on Windows; if that program is blocked
+> by policy the build hangs - publish through CI in that case.
+
 Useful checks:
 
 ```bash
@@ -106,12 +124,14 @@ Each layout model lives in its own subdirectory named after the model, containin
    └─ layout-meta.json
 ```
 
-In **build mode** the resources are mirrored to `doccraft_resources/models/layout/` next to the executable (Tauri copies `src-tauri/resources/` to `<target>/<profile>/doccraft_resources/`, see `src-tauri/build.rs`), so a manually installed model goes to:
+In **build mode** the resources are mirrored next to the executable (a `models/` directory, see `src-tauri/build.rs`). The **installer ships without models** — they are user-provided, so a manually installed model goes to:
 
 ```
-doccraft_resources/models/layout/PP-DocLayoutV3/PP-DocLayoutV3.mnn
-doccraft_resources/models/layout/PP-DocLayoutV3/layout-meta.json
+models/layout/PP-DocLayoutV3/PP-DocLayoutV3.mnn
+models/layout/PP-DocLayoutV3/layout-meta.json
 ```
+
+i.e. `<target>/<profile>/models/layout/...` in development and `<install dir>\models\layout\...` after installing - the `doccraft_resources` wrapper directory is gone, see [docs/design/00020_update-check-and-install-layout.md](./docs/design/00020_update-check-and-install-layout.md). On the first launch the app migrates models and configuration out of the legacy `doccraft_resources` directory (additive only, nothing is deleted).
 
 The engine discovers any directory under `models/layout/` that contains a valid `layout-meta.json` — dropping a new directory is enough, no code change needed. See `src-tauri/resources/models/layout/README.md` for the `layout-meta.json` format.
 
@@ -120,7 +140,11 @@ The engine discovers any directory under `models/layout/` that contains a valid 
 - `ocr-config.json` — per-vendor name, base URL, protected API key, models.
 - `app-settings.json` — `maxConcurrent`, `cacheExtractedText`, `excelTablesOnly`, `stripMdSyntax`, `writeNumeric`, `ocrMode`, `screenshotHotkey`,
   `snipResultPopup`, `snipAutoCopy`, `snipResultOpacity`, `enableTray`, `textSeparator`, `paragraphMode`, `ocrTextCleanup`, `ocrLayoutMode`,
-  `ocrLayoutModel`, `layoutScoreThreshold`.
+  `ocrLayoutModel`, `layoutScoreThreshold`, `autoCheckUpdate`, `updateSkippedVersion`, `lastRunVersion`.
+
+Both files live in the `data/` directory next to the executable (`<install dir>\data\` once
+installed); the legacy `doccraft_resources\data\` directory is migrated automatically on the
+first launch.
 
 ## License
 

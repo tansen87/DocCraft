@@ -488,6 +488,20 @@ pub struct AppSettings {
   /// (docs/design/00017 P1-3). Default off.
   #[serde(default)]
   pub write_numeric: bool,
+  /// Run the release check once per session, ~3s after startup
+  /// (docs/design/00020_update-check-and-install-layout.md). The check only
+  /// *reports*: the update package is downloaded and installed by hand from
+  /// the GitHub release page.
+  #[serde(default = "default_true")]
+  pub auto_check_update: bool,
+  /// Version the user asked not to be reminded about. Keeps the header update
+  /// dot hidden until an even newer release shows up.
+  #[serde(default)]
+  pub update_skipped_version: String,
+  /// Version recorded on the previous run; compared with the running version
+  /// to announce a completed (manual) upgrade once.
+  #[serde(default)]
+  pub last_run_version: String,
 }
 
 /// How extracted text lines are joined into paragraphs (PDF text pages and
@@ -924,6 +938,9 @@ impl Default for AppSettings {
       ocr_text_cleanup: true,
       strip_md_syntax: false,
       write_numeric: false,
+      auto_check_update: true,
+      update_skipped_version: String::new(),
+      last_run_version: String::new(),
     }
   }
 }

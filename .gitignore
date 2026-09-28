@@ -25,3 +25,8 @@ dist-ssr
 
 .workbuddy
 .box-agent
+
+# Signing keys - the updater private key must never be committed
+# (docs/design/00021_auto-download-install.md)
+*.key
+*.key.pub

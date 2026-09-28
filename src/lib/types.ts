@@ -181,6 +181,16 @@ export interface AppSettings {
    * culturally formatted values always stay text (default false).
    */
   writeNumeric?: boolean;
+  /**
+   * Run the release check once per session, ~3s after startup
+   * (docs/design/00020). The check only *reports*: the new version is
+   * downloaded and installed by hand from the GitHub release page.
+   */
+  autoCheckUpdate?: boolean;
+  /** Version the user asked not to be reminded about. */
+  updateSkippedVersion?: string;
+  /** Version recorded on the previous run (internal: drives the "updated to" toast). */
+  lastRunVersion?: string;
 }
 
 export type OcrMode =
@@ -589,18 +599,46 @@ export interface ConfigImportResult {
   settingsApplied: boolean;
 }
 
-/** A release found by the update check (GitHub Releases API). */
-export interface UpdateInfo {
-  /** Version without the leading `v` (parsed from `tag_name`). */
-  version: string;
-  /** Release title. */
-  title: string;
+/**
+ * Snapshot of the release check / auto-update, pushed as a whole over
+ * `update://state` (docs/design/00021).
+ */
+export interface UpdateSnapshot {
+  /** `idle` | `checking` | `available` | `downloading` | `installing` | `skipped` | `error`. */
+  phase:
+    | "idle"
+    | "checking"
+    | "available"
+    | "downloading"
+    | "installing"
+    | "skipped"
+    | "error";
+  /** Version currently running. */
+  currentVersion: string;
+  /** Version announced by the newest release (null when up to date / failed). */
+  version: string | null;
+  /** Release publish date (`YYYY-MM-DD`), when reported. */
+  date: string | null;
   /** Release notes markdown. */
-  notes: string;
-  /** Release page URL. */
-  url: string;
-  /** Whether this release is strictly newer than the running app version. */
-  isNewer: boolean;
+  notes: string | null;
+  /** GitHub release page - the manual fallback entry point. */
+  releaseUrl: string;
+  /** Error text; only surfaced for an explicit (manual) action. */
+  error: string | null;
+  /** Bytes fetched so far (download phase only). */
+  downloadedBytes: number;
+  /** Total size, when the server reports it. */
+  totalBytes: number | null;
+  /** False when the executable sits in a protected folder (manual download only). */
+  autoInstall: boolean;
+}
+
+/** One-shot notice handed out after a completed manual upgrade. */
+export interface VersionNotice {
+  /** Version recorded on the previous run. */
+  from: string;
+  /** Version now running. */
+  to: string;
 }
 
 // ─── Local usage statistics ───────────────────────────────────────────────

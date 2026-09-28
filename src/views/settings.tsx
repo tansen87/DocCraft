@@ -14,6 +14,7 @@ import {
   KeyRound,
   Loader2,
   Plus,
+  RefreshCw,
   Save,
   ShieldCheck,
   Star,
@@ -61,9 +62,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  checkForUpdate,
+  clearSkippedVersion,
   exportConfig,
   getAppSettings,
   getOcrConfig,
+  getUpdateState,
   getUsageStats,
   importConfig,
   listLayoutModels,
@@ -83,6 +87,7 @@ import type {
   OcrModel,
   OcrVendor,
   OcrVendorInput,
+  UpdateSnapshot,
   UsagePeriodStats,
   UsageStats,
 } from "@/lib/types";
@@ -98,7 +103,8 @@ type SettingsSection =
   | "excel"
   | "backup"
   | "glass"
-  | "stats";
+  | "stats"
+  | "update";
 
 const SECTIONS: {
   id: SettingsSection;
@@ -112,7 +118,8 @@ const SECTIONS: {
     | "settings.excel"
     | "settings.backup"
     | "settings.glass"
-    | "settings.stats";
+    | "settings.stats"
+    | "settings.update";
 }[] = [
   {
     id: "ocr",
@@ -153,6 +160,10 @@ const SECTIONS: {
   {
     id: "tray",
     labelKey: "settings.tray",
+  },
+  {
+    id: "update",
+    labelKey: "settings.update",
   },
 ];
 
@@ -211,6 +222,15 @@ export function SettingsView() {
   const [snipResultOpacity, setSnipResultOpacity] = useState(60);
   const [mainWindowOpacity, setMainWindowOpacity] = useState(100);
   const [glassBlurEnabled, setGlassBlurEnabled] = useState(false);
+  const [autoCheckUpdate, setAutoCheckUpdate] = useState(true);
+  /**
+   * Backend-owned update fields. They are echoed back on save (the payload
+   * replaces the whole settings struct) but only the backend changes them.
+   */
+  const [updateExtras, setUpdateExtras] = useState({
+    skippedVersion: "",
+    lastRunVersion: "",
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -269,6 +289,11 @@ export function SettingsView() {
         setSnipResultOpacity(settings.snipResultOpacity ?? 60);
         setMainWindowOpacity(settings.mainWindowOpacity ?? 100);
         setGlassBlurEnabled(settings.glassBlurEnabled ?? false);
+        setAutoCheckUpdate(settings.autoCheckUpdate ?? true);
+        setUpdateExtras({
+          skippedVersion: settings.updateSkippedVersion ?? "",
+          lastRunVersion: settings.lastRunVersion ?? "",
+        });
         setUsageStats(usage);
         setLoaded(true);
       })
@@ -342,6 +367,9 @@ export function SettingsView() {
       snipResultOpacity,
       mainWindowOpacity,
       glassBlurEnabled,
+      autoCheckUpdate,
+      updateSkippedVersion: updateExtras.skippedVersion,
+      lastRunVersion: updateExtras.lastRunVersion,
     };
     try {
       await Promise.all([
@@ -717,8 +745,23 @@ export function SettingsView() {
                   disabled={loading}
                 />
               </section>
-              {/* Trailing spacer: lets the last sections (glass / tray) scroll
-                  all the way to the top of the viewport when clicked, even
+              <section id="settings-update" className="scroll-mt-3">
+                <SectionHeader title={t("settings.update")} />
+                <UpdateSettingsPanel
+                  autoCheck={autoCheckUpdate}
+                  onAutoCheckChange={(v) => {
+                    setAutoCheckUpdate(v);
+                    markDirty();
+                  }}
+                  skippedVersion={updateExtras.skippedVersion}
+                  onSkippedCleared={() =>
+                    setUpdateExtras((prev) => ({ ...prev, skippedVersion: "" }))
+                  }
+                  disabled={loading}
+                />
+              </section>
+              {/* Trailing spacer: lets the last sections (glass / tray / update)
+                  scroll all the way to the top of the viewport when clicked, even
                   when the content below them is shorter than the viewport. */}
               <div
                 aria-hidden
@@ -1677,6 +1720,132 @@ function TraySettingsPanel({
           disabled={disabled}
         />
       </SettingRow>
+    </Panel>
+  );
+}
+
+/**
+ * Release check settings (docs/design/00020): the startup check toggle plus the
+ * running version, a manual check and the "skip this version" escape hatch.
+ * The check only reports - the installer is downloaded from GitHub by hand.
+ */
+function UpdateSettingsPanel({
+  autoCheck,
+  onAutoCheckChange,
+  skippedVersion,
+  onSkippedCleared,
+  disabled,
+}: {
+  autoCheck: boolean;
+  onAutoCheckChange: (v: boolean) => void;
+  skippedVersion: string;
+  onSkippedCleared: () => void;
+  disabled?: boolean;
+}) {
+  const { t } = useI18n();
+  const [snapshot, setSnapshot] = useState<UpdateSnapshot | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void getUpdateState()
+      .then((state) => {
+        if (alive) setSnapshot(state);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function checkNow() {
+    setChecking(true);
+    try {
+      const next = await checkForUpdate(true);
+      setSnapshot(next);
+      if (next.phase === "error") {
+        toast.error(t("update.checkFailed"), {
+          description: next.error ?? undefined,
+        });
+      } else if (next.phase === "available") {
+        toast.success(
+          t("update.available", { version: next.version ?? "" }),
+          {
+            action: {
+              label: t("update.download"),
+              onClick: () => void openUrl(next.releaseUrl),
+            },
+          },
+        );
+      } else {
+        toast.info(t("update.upToDate"));
+      }
+    } catch (e) {
+      toast.error(t("update.checkFailed"), { description: String(e) });
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function clearSkipped() {
+    try {
+      await clearSkippedVersion();
+      onSkippedCleared();
+      toast.success(t("update.skippedCleared"));
+    } catch (e) {
+      toast.error(t("toast.saveFailed"), { description: String(e) });
+    }
+  }
+
+  const currentVersion = snapshot?.currentVersion ?? "";
+  const available =
+    snapshot?.phase === "available" && snapshot.version ? snapshot.version : null;
+
+  return (
+    <Panel>
+      <SettingRow
+        label={t("update.currentVersion")}
+        description={
+          available
+            ? t("update.available", { version: available })
+            : undefined
+        }
+      >
+        <span className="text-sm tabular-nums text-muted-foreground">
+          {currentVersion ? `v${currentVersion}` : "-"}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={disabled || checking}
+          onClick={() => void checkNow()}
+        >
+          <RefreshCw className={checking ? "animate-spin" : undefined} />
+          {t("update.checkNow")}
+        </Button>
+      </SettingRow>
+
+      <SettingRow
+        label={t("update.autoCheck")}
+        description={t("update.autoCheckDesc")}
+      >
+        <Switch
+          checked={autoCheck}
+          onCheckedChange={onAutoCheckChange}
+          disabled={disabled}
+        />
+      </SettingRow>
+
+      {skippedVersion ? (
+        <SettingRow
+          label={t("update.skippedLabel")}
+          description={`v${skippedVersion}`}
+        >
+          <Button variant="outline" size="sm" onClick={() => void clearSkipped()}>
+            {t("update.clearSkipped")}
+          </Button>
+        </SettingRow>
+      ) : null}
     </Panel>
   );
 }

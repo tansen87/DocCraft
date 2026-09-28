@@ -3,7 +3,6 @@ use std::sync::{OnceLock, RwLock};
 
 use tauri::AppHandle;
 
-use crate::core::get_resources_dir;
 use crate::core::secret;
 use crate::models::{AppSettings, OcrVendor, OcrVendorInput};
 
@@ -11,8 +10,11 @@ const CONFIG_FILE: &str = "ocr-config.json";
 const APP_SETTINGS_FILE: &str = "app-settings.json";
 const MAX_CONCURRENT_LIMIT: u32 = 16;
 
+/// `<install_dir>/data` - runtime-generated configuration, protected secrets
+/// and the usage log. Sits next to the executable, matching the flattened
+/// resource layout (docs/design/00020_update-check-and-install-layout.md §3.4).
 pub fn data_dir(_app: &AppHandle) -> Result<PathBuf, String> {
-  let dir = get_resources_dir().join("data");
+  let dir = crate::core::data_dir();
   if !dir.exists() {
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create data directory: {e}"))?;
   }

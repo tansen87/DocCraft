@@ -85,6 +85,22 @@ pnpm tauri dev     # 运行桌面应用
 pnpm tauri build   # 打包项目
 ```
 
+> **发布构建需要签名密钥**:自动更新要求安装包带 minisign 签名
+> (见 [docs/design/00021_auto-download-install.md](./docs/design/00021_auto-download-install.md)),
+> 因此 `pnpm tauri build` 必须提供私钥,否则会在最后一步失败:
+>
+> ```bash
+> TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/doccraft.key)" pnpm tauri build
+> # 产物: src-tauri/target/release/bundle/nsis/DocCraft_<版本>_x64-setup.exe (+ .exe.sig)
+> ```
+>
+> 私钥不在仓库内(`~/.tauri/doccraft.key`),请离线备份——**丢失后无法再向已安装用户推送更新**;
+> `pnpm tauri dev` 不需要密钥。正式发布推荐走 GitHub Actions(打 `v*` tag 自动构建 + 签名 +
+> 生成 `latest.json` 并建草稿 Release)。
+>
+> 注意:签名阶段在 Windows 上会调用 `wmic.exe`,若该程序被安全策略禁用会卡住——
+> 这种情况下请改用 CI 发布。
+
 常用检查命令: 
 
 ```bash
@@ -110,19 +126,23 @@ cargo check --manifest-path src-tauri/Cargo.toml  # Rust 代码检查
    └─ layout-meta.json
 ```
 
-**build 模式**下,资源会被镜像到可执行文件旁的 `doccraft_resources/models/layout/`(Tauri 将 `src-tauri/resources/` 复制到 `<target>/<profile>/doccraft_resources/`,见 `src-tauri/build.rs`),因此手动安装的模型放置路径为:
+**build 模式**下,资源会被镜像到可执行文件旁(与 exe 同级的 `models/`,见 `src-tauri/build.rs`);**安装包不带模型**,模型由用户自行提供(后续会支持在线安装/拖放).手动安装的模型放置路径为:
 
 ```
-doccraft_resources/models/layout/PP-DocLayoutV3/PP-DocLayoutV3.mnn
-doccraft_resources/models/layout/PP-DocLayoutV3/layout-meta.json
+models/layout/PP-DocLayoutV3/PP-DocLayoutV3.mnn
+models/layout/PP-DocLayoutV3/layout-meta.json
 ```
+
+即 dev 时为 `<target>/<profile>/models/layout/...`,安装后为 `<安装目录>\models\layout\...`(`doccraft_resources` 这一层已取消,详见 [docs/design/00020_update-check-and-install-layout.md](./docs/design/00020_update-check-and-install-layout.md)).首次启动会把旧版 `doccraft_resources` 下的模型与配置迁移到新位置(只补不删).
 
 引擎会自动扫描 `models/layout/` 下包含有效 `layout-meta.json` 的目录---放入新目录即可,无需改动代码.`layout-meta.json` 的格式说明见 `src-tauri/resources/models/layout/README.md`.
 
 ## 配置
 
 - `ocr-config.json`: 每个供应商的名称、Base URL、受保护的 API Key、模型列表.
-- `app-settings.json`: `maxConcurrent`(最大并发数)、`cacheExtractedText`(缓存提取文本)、`excelTablesOnly`(Excel 仅导出表格)、`stripMdSyntax`(剥离 Markdown 语法)、`writeNumeric`(数值单元格)、`ocrMode`(OCR 模式)、`screenshotHotkey`(截图快捷键)、`snipResultPopup`(截图结果弹窗)、`snipAutoCopy`(自动复制)、`snipResultOpacity`(结果窗透明度)、`enableTray`(启用托盘)、`textSeparator`(文本分隔符)、`paragraphMode`(段落合并策略)、`ocrTextCleanup`(OCR 文本清理)、`ocrLayoutMode`(版面分析模式)、`ocrLayoutModel`(版面分析模型)、`layoutScoreThreshold`(版面置信度阈值).
+- `app-settings.json`: `maxConcurrent`(最大并发数)、`cacheExtractedText`(缓存提取文本)、`excelTablesOnly`(Excel 仅导出表格)、`stripMdSyntax`(剥离 Markdown 语法)、`writeNumeric`(数值单元格)、`ocrMode`(OCR 模式)、`screenshotHotkey`(截图快捷键)、`snipResultPopup`(截图结果弹窗)、`snipAutoCopy`(自动复制)、`snipResultOpacity`(结果窗透明度)、`enableTray`(启用托盘)、`textSeparator`(文本分隔符)、`paragraphMode`(段落合并策略)、`ocrTextCleanup`(OCR 文本清理)、`ocrLayoutMode`(版面分析模式)、`ocrLayoutModel`(版面分析模型)、`layoutScoreThreshold`(版面置信度阈值)、`autoCheckUpdate`(启动时检查更新)、`updateSkippedVersion`(跳过的版本)、`lastRunVersion`(上次运行版本).
+
+> 上述两个文件位于**与 exe 同级的 `data/` 目录**(安装后即 `<安装目录>\data\`),旧版的 `doccraft_resources\data\` 会在首次启动时自动迁移.
 
 ## 许可证
 

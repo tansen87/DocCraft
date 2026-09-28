@@ -162,7 +162,10 @@ and Simplified Chinese - switchable at runtime.
   Settings page shows a download hint (only `PP-DocLayoutV3.mnn` and
   `layout-meta.json` are needed) linking to the ModelScope model page
   (https://www.modelscope.cn/models/tansen87/PP-DocLayoutV3_mnn/files);
-  after download the files go into `doccraft_resources\models\layout`. See
+  after download the files go into `<install dir>\models\layout` (the
+  `doccraft_resources` wrapper directory is gone - see
+  [design/00020_update-check-and-install-layout.md](./design/00020_update-check-and-install-layout.md)).
+  See
   [design/00016_local-ocr-layout-analysis.md](./design/00016_local-ocr-layout-analysis.md).
 - **Text cleanup & Excel export options** - raw local OCR output is normalized
   before the paragraph policy (strip zero-width / BOM characters, collapse
@@ -201,13 +204,22 @@ and Simplified Chinese - switchable at runtime.
   plaintext keys are re-encrypted on import) and settings go through the
   same side-effect pipeline as a manual save (hotkey re-registration, tray
   sync, engine-cache release).
-- **Update check** - the header (next to the language toggle) has a manual
-  check button; a non-blocking amber badge appears there automatically when
-  the once-per-session startup check finds a newer release. Both open a
-  dialog rendering the release notes as markdown (`core/update.rs` queries
-  the GitHub Releases API with a 10s timeout), and the dialog's "update"
-  button navigates to the releases page. Up-to-date / offline cases degrade
-  to toasts.
+- **Update check & one-click update** - `core/update.rs` drives the official
+  **`tauri-plugin-updater`** from Rust (no `updater:*` capability is granted to
+  the webview). It checks the GitHub release manifest
+  (`releases/latest/download/latest.json`) **once per session, ~3s after
+  startup**, off the render path, and pushes snapshots over `update://state`;
+  a small **green dot** on the header check button marks an available update.
+  Clicking it opens a dialog with the release notes and an **"Update now"**
+  button that downloads the installer, verifies its **minisign signature**
+  against the public key bundled in `tauri.conf.json`, installs it
+  (`passive`, per-user, no UAC) and lets the installer restart the app -
+  followed by a one-shot "updated to vX.Y.Z" notice. Guardrails: an unwritable
+  install location hides the button (manual download only), a running
+  conversion asks for confirmation, downgrades are rejected, and
+  `autoCheckUpdate` / per-version "skip" are available in Settings. See
+  [design/00021_auto-download-install.md](./design/00021_auto-download-install.md)
+  (installer layout: [design/00020_update-check-and-install-layout.md](./design/00020_update-check-and-install-layout.md)).
 
 ## Tech Stack
 
@@ -225,9 +237,12 @@ and Simplified Chinese - switchable at runtime.
 | Markdown / Excel  | `react-markdown` + GFM on the frontend; `rust_xlsxwriter` on the backend for `.xlsx` export |
 | i18n              | custom lightweight React Context layer (no external dep), typed en/zh dictionaries |
 | HTTP client       | `reqwest` 0.13 (async, native-tls) |
+| Auto-update       | `tauri-plugin-updater` 2 (minisign-verified, GitHub manifest), driven from Rust; release pipeline in `.github/workflows/release.yml` |
 | Secret storage    | DPAPI via `windows-sys` (Win32_Security_Cryptography) on Windows |
 | Concurrency       | frontend worker pool (limit from app settings) |
-| Config storage    | JSON files in `app_config_dir` (`ocr-config.json`, `app-settings.json`) |
+| Config storage    | JSON files in `<install dir>/data` next to the executable (`ocr-config.json`, `app-settings.json`, `usage-*.jsonl`) |
+| Models            | `<install dir>/models` - **not shipped in the installer**; models are user-provided (planned: online install / drag & drop). Dev builds get them from `build.rs` mirroring `src-tauri/resources/models` |
+| Installer         | NSIS (`installMode: currentUser`, no admin), always installs into `<chosen>\DocCraft` via `installerHooks` |
 
 ## Project Structure
 
@@ -301,7 +316,8 @@ doccraft/
 │  │     ├─ snip.rs              # Screenshot capture / region OCR / hotkey registration
 │  │     ├─ settings.rs          # OCR config + app settings persistence
 │  │     ├─ config_transfer.rs   # Configuration export / import (merge by id)
-│  │     ├─ update.rs            # Lightweight release update check (latest.json)
+│  │     ├─ update.rs            # Startup / manual release check + update://state snapshot
+│  │     ├─ migrate.rs           # One-time flattening of the legacy doccraft_resources/ layout
 │  │     ├─ secret.rs            # API key protection (DPAPI / obfuscation)
 │  │     ├─ line_draw.rs         # Manual "draw-a-table" vertical-line extraction
 │  │     ├─ md_to_xlsx.rs        # Markdown → Excel table parsing + export
@@ -312,9 +328,10 @@ doccraft/
 │  │     ├─ paragraph.rs         # Paragraph line-break mode logic (guided / smart / none) + OCR text cleanup
 │  │     ├─ region_exclude.rs    # PDF region exclusion backend
 │  │     └─ usage_stats.rs       # Local usage statistics (JSONL log + aggregation)
-│  ├─ resources/models/
+│  ├─ resources/models/          # Bundled models, delivered as <install dir>/models
 │  │  ├─ *.mnn                   # Tiny + Small PaddleOCR model tiers
 │  │  └─ layout/                 # Bundled layout model (PP-DocLayoutV3)
+│  ├─ windows/installer-hooks.nsh # NSIS hooks: force <chosen>\DocCraft + writability guard
 │  ├─ capabilities/              # Permissions (main window + snip-* overlays)
 │  ├─ tauri.conf.json            # assetProtocol enabled for PDF preview
 │  └─ Cargo.toml
@@ -349,7 +366,12 @@ Commands (invoked from `src/lib/ipc.ts`):
 | `clear_usage_stats`  | -                                       | `void` (deletes the local usage log) |
 | `export_config`      | `{ path, includeSecrets }`              | `usize` - vendors written; keys plaintext only when opted in |
 | `import_config`      | `{ path }`                              | `ImportResult` (`vendorsImported`, `settingsApplied`); merges by id, applies settings with full side effects |
-| `check_for_update`   | -                                       | `UpdateInfo \| null` (`version`, `title`, `notes`, `url`, `isNewer`) |
+| `check_for_update`   | `{ force? }` - `force` (default true) skips the once-per-session guard (manual button) | `UpdateSnapshot` (`phase`, `currentVersion`, `version`, `date`, `notes`, `releaseUrl`, `error`, `downloadedBytes`, `totalBytes`, `autoInstall`) |
+| `update_now`         | -                                       | Downloads the announced installer, verifies its signature and installs it. On Windows the app exits while the installer runs (the call does not return); errors (download / verification / protected install dir) do |
+| `get_update_state`   | -                                       | `UpdateSnapshot` (current value, used for the first frame) |
+| `skip_update_version` | `{ version }`                          | `UpdateSnapshot` (phase becomes `skipped`) |
+| `clear_skipped_version` | -                                    | `UpdateSnapshot` |
+| `take_version_notice` | -                                      | `VersionNotice \| null` (`from`, `to`) - consumed once, drives the "updated to vX.Y.Z" toast |
 | `analyze_markdown`   | `{ path }`                              | `MdAnalyzeResult` (`tableCount`, `tables[]` with columns/rows/page, `totalRows`, `totalLines`, `content`, `processingTimeMs`) |
 | `export_markdown_tables` | `{ mdPath, xlsxPath }`              | `MdExportResult` (`tableCount`, `totalRows`, `processingTimeMs`) |
 | `extract_draw_table` | `{ path, drawData }` - `drawData` may carry `totalPages`, `onlyPages` (batching), `pageImages[]` (`{page, imagePng, renderScale}`) for the mode-selected OCR fallback, and `exclusions` | `DrawTableResult` (`tableCount`, `tables[]`, `regions[]`, `totalRows`, `ocrPages`, `emptyTextPages`, `ocrConfidence`, `processingTimeMs`) |
@@ -508,7 +530,7 @@ cargo check --manifest-path src-tauri/Cargo.toml
   **Tiny model tier**: new fastest PaddleOCR tier alongside small (default)
   and medium.
 - **Design docs** - numbered proposals live under
-  [docs/design/](./design/) (`00001` through `00017`).
+  [docs/design/](./design/) (`00001` through `00021`).
 - **Changelogs** - version release notes live under
   [docs/changelog/](./changelog/).
 
@@ -585,11 +607,22 @@ cargo check --manifest-path src-tauri/Cargo.toml
   - `writeNumeric` (default `false` - write plain integers / decimals /
     percentages as numeric Excel cells so they sort and sum; leading-zero and
     culturally formatted values always stay text)
+  - `autoCheckUpdate` (default `true` - run the release check once per session,
+    ~3s after startup, off the render path; the check only reports - the new
+    installer is downloaded from GitHub by hand)
+  - `updateSkippedVersion` (default `""` - version the user asked not to be
+    reminded about; the header dot stays hidden until something newer appears)
+  - `lastRunVersion` (default `""` - internal bookkeeping: version recorded on
+    the previous run, drives the one-shot "updated to vX.Y.Z" notice)
 
-Both live in the Tauri `app_config_dir` directory. No third-party store plugin
-is required. For privacy, only pages that need OCR (detected or empty
-extraction) are ever sent to an external OCR provider; local PaddleOCR mode
-keeps all data on-device.
+- `ocr-config.json` and `app-settings.json` live in the `data/` directory **next
+  to the executable** (`<install dir>\data\`). The legacy
+  `doccraft_resources\data\` directory is migrated on the first launch
+  (additive only), see
+  [design/00020_update-check-and-install-layout.md](./design/00020_update-check-and-install-layout.md).
+  No third-party store plugin is required. For privacy, only pages that need
+  OCR (detected or empty extraction) are ever sent to an external OCR provider;
+  local PaddleOCR mode keeps all data on-device.
 
 ## License
 

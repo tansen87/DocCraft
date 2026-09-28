@@ -32,6 +32,14 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-global-shortcut = "2"
+# Signed auto-updates (docs/design/00021). native-tls + system-proxy to reuse
+# the TLS stack the app already links through reqwest, and to honour the
+# Windows system proxy; the v1-compat `zip` feature is unused (we ship NSIS
+# installers as-is).
+tauri-plugin-updater = { version = "2", default-features = false, features = [
+  "native-tls",
+  "system-proxy",
+] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ocr-rs = "2.4.1"

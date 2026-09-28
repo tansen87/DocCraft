@@ -5,8 +5,9 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { Toaster } from "sonner";
+import { toast, Toaster } from "sonner";
 import { useTheme } from "next-themes";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Effect, getCurrentWindow } from "@tauri-apps/api/window";
 
 import { AppHeader, type WorkspaceTab } from "@/components/layout/app-header";
@@ -14,11 +15,15 @@ import { BatchView } from "@/views/pdf-to-md";
 import { ImageToMdView } from "@/views/image-to-md";
 import { MdToXlsxView } from "@/views/md-to-xlsx";
 import { SettingsView } from "@/views/settings";
-import { getAppSettings } from "@/lib/ipc";
+import { getAppSettings, takeVersionNotice } from "@/lib/ipc";
+import { useI18n } from "@/i18n";
 import { GlassOpacityContext } from "@/lib/glass-opacity";
 
 const TABS: WorkspaceTab[] = ["pdftomd", "imgtomd", "mdtoexcel", "settings"];
 const TAB_STORAGE_KEY = "doccraft-active-tab";
+
+/** Release page opened by the "what's new" action after a manual upgrade. */
+const RELEASE_PAGE_URL = "https://github.com/tansen87/DocCraft/releases/latest";
 
 // The tab views stay mounted (to keep per-tab state when switching), so memoize
 // them: re-rendering App (theme toggle, glass-opacity preview, ...) must not
@@ -39,6 +44,7 @@ function initialTab(): WorkspaceTab {
 function App() {
   const [tab, setTabState] = useState<WorkspaceTab>(initialTab);
   const { resolvedTheme } = useTheme();
+  const { t } = useI18n();
   const [glassOpacity, setGlassOpacity] = useState(100);
   const [glassBlurEnabled, setGlassBlurEnabled] = useState(false);
 
@@ -131,6 +137,23 @@ function App() {
       window.removeEventListener("doccraft:opacity-preview", onPreview);
     };
   }, []);
+
+  // Announce a completed (manual) upgrade exactly once: the backend compares
+  // the running version with the one recorded last session and hands the
+  // notice over on request (docs/design/00020).
+  useEffect(() => {
+    void takeVersionNotice()
+      .then((notice) => {
+        if (!notice) return;
+        toast.success(t("update.justUpdated", { version: notice.to }), {
+          action: {
+            label: t("update.viewGithub"),
+            onClick: () => void openUrl(RELEASE_PAGE_URL),
+          },
+        });
+      })
+      .catch(() => {});
+  }, [t]);
 
   // Ctrl+1..4 jumps straight to a workspace tab.
   useEffect(() => {
