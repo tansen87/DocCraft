@@ -244,6 +244,20 @@ gh release create v0.2.1 --title "DocCraft v0.2.1" --notes "..." \
 - [ ] CI：打 tag → 草稿 Release 含 `-setup.exe`、`.exe.sig`、`latest.json`；
       发布后 `https://github.com/tansen87/DocCraft/releases/latest/download/latest.json` 可取到。
 
+## 六、症状 → 原因对照（实测，排障用）
+
+| 症状 | 原因 | 处理 |
+|------|------|------|
+| 检查更新报 `Could not fetch a valid release JSON from the remote`（插件 `Error::ReleaseNotFound`） | `releases/latest/download/latest.json` **404**：最新**正式**发布里没有该附件——要么还没用带签名的流程发过版，要么最新 release 还是草稿/预发布（`releases/latest` 跳过这两类） | 用 §3.5 的流程发一版（草稿→手动发布）。UI 已把该情况识别为 `noManifest` 并给出本地化说明（`update.noManifest`），不再显示插件原文 |
+| 检查更新通过但一直显示"已是最新" | 清单里的 `version` **不高于**当前运行版本（默认 comparator 只接受更高版本） | 发版前把 `tauri.conf.json` 的版本号一起提升 |
+| 构建到签名步骤报 `A public key has been found, but no private key` | 没设 `TAURI_SIGNING_PRIVATE_KEY` | 见 §3.4 的构建命令 |
+| 构建在签名步骤长时间无响应 | 环境禁用了 `wmic.exe`（签名会调用它） | 改用 CI 发布 |
+| 下载完成后报签名/校验相关错误（`Minisign` 等） | 安装包与清单里的 `signature` 不匹配（换包、改清单、或换了私钥） | 用同一私钥重新构建并**同时更新** `latest.json` 的 `signature` 与 `url` |
+
+> 仓库现状（2026-09-28）：已有的 `v0.2.0` / `v0.1.0` 都是签名流程之前发布的，
+> 附件里只有 `-setup.exe` / `.msi` / `portable.zip`，**没有 `latest.json`**，
+> 所以更新通道尚未可用；需要按 §3.5 发一版带签名的正式发布。
+
 ## 七、参考
 
 - Tauri 文档 · Updater 插件（配置、签名、`latest.json` 格式、Windows `installMode`）：

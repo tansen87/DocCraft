@@ -38,6 +38,16 @@ const STATE_EVENT: &str = "update://state";
 /// flood the webview with IPC messages.
 const PROGRESS_THROTTLE_MS: u64 = 250;
 
+/// Update manifest consumed by the plugin - mirrors
+/// `tauri.conf.json > plugins.updater.endpoints` (only used in error messages).
+const ENDPOINT: &str =
+  "https://github.com/tansen87/DocCraft/releases/latest/download/latest.json";
+
+/// Machine-readable error kinds the frontend can localise. Anything unknown is
+/// reported verbatim.
+const KIND_NO_MANIFEST: &str = "noManifest";
+const KIND_NETWORK: &str = "network";
+
 /// Phases the UI switches on.
 const PHASE_IDLE: &str = "idle";
 const PHASE_CHECKING: &str = "checking";
@@ -65,6 +75,9 @@ pub struct UpdateSnapshot {
   pub release_url: String,
   /// Error text; only surfaced for an explicit (manual) action.
   pub error: Option<String>,
+  /// Machine-readable error kind (`noManifest` / `network`) so the UI can show
+  /// a localised, actionable message instead of the plugin's wording.
+  pub error_kind: Option<String>,
   /// Bytes fetched so far (download phase only).
   pub downloaded_bytes: u64,
   /// Total size, when the server reports `Content-Length`.
@@ -85,6 +98,7 @@ impl UpdateSnapshot {
       notes: None,
       release_url: RELEASE_PAGE_URL.to_string(),
       error: None,
+      error_kind: None,
       downloaded_bytes: 0,
       total_bytes: None,
       auto_install,
@@ -205,13 +219,38 @@ pub async fn startup_check(app: AppHandle) {
 
 /// Ask the configured endpoint (the GitHub release manifest `latest.json`) for
 /// an update. The plugin compares versions and returns `None` when current.
-async fn fetch_update(app: &AppHandle) -> Result<Option<Update>, String> {
+async fn fetch_update(
+  app: &AppHandle,
+) -> Result<Option<Update>, tauri_plugin_updater::Error> {
   let updater = app
     .updater_builder()
     .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
-    .build()
-    .map_err(|e| e.to_string())?;
-  updater.check().await.map_err(|e| e.to_string())
+    .build()?;
+  updater.check().await
+}
+
+/// Translate an updater failure into a message plus an optional kind the UI
+/// can localise (docs/design/00021 §3.4).
+fn describe_error(error: &tauri_plugin_updater::Error) -> (String, Option<String>) {
+  use tauri_plugin_updater::Error as UpdaterError;
+  match error {
+    // The endpoint answered, but with no usable manifest: nothing published
+    // yet, or the newest release is a draft / prerelease - `releases/latest`
+    // never serves those, so the URL 404s.
+    UpdaterError::ReleaseNotFound => (
+      format!(
+        "No updater manifest was found at {ENDPOINT} - the newest published \
+         release must ship a latest.json asset (drafts and prereleases are not \
+         served by releases/latest)."
+      ),
+      Some(KIND_NO_MANIFEST.to_string()),
+    ),
+    UpdaterError::Network(_) | UpdaterError::Reqwest(_) | UpdaterError::Http(_) => (
+      error.to_string(),
+      Some(KIND_NETWORK.to_string()),
+    ),
+    other => (other.to_string(), None),
+  }
 }
 
 /// Run a release check. `force` bypasses the once-per-session guard (manual
@@ -278,6 +317,7 @@ pub async fn check(app: &AppHandle, force: bool) -> UpdateSnapshot {
           notes: update.body.clone(),
           release_url: RELEASE_PAGE_URL.to_string(),
           error: None,
+          error_kind: None,
           downloaded_bytes: 0,
           total_bytes: None,
           auto_install,
@@ -287,8 +327,10 @@ pub async fn check(app: &AppHandle, force: bool) -> UpdateSnapshot {
     // No published release yet, or already up to date: nothing to report.
     Ok(None) => store(app, UpdateSnapshot::new(current, PHASE_IDLE, auto_install)),
     Err(e) => {
+      let (message, kind) = describe_error(&e);
       let mut snapshot = UpdateSnapshot::new(current, PHASE_ERROR, auto_install);
-      snapshot.error = Some(e);
+      snapshot.error = Some(message);
+      snapshot.error_kind = kind;
       store(app, snapshot)
     }
   }

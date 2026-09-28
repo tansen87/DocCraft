@@ -1765,7 +1765,10 @@ function UpdateSettingsPanel({
       setSnapshot(next);
       if (next.phase === "error") {
         toast.error(t("update.checkFailed"), {
-          description: next.error ?? undefined,
+          description:
+            next.errorKind === "noManifest"
+              ? t("update.noManifest")
+              : (next.error ?? undefined),
         });
       } else if (next.phase === "available") {
         toast.success(

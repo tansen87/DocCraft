@@ -625,6 +625,11 @@ export interface UpdateSnapshot {
   releaseUrl: string;
   /** Error text; only surfaced for an explicit (manual) action. */
   error: string | null;
+  /**
+   * Machine-readable error kind (`noManifest` / `network`) so the UI can show a
+   * localised, actionable message instead of the plugin's wording.
+   */
+  errorKind: "noManifest" | "network" | null;
   /** Bytes fetched so far (download phase only). */
   downloadedBytes: number;
   /** Total size, when the server reports it. */

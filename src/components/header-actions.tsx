@@ -103,7 +103,10 @@ export function HeaderActions() {
         setDialogOpen(true);
       } else if (next.phase === "error") {
         toast.error(t("update.checkFailed"), {
-          description: next.error ?? undefined,
+          description:
+            next.errorKind === "noManifest"
+              ? t("update.noManifest")
+              : (next.error ?? undefined),
         });
       } else {
         toast.info(t("update.upToDate"), {
