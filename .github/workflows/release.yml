@@ -57,27 +57,26 @@ jobs:
 
       # The release notes double as the `notes` field of latest.json, which is
       # what the in-app update dialog renders - so they come from the checked-in
-      # changelog rather than a hard-coded string.
+      # changelog rather than a hard-coded string. Everything above the first
+      # "## [...]" heading (the file's own preamble) is dropped, so the dialog
+      # shows this release's section only.
       - name: Read the changelog for this tag
         id: changelog
         shell: bash
         run: |
           file="docs/changelog/changelog-${GITHUB_REF_NAME}.md"
-          if [ -f "$file" ]; then
+          if [ -f "$file" ] && grep -q '^## \[' "$file"; then
             echo "using $file"
-            {
-              echo "body<<CHANGELOG_EOF"
-              cat "$file"
-              echo "CHANGELOG_EOF"
-            } >> "$GITHUB_OUTPUT"
+            body=$(sed -n '/^## \[/,$p' "$file")
           else
-            echo "$file not found - falling back to a generic body"
-            {
-              echo "body<<CHANGELOG_EOF"
-              echo "See the assets below to download and install this version."
-              echo "CHANGELOG_EOF"
-            } >> "$GITHUB_OUTPUT"
+            echo "$file not found or has no version section - using a generic body"
+            body="See the assets below to download and install this version."
           fi
+          {
+            echo "body<<CHANGELOG_EOF"
+            echo "$body"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: tauri-apps/tauri-action@v0
         env:
