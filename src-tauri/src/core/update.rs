@@ -256,6 +256,12 @@ fn describe_error(error: &tauri_plugin_updater::Error) -> (String, Option<String
 /// Run a release check. `force` bypasses the once-per-session guard (manual
 /// button); non-forced calls return the cached snapshot when the startup check
 /// already ran. Never returns an error: failures land in `snapshot.error`.
+///
+/// **Single-flight**: while another check (normally the startup one, ~3s after
+/// launch) is running this returns the *current* snapshot - `phase:
+/// "checking"` with no version yet. That is not an answer: a caller that reads
+/// it as "no update" reports the opposite of what the running check is about
+/// to find. The UI polls until the phase settles before reporting anything.
 pub async fn check(app: &AppHandle, force: bool) -> UpdateSnapshot {
   {
     let state = app.state::<UpdateState>();

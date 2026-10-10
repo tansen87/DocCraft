@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { AlertTriangle, CloudDownload } from "lucide-react";
+import { AlertTriangle, CloudDownload, Loader2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { useGlobalTasks } from "@/lib/global-task";
+import { cn } from "@/lib/utils";
 import {
   checkForUpdate,
   getUpdateState,
@@ -35,9 +36,60 @@ import type { UpdateSnapshot } from "@/lib/types";
 /** Fallback when a snapshot has no release URL yet. */
 const RELEASE_PAGE_URL = "https://github.com/tansen87/DocCraft/releases/latest";
 
+/**
+ * A manual check that lands while another check is in flight gets that check's
+ * transient snapshot back, so it polls `get_update_state` until the phase
+ * settles (or this window elapses) before reporting a result.
+ */
+const SETTLE_POLL_MS = 300;
+const SETTLE_TIMEOUT_MS = 15_000;
+
 /** `12.3 MB` for progress labels. */
 function formatMb(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Ring geometry: a 32px button, so the arc hugs the rounded square outline. */
+const RING_RADIUS = 14;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
+/**
+ * Determinate download ring drawn around the icon button. Only rendered when
+ * the server reported a total size - without one there is no percentage to
+ * show, and the button falls back to the spinning loader instead.
+ */
+function DownloadRing({ percent }: { percent: number }) {
+  const clamped = Math.min(100, Math.max(0, percent));
+  const dash = (RING_CIRCUMFERENCE * clamped) / 100;
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 32 32"
+      className="pointer-events-none absolute inset-0 size-8"
+    >
+      {/* Start the arc at 12 o'clock; the SVG `transform` attribute avoids any
+          CSS transform-origin ambiguity for SVG children. */}
+      <g transform="rotate(-90 16 16)">
+        <circle
+          cx="16"
+          cy="16"
+          r={RING_RADIUS}
+          className="fill-none stroke-current opacity-15"
+          strokeWidth="2"
+        />
+        <circle
+          cx="16"
+          cy="16"
+          r={RING_RADIUS}
+          className="fill-none stroke-primary transition-[stroke-dashoffset] duration-300 ease-out"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={RING_CIRCUMFERENCE}
+          strokeDashoffset={RING_CIRCUMFERENCE - dash}
+        />
+      </g>
+    </svg>
+  );
 }
 
 /**
@@ -90,6 +142,14 @@ export function HeaderActions() {
   const busy = tasks.size > 0;
 
   async function manualCheck() {
+    // A check already in flight owns the button; the spinner is the feedback.
+    if (checking) return;
+    // Download / install running: reopen the progress dialog instead of
+    // firing another check (the backend would ignore it anyway).
+    if (running) {
+      setDialogOpen(true);
+      return;
+    }
     // A known update reopens the dialog instead of re-querying GitHub.
     if (hasUpdate) {
       setDialogOpen(true);
@@ -97,29 +157,61 @@ export function HeaderActions() {
     }
     setChecking(true);
     try {
-      const next = await checkForUpdate(true);
-      setSnapshot(next);
-      if (next.phase === "available") {
-        setDialogOpen(true);
-      } else if (next.phase === "error") {
-        toast.error(t("update.checkFailed"), {
-          description:
-            next.errorKind === "noManifest"
-              ? t("update.noManifest")
-              : (next.error ?? undefined),
-        });
-      } else {
-        toast.info(t("update.upToDate"), {
-          action: {
-            label: t("update.viewGithub"),
-            onClick: () => void openUrl(next.releaseUrl || RELEASE_PAGE_URL),
-          },
-        });
+      let next = await checkForUpdate(true);
+      // The backend single-flights checks: clicking while the startup check is
+      // still running hands back that check's *transient* snapshot
+      // (`phase: "checking"`, no version) instead of an answer. Reporting it as
+      // "up to date" is what made an available update show up seconds later.
+      // Poll the state until the in-flight check settles.
+      const deadline = Date.now() + SETTLE_TIMEOUT_MS;
+      while (next.phase === "checking" && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, SETTLE_POLL_MS));
+        next = await getUpdateState();
       }
+      setSnapshot(next);
+      reportCheck(next);
     } catch (e) {
       toast.error(t("update.checkFailed"), { description: String(e) });
     } finally {
       setChecking(false);
+    }
+  }
+
+  /** Report the outcome of a check whose snapshot has settled. */
+  function reportCheck(next: UpdateSnapshot) {
+    if (next.phase === "available") {
+      setDialogOpen(true);
+    } else if (next.phase === "error") {
+      toast.error(t("update.checkFailed"), {
+        description:
+          next.errorKind === "noManifest"
+            ? t("update.noManifest")
+            : (next.error ?? undefined),
+      });
+    } else if (next.phase === "downloading" || next.phase === "installing") {
+      // A download / install already owns the state (the check was refused
+      // because the backend is busy) - show its progress, claim nothing.
+      setDialogOpen(true);
+    } else if (next.phase === "checking") {
+      // Still in flight after the settle window - saying "up to date" here
+      // would be a guess, and the wrong one whenever an update does exist.
+      toast.info(t("update.checking"));
+    } else if (next.phase === "skipped" && next.version) {
+      // Also not "up to date": a newer version exists, the user just muted the
+      // automatic reminder. An explicit check should say so.
+      toast.info(t("update.skipped", { version: next.version }), {
+        action: {
+          label: t("update.viewGithub"),
+          onClick: () => void openUrl(next.releaseUrl || RELEASE_PAGE_URL),
+        },
+      });
+    } else {
+      toast.info(t("update.upToDate"), {
+        action: {
+          label: t("update.viewGithub"),
+          onClick: () => void openUrl(next.releaseUrl || RELEASE_PAGE_URL),
+        },
+      });
     }
   }
 
@@ -152,8 +244,28 @@ export function HeaderActions() {
 
   const percent =
     snapshot && snapshot.totalBytes
-      ? Math.min(100, Math.round((snapshot.downloadedBytes / snapshot.totalBytes) * 100))
+      ? Math.min(
+          100,
+          Math.round((snapshot.downloadedBytes / snapshot.totalBytes) * 100),
+        )
       : null;
+
+  /** In-flight states - the button shows motion instead of a dead grey face. */
+  const inFlight = checking || running;
+  /** Only a real download with a reported size gets the determinate ring. */
+  const showRing = phase === "downloading" && percent !== null;
+  /** Everything else in flight spins, since there is no percentage to draw. */
+  const spinIcon = inFlight && !showRing;
+
+  const tooltipText = running
+    ? percent !== null
+      ? t("update.downloading", { percent })
+      : t("update.downloadingUnknown")
+    : checking
+      ? t("update.checking")
+      : hasUpdate && version
+        ? t("update.dotTooltip", { version })
+        : t("update.check");
 
   return (
     <>
@@ -162,8 +274,13 @@ export function HeaderActions() {
           <Button
             variant="ghost"
             size="icon"
-            className="relative"
-            disabled={checking}
+            className={cn(
+              "relative transition-opacity",
+              checking && "opacity-80",
+              inFlight && "cursor-progress",
+            )}
+            aria-busy={inFlight}
+            aria-disabled={checking}
             onClick={() => void manualCheck()}
             aria-label={
               hasUpdate && version
@@ -171,11 +288,15 @@ export function HeaderActions() {
                 : t("update.check")
             }
           >
-            <CloudDownload
-              // A rotating cloud reads as broken, so the in-flight state
-              // pulses instead of spinning.
-              className={checking || running ? "size-4 animate-pulse" : "size-4"}
-            />
+            {spinIcon ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <CloudDownload className="size-4" />
+            )}
+
+            {/* Determinate download progress, drawn around the icon. */}
+            {showRing ? <DownloadRing percent={percent ?? 0} /> : null}
+
             {hasUpdate ? (
               // Small green dot on the icon's top-right corner; the ring keeps
               // it readable over both themes and the glassmorphism backdrop.
@@ -186,15 +307,7 @@ export function HeaderActions() {
             ) : null}
           </Button>
         </TooltipTrigger>
-        <TooltipContent>
-          {running
-            ? percent !== null
-              ? t("update.downloading", { percent })
-              : t("update.downloadingUnknown")
-            : hasUpdate && version
-              ? t("update.dotTooltip", { version })
-              : t("update.check")}
-        </TooltipContent>
+        <TooltipContent>{tooltipText}</TooltipContent>
       </Tooltip>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -259,7 +372,7 @@ export function HeaderActions() {
             </div>
             <div className="flex gap-2">
               <Button
-                variant="outline"
+                variant="secondary"
                 disabled={running}
                 onClick={() => setDialogOpen(false)}
               >

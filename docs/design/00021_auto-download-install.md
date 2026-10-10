@@ -120,11 +120,26 @@ pub struct UpdateSnapshot {
 
 ### 3.3 前端
 
-- 顶栏绿点保持；`downloading` / `installing` 期间图标转圈，tooltip 显示百分比。
+- 顶栏绿点保持。按钮的四个在途 / 结果状态各有一眼可辨的视觉：
+  `checking` 转圈（`Loader2 animate-spin`）、`downloading` 且服务端给了
+  `Content-Length` 时按百分比画**按钮外圈进度环**（`DownloadRing`，描边随
+  `stroke-dashoffset` 平滑推进）、无总长时与 `installing` 一律转圈、`available`
+  显示绿点；tooltip 显示「正在检查 / 正在下载 x%」。
+  **不用 `disabled`**（那会把按钮压成灰、连 tooltip 都悬不出来）：检查中用
+  `aria-disabled` + 处理函数直接 return，动画与 tooltip 都还在；下载/安装中
+  按钮仍可点，点了是**重新打开进度对话框**（原先会再发一次 check，后端
+  `busy` 直接忽略，等于点了没反应）。
 - 对话框：更新说明（markdown，与之前一致）→ 点「立即更新」后原地换成**进度条 +
   `43%` + `12.3 MB / 27.1 MB`**，按钮禁用并显示「正在安装…DocCraft 即将自动重启」。
 - 按钮：`跳过此版本` / `稍后` / `立即更新`（`autoInstall=false` 时降级为
   `手动下载` + `GitHub` 两个按钮）。
+- **手动检查要等结果落定**：`check` 是 single-flight 的——启动检查（~3s 那次）还在跑时
+  点按钮，后端会把**当前快照**（`phase: "checking"`、还没有 version）直接返回。
+  这不是答案，早先前端把它当成「无更新」，于是出现「刚启动点检查说已是最新、
+  几秒后绿点又冒出来」。前端改为拿到 `checking` 后每 `300ms` 拉一次
+  `get_update_state`，直到相位落定（上限 `15s`，HTTP 超时是 10s）再报结果；
+  超时仍是 `checking` 时给出「正在检查更新…」而不是「已是最新」。
+  同理 `skipped` 也不再报「已是最新」，改为「已跳过 vX」+ GitHub 兜底入口。
 - **任务保护**：`useGlobalTasks()` 发现有待运行任务时显示警告条，主按钮变
   「仍要更新」，**需要点第二次**才真正开始——避免静默杀掉正在跑的转换/OCR 批次。
 - 设置页「更新」分组不变（当前版本 / 立即检查 / 启动检查开关 / 已跳过版本）。
@@ -250,6 +265,7 @@ gh release create v0.2.1 --title "DocCraft v0.2.1" --notes "..." \
 |------|------|------|
 | 检查更新报 `Could not fetch a valid release JSON from the remote`（插件 `Error::ReleaseNotFound`） | `releases/latest/download/latest.json` **404**：最新**正式**发布里没有该附件——要么还没用带签名的流程发过版，要么最新 release 还是草稿/预发布（`releases/latest` 跳过这两类） | 用 §3.5 的流程发一版（草稿→手动发布）。UI 已把该情况识别为 `noManifest` 并给出本地化说明（`update.noManifest`），不再显示插件原文 |
 | 检查更新通过但一直显示"已是最新" | 清单里的 `version` **不高于**当前运行版本（默认 comparator 只接受更高版本） | 发版前把 `tauri.conf.json` 的版本号一起提升 |
+| **刚启动就点「检查更新」→ 提示「已是最新」，几秒后又冒出绿点** | 启动检查已在进行（`in_flight`），`check` 的 single-flight 守卫直接返回**当前快照**（`phase="checking"`、`version=null`）；前端把「没有 available」误读成「无更新」 | 前端在 `phase === "checking"` 时轮询 `get_update_state` 直到相位落定（上限 15s）再报结果；`core::update::check` 的文档已写明该契约 |
 | 构建到签名步骤报 `A public key has been found, but no private key` | 没设 `TAURI_SIGNING_PRIVATE_KEY` | 见 §3.4 的构建命令 |
 | 构建在签名步骤长时间无响应 | 环境禁用了 `wmic.exe`（签名会调用它） | 改用 CI 发布 |
 | 下载完成后报签名/校验相关错误（`Minisign` 等） | 安装包与清单里的 `signature` 不匹配（换包、改清单、或换了私钥） | 用同一私钥重新构建并**同时更新** `latest.json` 的 `signature` 与 `url` |

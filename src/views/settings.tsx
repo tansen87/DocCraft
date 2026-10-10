@@ -4,7 +4,6 @@ import {
   open as openFileDialog,
   save as saveFileDialog,
 } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
@@ -64,7 +63,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import {
   addLocalModels,
-  checkForUpdate,
   clearSkippedVersion,
   downloadModels,
   exportConfig,
@@ -1743,7 +1741,6 @@ function UpdateSettingsPanel({
 }) {
   const { t } = useI18n();
   const [snapshot, setSnapshot] = useState<UpdateSnapshot | null>(null);
-  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -1756,38 +1753,6 @@ function UpdateSettingsPanel({
       alive = false;
     };
   }, []);
-
-  async function checkNow() {
-    setChecking(true);
-    try {
-      const next = await checkForUpdate(true);
-      setSnapshot(next);
-      if (next.phase === "error") {
-        toast.error(t("update.checkFailed"), {
-          description:
-            next.errorKind === "noManifest"
-              ? t("update.noManifest")
-              : (next.error ?? undefined),
-        });
-      } else if (next.phase === "available") {
-        toast.success(
-          t("update.available", { version: next.version ?? "" }),
-          {
-            action: {
-              label: t("update.download"),
-              onClick: () => void openUrl(next.releaseUrl),
-            },
-          },
-        );
-      } else {
-        toast.info(t("update.upToDate"));
-      }
-    } catch (e) {
-      toast.error(t("update.checkFailed"), { description: String(e) });
-    } finally {
-      setChecking(false);
-    }
-  }
 
   async function clearSkipped() {
     try {
@@ -1816,14 +1781,6 @@ function UpdateSettingsPanel({
         <span className="text-sm tabular-nums text-muted-foreground">
           {currentVersion ? `v${currentVersion}` : "-"}
         </span>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={disabled || checking}
-          onClick={() => void checkNow()}
-        >
-          {t("update.checkNow")}
-        </Button>
       </SettingRow>
 
       <SettingRow
