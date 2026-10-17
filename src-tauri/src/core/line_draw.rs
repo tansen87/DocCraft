@@ -1442,6 +1442,12 @@ mod tests {
       advance_known: false,
       legacy_symbol_rewrite: false,
       baseline_shift: 0.0,
+      font_weight: None,
+      bold_source: None,
+      fixed_pitch: None,
+      fill_color: None,
+      stroke_color: None,
+      render_mode: None,
     }
   }
 

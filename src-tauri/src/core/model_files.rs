@@ -424,7 +424,7 @@ async fn run_download(app: &AppHandle, spec: &GroupSpec) -> Result<(), String> {
         file.name, file.size
       ));
     }
-    let digest = format!("{:x}", hasher.finalize());
+    let digest = to_hex(hasher.finalize());
     if digest != file.sha256 {
       let _ = std::fs::remove_file(&part);
       return Err(format!(
@@ -570,7 +570,23 @@ fn hash_file(path: &Path) -> Result<String, String> {
     }
     hasher.update(&buffer[..read]);
   }
-  Ok(format!("{:x}", hasher.finalize()))
+  Ok(to_hex(hasher.finalize()))
+}
+
+/// Lowercase hex of a digest.
+///
+/// `sha2` 0.11 returns `hybrid_array::Array` from `finalize()`, which no longer
+/// implements `LowerHex` (0.10's `GenericArray` did), so `format!("{:x}", ..)`
+/// stops compiling. Encoding the bytes here keeps both call sites on one
+/// definition and independent of the digest crate's formatting traits.
+fn to_hex(digest: impl AsRef<[u8]>) -> String {
+  use std::fmt::Write as _;
+  let bytes = digest.as_ref();
+  let mut out = String::with_capacity(bytes.len() * 2);
+  for byte in bytes {
+    let _ = write!(out, "{byte:02x}");
+  }
+  out
 }
 
 #[cfg(test)]
@@ -620,5 +636,18 @@ mod tests {
       url,
       "https://www.modelscope.cn/api/v1/models/tansen87/PP-DocLayoutV3_mnn/repo?Revision=master&FilePath=PP-DocLayoutV3.mnn"
     );
+  }
+
+  #[test]
+  fn digests_are_lowercase_hex() {
+    // The pinned table is lowercase, so the encoder must be too. This exact
+    // comparison is what a digest-crate upgrade would silently break.
+    assert_eq!(
+      to_hex(Sha256::digest(b"abc")),
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    for byte in 0u8..=255 {
+      assert_eq!(to_hex([byte]), format!("{byte:02x}"));
+    }
   }
 }
