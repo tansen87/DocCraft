@@ -659,7 +659,7 @@ fn guided_merge_rows(rows: Vec<VisualRow>, merge_columns: &[usize]) -> Vec<Vec<S
     .collect()
 }
 
-// ─── Legacy extraction functions (kept for backward compatibility) ────────
+// --- Legacy extraction functions (kept for backward compatibility) ---
 
 /// Build a list of row boundaries from horizontal lines.
 /// Returns sorted **descending** y values with implicit top (page_height) and
@@ -1097,7 +1097,7 @@ pub fn extract_tables_from_draw_lines(
       })
       .collect();
 
-    // 00018: a page that is PARTLY a photo (photo on the right, text on the
+    // A page that is PARTLY a photo (photo on the right, text on the
     // left, or a whole-page photo scan carrying an invisible OCR text layer)
     // still has text items, so the empty-page route alone never OCR'd it and
     // lines drawn over the photo cut nothing - or worse, cut the unreliable
@@ -1199,7 +1199,7 @@ pub fn extract_tables_from_draw_lines(
       continue;
     }
 
-    // 00018: a page awaiting its rendered image (the user's lines touched a
+    // A page awaiting its rendered image (the user's lines touched a
     // photo but the request carried no image for it) must NOT be cut from the
     // text layer: for a whole-page photo scan with an invisible OCR text
     // layer the text geometry is unreliable, and a table produced here would
@@ -1210,7 +1210,7 @@ pub fn extract_tables_from_draw_lines(
       continue;
     }
 
-    // 00018: on a photo page whose local OCR missed (error / zero blocks),
+    // On a photo page whose local OCR missed (error / zero blocks),
     // the remaining `elements` may be the page's hidden OCR text layer -
     // exactly the unreliable geometry the user reported ("result does not
     // follow the lines"). Yield nothing instead of cutting it; the page stays
@@ -1407,13 +1407,12 @@ pub fn extract_tables_and_merge(
   }
 }
 
-// ─── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
   use super::*;
 
-  // ── Image-region routing (docs/design/00018) ─────────────────────────────
+  // --- Image-region routing ---
 
   /// Build a pdf-inspector-style item: text items carry text metrics, image
   /// placeholders carry the bbox in x/y/width with the height in font_size.
@@ -1567,7 +1566,7 @@ mod tests {
     assert_eq!(filtered[1].text, "B");
   }
 
-  // ── Exclusion regions (docs/design/00011) ────────────────────────────────
+  // --- Exclusion regions ---
 
   fn el(text: &str, x: f64, y: f64) -> TextElement {
     TextElement {

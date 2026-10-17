@@ -323,7 +323,7 @@ fn write_table(
 /// `xlsx_path`. When `tables_only` is `true` only the GFM tables are exported;
 /// otherwise the whole document (tables and plain text lines, in order) is
 /// written into a single worksheet. `strip_md` enables inline Markdown
-/// stripping (P1-2); `write_numeric` writes number-shaped cells as numeric when
+/// stripping; `write_numeric` writes number-shaped cells as numeric when
 /// `true` and keeps everything a string when `false` (P1-3).
 pub fn export_markdown_tables(
   md_path: &str,

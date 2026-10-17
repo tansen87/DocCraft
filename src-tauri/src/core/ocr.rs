@@ -280,8 +280,8 @@ fn ocr_resource_dir(_app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// Build the MNN engine configuration from the current settings
-/// (docs/design/00005_snip-local-ocr-latency.md S-1): when `local_ocr_threads`
-/// is 0, adapt to the machine instead of the crate's fixed default 4;
+/// When `local_ocr_threads` is 0, adapt to the machine instead 
+/// of the crate's fixed default 4;
 /// otherwise use the user's explicit value.
 fn engine_config_for(local_ocr_threads: u32) -> OcrEngineConfig {
   let threads = if local_ocr_threads > 0 {

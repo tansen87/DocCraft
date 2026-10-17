@@ -27,7 +27,7 @@ impl Default for TrayState {
 
 /// Delay before the background update check fires on startup: late enough to
 /// stay clear of the first render and the settings load, early enough to feel
-/// instant (docs/design/00020 §3.1).
+/// instant.
 const STARTUP_CHECK_DELAY_SECS: u64 = 3;
 
 /// Create the system tray icon with menu items.
@@ -266,7 +266,7 @@ fn apply_app_settings(app: &tauri::AppHandle, settings: AppSettings) -> Result<(
   }
   // Inference-parameter changes (model tier / OCR threads)
   // invalidate the resident engines so the next use rebuilds them with the new
-  // settings (docs/design/00005_snip-local-ocr-latency.md S-1).
+  // settings.
   let engine_params_changed = settings_now.ocr_model_size != before.ocr_model_size
     || settings_now.local_ocr_threads != before.local_ocr_threads;
   if engine_params_changed {
@@ -290,8 +290,8 @@ async fn set_app_settings(app: tauri::AppHandle, settings: AppSettings) -> Resul
   apply_app_settings(&app, settings)
 }
 
-/// List the layout models discovered under `resources/models/layout/`
-/// (docs/design/00016 §3.1 / §4). Every subdirectory with a valid
+/// List the layout models discovered under `resources/models/layout/`.
+/// Every subdirectory with a valid
 /// `layout-meta.json` is returned; `available` tells the settings page
 /// whether a usable `model.mnn` is bundled.
 #[tauri::command]
@@ -652,7 +652,7 @@ pub fn run() {
     .plugin(tauri_plugin_clipboard_manager::init())
     // Signed auto-updates: the check/download/install APIs are driven from
     // `core::update`, never from the webview, so no `updater:*` capability is
-    // granted (docs/design/00021).
+    // granted.
     .plugin(tauri_plugin_updater::Builder::new().build())
     .plugin(
       tauri_plugin_global_shortcut::Builder::new()
@@ -669,8 +669,7 @@ pub fn run() {
     )
     .setup(|app| {
       // Flatten the legacy `doccraft_resources/` layout before anything reads
-      // settings or models (docs/design/00020 §3.4.4). Idempotent and
-      // additive - it never overwrites or deletes anything.
+      // settings or models. Idempotent and additive - it never overwrites or deletes anything.
       crate::core::migrate::migrate_once();
       // Remember the version we started with so a completed manual upgrade can
       // be announced once on the next launch.
@@ -722,7 +721,7 @@ pub fn run() {
         });
       }
       // Startup update check: delayed and off the render path, so the first
-      // frame never waits on DNS/TLS (docs/design/00020 §3.1). The check only
+      // frame never waits on DNS/TLS. The check only
       // reports - installing is a manual, user-driven step.
       let check_handle = app.handle().clone();
       std::thread::spawn(move || {

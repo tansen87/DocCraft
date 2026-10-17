@@ -212,7 +212,7 @@ pub struct MdExportResult {
   pub processing_time_ms: u64,
 }
 
-// ─── Line-draw table extraction types ───────────────────────────────────────
+// --- Line-draw table extraction types ---
 
 /// A rectangular region in PDF user-space coordinates.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -299,7 +299,7 @@ pub struct DrawTableRequest {
   pub exclusions: Option<ExcludeRegions>,
 }
 
-// ─── Exclusion-region types (see docs/design/00010_pdf-exclude-region.md) ──
+// --- Exclusion-region types ---
 
 /// One page's exclusion regions: rectangles whose content must not take part
 /// in recognition.
@@ -756,7 +756,7 @@ pub struct WindowInfo {
   pub height: i32,
 }
 
-// ─── Local usage statistics types ─────────────────────────────────────────
+// --- Local usage statistics types ---
 
 /// What kind of operation produced a usage log entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

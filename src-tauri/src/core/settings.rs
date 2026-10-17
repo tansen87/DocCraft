@@ -102,7 +102,7 @@ pub fn api_key_for(app: &AppHandle, vendor_id: &str) -> Result<Option<String>, S
 
 /// Process-wide settings cache. `get_app_settings` is called several times per
 /// conversion / screenshot; reading the JSON file each time adds avoidable
-/// latency on hot paths (see docs/design/00005_snip-local-ocr-latency.md S-4).
+/// latency on hot paths (see docs/design/00005_snip-local-ocr-latency.).
 /// [`set_app_settings`] writes through, keeping cache and disk in sync.
 static SETTINGS_CACHE: OnceLock<RwLock<Option<AppSettings>>> = OnceLock::new();
 

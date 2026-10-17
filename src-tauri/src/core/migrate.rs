@@ -1,5 +1,5 @@
 //! One-time, idempotent migration from the legacy resource layout to the
-//! flattened one (docs/design/00020_update-check-and-install-layout.md §3.4.4).
+//! flattened one (docs/design/00020_update-check-and-install-layout.).
 //!
 //! Legacy (<= 0.2.x) layout:
 //!

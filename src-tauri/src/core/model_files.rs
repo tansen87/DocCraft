@@ -1,7 +1,6 @@
 //! On-demand model files: download from ModelScope and import local copies
-//! (docs/design/00022_model-download.md).
 //!
-//! Models are **not shipped** with the installer (docs/design/00020 §3.4.2), so
+//! Models are **not shipped** with the installer, so
 //! the app fetches them from ModelScope on request - or takes files the user
 //! already has (drag & drop in Settings). Every file is pinned by size and
 //! SHA-256 in the table below, so a download is only accepted when it matches
@@ -213,7 +212,7 @@ fn download_url(repo: &str, remote: &str) -> String {
   )
 }
 
-// ─── DTOs ────────────────────────────────────────────────────────────────
+// --- DTOs ---
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -273,7 +272,7 @@ pub struct LocalImportResult {
 #[derive(Default)]
 pub struct ModelsState(Mutex<Option<ModelProgress>>);
 
-// ─── Status ──────────────────────────────────────────────────────────────
+// --- Status ---
 
 fn installed(target: &str, size: u64) -> bool {
   let path = models_dir().join(target);
@@ -322,7 +321,7 @@ fn set_active(app: &AppHandle, active: Option<ModelProgress>) {
   *guard = active;
 }
 
-// ─── Download ────────────────────────────────────────────────────────────
+// --- Download ---
 
 /// Download every file of one group into `<install dir>/models`.
 ///
@@ -458,7 +457,7 @@ fn emit_progress(app: &AppHandle, spec: &GroupSpec, file: &FileSpec, written: u6
   let _ = app.emit(PROGRESS_EVENT, progress);
 }
 
-// ─── Local import (drag & drop / file picker) ────────────────────────────
+// --- Local import (drag & drop / file picker) ---
 
 /// Every known file name → its spec, used to recognise user-provided files.
 fn spec_by_name(name: &str) -> Option<(&'static FileSpec, &'static GroupSpec)> {

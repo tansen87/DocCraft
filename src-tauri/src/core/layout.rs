@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::models_dir;
 use crate::core::ocr::OcrBlock;
 
-// ─── Standalone MNN binding for PP-DocLayoutV3 (DETR) ─────────────────────
+// --- Standalone MNN binding for PP-DocLayoutV3 (DETR) ---
 //
 // The vendored wrapper (`cpp/mnn/mnn_v3_wrapper.cpp`, built by `build.rs`)
 // selects the `image` input by name and feeds neutral `im_shape` / `scale_factor`
@@ -337,7 +337,7 @@ pub struct LayoutRegion {
   pub score: f64,
 }
 
-// ─── Model discovery & metadata ──────────────────────────────────────────
+// --- Model discovery & metadata ---
 
 /// Default resource location of the layout model pool:
 /// `<install_dir>/models/layout/<model-dir>/model.mnn + layout-meta.json`
@@ -346,7 +346,7 @@ pub fn layout_models_dir() -> PathBuf {
   models_dir().join("layout")
 }
 
-/// Metadata of one layout model (design §3.1 / §3.3). Every difference
+/// Metadata of one layout model. Every difference
 /// between the pool's models (input size, normalization, class table, bucket
 /// mapping) is declared here, so switching / adding models never changes the
 /// engine code.
@@ -528,7 +528,7 @@ pub fn find_layout_model_dir(model_name: &str) -> Option<PathBuf> {
   }
 }
 
-// ─── Paddle mode: LayoutEngine ───────────────────────────────────────────
+// --- Paddle mode: LayoutEngine ---
 
 /// Resize `image` to `(w, h)` keeping the aspect ratio (the caller computed
 /// the target size from the same ratio, so this is effectively lossless).
@@ -687,7 +687,7 @@ impl LayoutEngine {
   }
 }
 
-// ─── Reading order (XY-Cut) ──────────────────────────────────────────────
+// --- Reading order (XY-Cut) ---
 
 /// Find the widest empty band along `vertical` (x) or horizontal (y) that
 /// splits `regions` into two non-empty groups. Returns the cut coordinate.
@@ -780,7 +780,7 @@ pub fn sort_reading_order(regions: &mut Vec<LayoutRegion>, page_w: f64, page_h: 
   });
 }
 
-// ─── Markdown assembly ───────────────────────────────────────────────────
+// --- Markdown assembly ---
 
 /// Group OCR blocks into visual lines, byte-compatible with the non-layout
 /// path (`LocalOcrEngine::recognize_image_with_confidence`): Y-sorted,
@@ -1023,7 +1023,7 @@ fn region_chunk(
 /// same center-based 归属 used by the table extractors, avoiding cross-region
 /// duplication). Region chunks are joined with a blank line; blocks that no
 /// region covers are backfilled at the end in geometry order so detection
-/// misses never lose text (design §3.4). A single region therefore produces
+/// misses never lose text. A single region therefore produces
 /// exactly the same lines as the non-layout path.
 pub fn assemble_markdown(
   regions: &[LayoutRegion],

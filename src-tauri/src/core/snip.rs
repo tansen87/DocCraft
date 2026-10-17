@@ -326,9 +326,9 @@ pub async fn screenshot_ocr(app: &AppHandle, region: ShotRegion) -> Result<OcrIm
     let app = app.clone();
     let saved_path = path.clone();
     let sep = settings::get_app_settings(&app)?.text_separator;
-    // Screenshot-dedicated engine (S-2): never queues behind batch OCR tasks.
+    // Screenshot-dedicated engine: never queues behind batch OCR tasks.
     // Acquired inside spawn_blocking so a cold model load cannot stall the
-    // async runtime (S-4).
+    // async runtime.
     tauri::async_runtime::spawn_blocking(move || -> Result<(String, Option<f32>, u64), String> {
       let engine = crate::core::ocr::acquire_snip_ocr_engine(&app)?;
       // Feed the in-memory crop straight to the engine - no PNG encode >
@@ -1061,7 +1061,7 @@ mod tests {
     assert_eq!(clamp_region(&region(5000, 5000, 10, 10), 1920, 1080), None);
   }
 
-  // ── §7.1 (00014): screenshot OCR has no geometry, so it reuses the same
+  // --- Screenshot OCR has no geometry, so it reuses the same
   //    `paragraph::apply_text` textual policy as the PDF OCR channels. These
   //    are pure-function tests - no OCR engine or image mock is involved.
 
@@ -1110,10 +1110,10 @@ mod tests {
   #[test]
   fn screenshot_policy_sentence_end_starts_new_paragraph() {
     use crate::models::ParagraphMode;
-    // 00013 §4.3 T1 keeps a hard break after sentence-ending punctuation in
+    // Keeps a hard break after sentence-ending punctuation in
     // the no-geometry textual path. So in `smart`, OCR-derived text whose every
     // visual line ends in '。' is preserved line-by-line - identical to the
-    // PDF OCR channels. (This differs from 00014 §7.1's illustrative example,
+    // PDF OCR channels. (This differs from illustrative example,
     // which assumed those lines would merge.)
     let src = "本文档规定了XX。\n接入方应当鉴权。\n未按要求调用。";
     assert_eq!(
@@ -1122,7 +1122,7 @@ mod tests {
     );
   }
 
-  // ── 00015 Guided mode: merge only the user-picked columns ──────────────
+  // --- Guided mode: merge only the user-picked columns ---
   // Acceptance sample from the doc: only `description` (col 3) wraps; the
   // `value date` / `acc date` columns must stay line-by-line, and separate
   // records (New balance vs Purchase on stock) must not be fused.

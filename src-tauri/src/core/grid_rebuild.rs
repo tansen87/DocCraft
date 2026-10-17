@@ -430,7 +430,7 @@ fn lines_to_table_markdown(items: &[&TextItem]) -> String {
 /// Split `text` at runs of 2+ consecutive whitespace characters (the visible
 /// column gaps left by single-run rows). `char::is_whitespace` covers ASCII
 /// space, the full-width U+3000 and the non-breaking U+00A0, so CJK rows
-/// separated by full-width spaces (`姓名　　年龄`) split correctly. Pieces are
+/// separated by full-width spaces (`姓名    年龄`) split correctly. Pieces are
 /// trimmed and empty ones dropped; returns `None` when there is no such run, so
 /// a single intact cell keeps its exact text (single spaces inside a cell /
 /// normal prose stay untouched).
@@ -665,7 +665,7 @@ mod tests {
     assert_eq!(md2, "<!-- Page 1 -->\n\npage one");
   }
 
-  // ─── group_cells / lines_to_table_markdown ──────────────────────────────
+  // --- group_cells / lines_to_table_markdown ---
 
   #[test]
   fn group_cells_splits_rows_and_columns() {
@@ -723,9 +723,9 @@ mod tests {
     let refs: Vec<&TextItem> = items.iter().collect();
     let md = lines_to_table_markdown(&refs);
     let expected = "\
-| A | B |
-| --- | --- |
-| C |  |";
+      | A | B |
+      | --- | --- |
+      | C |  |";
     assert_eq!(md, expected);
   }
 
@@ -735,7 +735,7 @@ mod tests {
     assert_eq!(lines_to_table_markdown(&refs), "");
   }
 
-  // ─── rebuild_pages_excluding: table pages stay tables ───────────────────
+  // --- rebuild_pages_excluding: table pages stay tables ---
 
   /// Regression for the reported bug: a text-type PDF that is entirely tables,
   /// when an exclusion region is drawn on the first page, must keep that page

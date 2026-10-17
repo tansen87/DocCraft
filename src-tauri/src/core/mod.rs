@@ -20,7 +20,7 @@ pub mod usage_stats;
 /// Directory the application is installed in - the folder holding the
 /// executable. All bundled resources and the runtime-generated `data/`
 /// directory live directly inside it, next to the executable
-/// (docs/design/00020_update-check-and-install-layout.md §3.4).
+/// (docs/design/00020_update-check-and-install-layout.).
 pub fn install_dir() -> std::path::PathBuf {
   let exe_path = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("."));
   exe_path

@@ -61,7 +61,7 @@ pub fn apply(
 /// Single-page helper for OCR results (no geometry available): runs the
 /// textual heuristics. `Guided` returns the text unchanged - it needs the
 /// column context (drawn vertical lines) that a bare string cannot carry, so
-/// outside the image-table extractor it degrades to per-line (00015 §2.3).
+/// outside the image-table extractor it degrades to per-line.
 pub fn apply_text(text: &str, mode: ParagraphMode) -> String {
   if mode == ParagraphMode::Guided {
     return text.to_string();
@@ -72,8 +72,8 @@ pub fn apply_text(text: &str, mode: ParagraphMode) -> String {
 /// An indent at least this wide (in em) marks a **column position** rather
 /// than a paragraph first-line indent. Chinese first-line indents are 2
 /// characters (~2em) and English ones ~0.5in (~3em at 12pt), while column
-/// gutters are always wider - so this separates a wrapped table cell (G8)
-/// from the first line of a new paragraph (G2).
+/// gutters are always wider - so this separates a wrapped table cell
+/// from the first line of a new paragraph.
 const COLUMN_INDENT_EM: f32 = 3.5;
 
 /// Geometry summary of a page, estimated from its own lines so no page
@@ -82,8 +82,8 @@ struct PageGeom {
   block_left: f32,
   text_width: f32,
   /// True when at least one line of the page is the wrapped remainder of a
-  /// column (G8) - i.e. the page is a column / borderless-table layout. In
-  /// such a page every flush-left line starts a new record (G9), so rows must
+  /// column - i.e. the page is a column / borderless-table layout. In
+  /// such a page every flush-left line starts a new record, so rows must
   /// not be joined into one another.
   column_layout: bool,
 }
@@ -94,7 +94,7 @@ fn join_page(markdown: &str, meta: Option<&[LineMeta]>, mode: ParagraphMode) -> 
   if lines.len() <= 1 {
     return markdown.to_string();
   }
-  // G0-a: a page that is a GFM table must stay untouched - merging its rows
+  // A page that is a GFM table must stay untouched - merging its rows
   // would destroy the table (and the Markdown > Excel export with it).
   if is_table_page(&lines) {
     return markdown.to_string();
@@ -103,7 +103,7 @@ fn join_page(markdown: &str, meta: Option<&[LineMeta]>, mode: ParagraphMode) -> 
   let geom = meta.map(|m| {
     let block_left = m.iter().map(|l| l.x0).fold(f32::INFINITY, f32::min);
     let x1_max = m.iter().map(|l| l.x1).fold(f32::NEG_INFINITY, f32::max);
-    // G8 pre-scan: one wrapped cell anywhere marks the page as a column
+    // Pre-scan: one wrapped cell anywhere marks the page as a column
     // layout, which switches G9 on for every flush-left line of the page.
     let column_layout = m.windows(2).any(|pair| {
       let (prev, cur) = (&pair[0], &pair[1]);
@@ -212,7 +212,7 @@ fn hard_break_geometric(
   {
     return false;
   }
-  // G9: in a column layout a flush-left line starts a new record - the next
+  // In a column layout a flush-left line starts a new record - the next
   // row of a borderless table. Two adjacent rows usually share the exact same
   // geometry, so without this the header row and all data rows would collapse
   // into one line. Only the current line has to be flush left: the line above
@@ -220,18 +220,18 @@ fn hard_break_geometric(
   if geom.column_layout && indent_cur < m_cur.font_size * 0.5 {
     return true;
   }
-  // G2: first-line indent (a fresh paragraph starts indented, the previous
+  // First-line indent (a fresh paragraph starts indented, the previous
   // line was flush left). Indents wider than [`COLUMN_INDENT_EM`] are column
   // positions handled by G8 above, never a paragraph start.
   if indent_cur > m_cur.font_size * 1.5 && indent_prev < m_prev.font_size * 0.5 {
     return true;
   }
-  // G3: the previous line ended short (right ragged edge) and the next line
+  // The previous line ended short (right ragged edge) and the next line
   // starts flush left - the previous paragraph ended.
   if (m_prev.x1 - geom.block_left) < geom.text_width * 0.6 && indent_cur < m_cur.font_size * 0.5 {
     return true;
   }
-  // G5: the current line opens a list item / numbered clause.
+  // The current line opens a list item / numbered clause.
   starts_block_marker(cur)
 }
 
@@ -239,24 +239,24 @@ fn hard_break_geometric(
 /// text itself (OCR pages have no geometry). `median` is the precomputed
 /// median line length of the whole page, used for the short-line heuristic.
 fn hard_break_textual(prev: &str, cur: &str, median: usize) -> bool {
-  // T1: the previous line ends with sentence punctuation.
+  // The previous line ends with sentence punctuation.
   if ends_sentence(prev) {
     return true;
   }
-  // T2: the current line starts indented (≥2 half-width or ≥1 full-width).
+  // The current line starts indented (≥2 half-width or ≥1 full-width).
   if cur.starts_with("  ") || cur.starts_with('\u{3000}') {
     return true;
   }
-  // T3: the current line opens a list / numbered clause.
+  // The current line opens a list / numbered clause.
   if starts_block_marker(cur) {
     return true;
   }
-  // T5: the previous line ends with a colon (introduces a list or sub-clause).
+  // The previous line ends with a colon (introduces a list or sub-clause).
   let prev_trim = prev.trim_end();
   if prev_trim.ends_with(':') || prev_trim.ends_with('：') {
     return true;
   }
-  // T4: the previous line is a short line (heading / caption), unless it
+  // The previous line is a short line (heading / caption), unless it
   // already ended a sentence (which T1 would have caught).
   if median > 0 && prev_trim.chars().count() * 2 < median {
     return true;
@@ -491,8 +491,7 @@ fn median_line_len(lines: &[&str]) -> usize {
   lens[lens.len() / 2]
 }
 
-/// Normalize raw local OCR output before the paragraph policy runs
-/// (docs/design/00017 P1-1):
+/// Normalize raw local OCR output before the paragraph policy runs:
 /// 1. strip zero-width characters and the BOM;
 /// 2. collapse in-line whitespace runs (incl. the full-width U+3000) to a
 ///    single ASCII space;
@@ -605,7 +604,7 @@ mod tests {
     assert_eq!(out[0], "This is the first international standard.");
   }
 
-  /// A paragraph gap (G1) is a hard break: the second paragraph stays on its
+  /// A paragraph gap is a hard break: the second paragraph stays on its
   /// own line.
   #[test]
   fn smart_keeps_paragraph_gap() {
@@ -619,7 +618,7 @@ mod tests {
     assert_eq!(out[0], "第一段第一行第一段第二行\n\n第二段内容");
   }
 
-  /// First-line indent (G2) starts a new paragraph.
+  /// First-line indent starts a new paragraph.
   #[test]
   fn smart_keeps_first_line_indent() {
     let pages = vec!["上一段结尾\n    这是一个缩进的新段落。".to_string()];
@@ -666,7 +665,7 @@ mod tests {
   }
 
   /// Lines ending in closers / quotes / apostrophes are not sentence ends, so
-  /// the following line is merged (P0-2); true sentence punctuation still
+  /// the following line is merged; true sentence punctuation still
   /// breaks.
   #[test]
   fn closers_and_quotes_do_not_split_paragraphs() {
@@ -682,8 +681,7 @@ mod tests {
   }
 
   /// A letter / digit list marker only splits when the dot is followed by
-  /// whitespace: "A." is a list item, but "U.S." / "J. Smith" / "1.1" are not
-  /// (P0-5).
+  /// whitespace: "A." is a list item, but "U.S." / "J. Smith" / "1.1" are not.
   #[test]
   fn block_marker_dot_requires_whitespace() {
     assert!(starts_block_marker("A. first item"));
@@ -735,7 +733,7 @@ mod tests {
   /// A two-column (borderless table) layout whose second column wraps over
   /// several visual lines. The wrapped remainder sits at the column's x, far
   /// indented from the block edge: it belongs to the cell above it and must
-  /// be joined there - G2 alone would read it as a new paragraph and leave
+  /// be joined there - alone would read it as a new paragraph and leave
   /// `smart` behaving exactly like `keep`.
   #[test]
   fn smart_joins_wrapped_column_content() {
@@ -751,8 +749,8 @@ mod tests {
   }
 
   /// Two records of a borderless table: every flush-left line starts a new
-  /// record (G9) and each record's wrapped second column is joined onto its
-  /// own record (G8), so records never bleed into one another.
+  /// record and each record's wrapped second column is joined onto its
+  /// own record, so records never bleed into one another.
   #[test]
   fn smart_keeps_record_rows_apart_in_column_layout() {
     let pages = vec!["1,this is\ntail one\n2,this is\ntail two".to_string()];
@@ -815,7 +813,7 @@ mod tests {
     );
   }
 
-  /// P1-1: `clean_ocr_text` strips zero-width / BOM characters, collapses
+  /// `clean_ocr_text` strips zero-width / BOM characters, collapses
   /// in-line whitespace runs (incl. full-width) to one space, keeps newlines,
   /// and adds a space at CJK ⟷ Latin boundaries - but leaves plain text alone.
   #[test]
@@ -827,7 +825,7 @@ mod tests {
     assert_eq!(clean_ocr_text("hello world"), "hello world");
   }
 
-  /// P1-4: local OCR `off` mode supplies per-line geometry (y already flipped
+  /// Local OCR `off` mode supplies per-line geometry (y already flipped
   /// to PDF space). G1 uses it to detect a real paragraph gap while plain close
   /// lines of one paragraph merge - even when the textual heuristics would have
   /// treated the short lines as headings.
