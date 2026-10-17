@@ -38,7 +38,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { GlassPanel } from "@/components/ui/glass-panel";
 import { Progress } from "@/components/ui/progress";
 import type {
   OcrMode,
@@ -99,82 +98,111 @@ import { cn } from "@/lib/utils";
 type SettingsSection =
   | "ocr"
   | "models"
-  | "threads"
   | "snip"
   | "textSep"
-  | "tray"
   | "draw"
   | "excel"
+  | "threads"
+  | "appearance"
   | "backup"
-  | "glass"
   | "stats"
   | "update";
 
-const SECTIONS: {
-  id: SettingsSection;
-  labelKey:
-    | "settings.ocr"
-    | "settings.modelFiles"
-    | "settings.threads"
-    | "snip.capture"
-    | "settings.textAndLineBreak"
-    | "settings.tray"
-    | "settings.drawTable"
-    | "settings.excel"
-    | "settings.backup"
-    | "settings.glass"
-    | "settings.stats"
-    | "settings.update";
+/**
+ * Sidebar navigation, grouped by what the user is trying to do rather than by
+ * the order the sections happen to be rendered in. Text only (no icons): the
+ * group labels and the gaps between groups carry the hierarchy, which keeps
+ * eleven entries scannable without adding visual noise.
+ */
+const NAV_GROUPS: {
+  id: string;
+  labelKey: TranslationKey;
+  sections: { id: SettingsSection; labelKey: TranslationKey }[];
 }[] = [
   {
-    id: "ocr",
-    labelKey: "settings.ocr",
+    id: "recognize",
+    labelKey: "settings.navGroup.recognize",
+    sections: [
+      // Model files first: the local engine can only run once they exist.
+      { id: "models", labelKey: "settings.modelFiles" },
+      { id: "ocr", labelKey: "settings.ocr" },
+      // Screenshot recognition is just another OCR entry point.
+      { id: "snip", labelKey: "snip.capture" },
+    ],
   },
   {
-    id: "models",
-    labelKey: "settings.modelFiles",
+    id: "convert",
+    labelKey: "settings.navGroup.convert",
+    sections: [
+      { id: "textSep", labelKey: "settings.textAndLineBreak" },
+      { id: "draw", labelKey: "settings.drawTable" },
+      { id: "excel", labelKey: "settings.excel" },
+      { id: "threads", labelKey: "settings.threads" },
+    ],
   },
   {
-    id: "snip",
-    labelKey: "snip.capture",
+    id: "appearance",
+    labelKey: "settings.navGroup.appearance",
+    sections: [{ id: "appearance", labelKey: "settings.appearance" }],
   },
   {
-    id: "textSep",
-    labelKey: "settings.textAndLineBreak",
-  },
-  {
-    id: "draw",
-    labelKey: "settings.drawTable",
-  },
-  {
-    id: "excel",
-    labelKey: "settings.excel",
-  },
-  {
-    id: "threads",
-    labelKey: "settings.threads",
-  },
-  {
-    id: "backup",
-    labelKey: "settings.backup",
-  },
-  {
-    id: "stats",
-    labelKey: "settings.stats",
-  },
-  {
-    id: "glass",
-    labelKey: "settings.glass",
-  },
-  {
-    id: "tray",
-    labelKey: "settings.tray",
-  },
-  {
-    id: "update",
-    labelKey: "settings.update",
+    id: "data",
+    labelKey: "settings.navGroup.data",
+    sections: [
+      { id: "backup", labelKey: "settings.backup" },
+      { id: "stats", labelKey: "settings.stats" },
+      { id: "update", labelKey: "settings.update" },
+    ],
   },
 ];
+
+const SECTIONS = NAV_GROUPS.flatMap((group) => group.sections);
+
+/**
+ * Every section is one card. The sticky head lives inside it, so the card must
+ * stay free of `overflow-hidden` (that would break `position: sticky`).
+ */
+const SECTION_CARD =
+  "scroll-mt-4 rounded-2xl border border-border/70 bg-card/80 pb-1 shadow-sm backdrop-blur-sm";
+
+/**
+ * One entry per setting that can be edited, so the save bar can say *how many*
+ * things are pending and which ones. The key is what `markDirty()` records;
+ * the value is the label shown for it.
+ */
+const DIRTY_LABELS = {
+  vendors: "settings.subVendors",
+  ocrMode: "settings.ocrEnabled",
+  ocrModelSize: "settings.ocrModelSize",
+  ocrTextCleanup: "settings.ocrTextCleanup",
+  layout: "settings.ocrLayoutMode",
+  layoutModel: "settings.ocrLayoutModel",
+  layoutThreshold: "settings.layoutScoreThreshold",
+  layoutHeaderFooter: "settings.layoutDropHeaderFooter",
+  aiPrompt: "settings.aiOcrPrompt",
+  drawPrompt: "settings.drawTablePrompt",
+  hotkey: "settings.screenshotHotkey",
+  snipPopup: "settings.snipResultPopup",
+  snipAutoCopy: "settings.snipAutoCopy",
+  paragraphMode: "settings.paragraphMode",
+  textSeparator: "settings.textSeparator",
+  cacheExtracted: "settings.cacheExtracted",
+  excelTablesOnly: "settings.excelTablesOnly",
+  stripMdSyntax: "settings.stripMdSyntax",
+  writeNumeric: "settings.writeNumeric",
+  maxConcurrent: "settings.maxConcurrent",
+  localOcrThreads: "settings.localOcrThreads",
+  glassBlur: "settings.glassBlur",
+  mainOpacity: "settings.mainWindowOpacity",
+  snipOpacity: "settings.snipResultOpacity",
+  tray: "settings.tray",
+  autoCheckUpdate: "update.autoCheck",
+} satisfies Record<string, TranslationKey>;
+
+type DirtyField = keyof typeof DIRTY_LABELS;
+
+/** How many changed-field labels the save tooltip lists before eliding. */
+const DIRTY_PREVIEW_LIMIT = 6;
 
 interface VendorForm {
   id: string;
@@ -202,9 +230,11 @@ function toForm(v: OcrVendor): VendorForm {
 
 export function SettingsView() {
   const { t } = useI18n();
-  const [section, setSection] = useState<SettingsSection>("ocr");
+  const [section, setSection] = useState<SettingsSection>(SECTIONS[0].id);
+  /** Sidebar filter; Ctrl K focuses it. */
+  const [query, setQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
-  const pinnedRef = useRef<SettingsSection | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [vendors, setVendors] = useState<VendorForm[]>([]);
   const [ocrMode, setOcrMode] = useState<OcrMode>("disabled");
   const [maxConcurrent, setMaxConcurrent] = useState(1);
@@ -243,15 +273,9 @@ export function SettingsView() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [dirtyFields, setDirtyFields] = useState<Set<DirtyField>>(new Set());
+  const dirty = dirtyFields.size > 0;
   const [usageStats, setUsageStats] = useState<UsageStats | null>(null);
-  /**
-   * Height of the scroll viewport. Used to size the bottom scroll spacer so
-   * even the last sections (glass / tray) can be scrolled to the top when
-   * clicked — without it, the browser stops at max scroll and short trailing
-   * sections never reach the first row.
-   */
-  const [viewportHeight, setViewportHeight] = useState(0);
   /** Bumped after a config import so the load effect re-runs. */
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -317,8 +341,11 @@ export function SettingsView() {
     };
   }, [t, reloadKey]);
 
-  const markDirty = () => {
-    if (loaded) setDirty(true);
+  const markDirty = (field: DirtyField) => {
+    if (!loaded) return;
+    setDirtyFields((prev) =>
+      prev.has(field) ? prev : new Set(prev).add(field),
+    );
   };
 
   /** Re-fetch usage stats after "clear statistics" so the card resets. */
@@ -400,7 +427,7 @@ export function SettingsView() {
           models: e.input.models,
         })),
       );
-      setDirty(false);
+      setDirtyFields(new Set());
       // Let other views re-sync anything derived from app settings
       // (e.g. MD→Excel's tables-only toggle).
       window.dispatchEvent(new Event("doccraft:settings-saved"));
@@ -414,7 +441,8 @@ export function SettingsView() {
     }
   }
 
-  function scrollAreaViewport(): HTMLElement | null {
+  /** The scroll container that holds the section cards (Radix viewport). */
+  function scrollViewport(): HTMLElement | null {
     return (
       containerRef.current?.querySelector<HTMLElement>(
         '[data-slot="scroll-area-viewport"]',
@@ -422,215 +450,292 @@ export function SettingsView() {
     );
   }
 
+  // Ctrl K focuses the sidebar filter - the shortcut users expect from a
+  // settings page. No command palette: eleven entries live in one visible list.
   useEffect(() => {
-    const vp = scrollAreaViewport();
-    if (!vp) return;
-    // Track the viewport height so the trailing scroll spacer can be sized to
-    // guarantee the last sections can reach the top when clicked.
-    const ro = new ResizeObserver(() => setViewportHeight(vp.clientHeight));
-    ro.observe(vp);
-    setViewportHeight(vp.clientHeight);
-    return () => ro.disconnect();
+    const onKey = (e: KeyboardEvent) => {
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        !e.altKey &&
+        e.key.toLowerCase() === "k"
+      ) {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  /**
+   * The active nav entry follows the card whose sticky head owns the top band
+   * of the scroll viewport. An IntersectionObserver replaces the previous
+   * "25 % reference line + pinned flag" scroll maths; the only extra rule is
+   * the last section, which never reaches that band when it is shorter than
+   * the viewport (hence the bottom check instead of a trailing spacer).
+   */
   useEffect(() => {
-    const vp = scrollAreaViewport();
+    const vp = scrollViewport();
     if (!vp) return;
-    const viewport: HTMLElement = vp;
-    const containerEl = containerRef.current;
+    const lastId = SECTIONS[SECTIONS.length - 1].id;
+    const atBottom = () =>
+      vp.scrollHeight - vp.clientHeight > 8 &&
+      vp.scrollTop + vp.clientHeight >= vp.scrollHeight - 2;
 
-    function updateActive() {
-      // After a click the chosen section stays pinned until the user scrolls
-      // manually; otherwise the smooth-scroll animation would re-pick a
-      // different section mid-flight.
-      if (pinnedRef.current) return;
-      if (viewport.clientHeight === 0) return;
-      const vpRect = viewport.getBoundingClientRect();
-      // Reference line at 25% below the top of the scroll viewport; the active
-      // section is the last one whose top edge has passed above it.
-      const line = vpRect.top + viewport.clientHeight * 0.25;
-      let active: SettingsSection = SECTIONS[0].id;
-      for (const s of SECTIONS) {
-        const el = document.getElementById(`settings-${s.id}`);
-        if (!el) continue;
-        if (el.getBoundingClientRect().top <= line) active = s.id;
-      }
-      if (
-        viewport.scrollTop + viewport.clientHeight >=
-        viewport.scrollHeight - 1
-      ) {
-        active = SECTIONS[SECTIONS.length - 1].id;
-      }
-      setSection(active);
-    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (atBottom()) {
+          setSection(lastId);
+          return;
+        }
+        const visible = new Set(
+          entries.filter((e) => e.isIntersecting).map((e) => e.target.id),
+        );
+        const first = SECTIONS.find((s) => visible.has(`settings-${s.id}`));
+        if (first) setSection(first.id);
+      },
+      // Only the top 30 % of the viewport counts: a tall card stays "active"
+      // until the next card head scrolls into that band.
+      { root: vp, rootMargin: "0px 0px -70% 0px", threshold: 0 },
+    );
+    SECTIONS.map((s) => document.getElementById(`settings-${s.id}`))
+      .filter((el): el is HTMLElement => el !== null)
+      .forEach((el) => observer.observe(el));
 
-    function beginUserScroll() {
-      pinnedRef.current = null;
-    }
-
-    function onPointerDown(e: PointerEvent) {
-      const target = e.target as HTMLElement | null;
-      if (target?.closest('[data-slot="scroll-area-scrollbar"]')) {
-        beginUserScroll();
-      }
-    }
-
-    updateActive();
-    viewport.addEventListener("scroll", updateActive, { passive: true });
-    window.addEventListener("resize", updateActive);
-    const resizeObserver = new ResizeObserver(updateActive);
-    resizeObserver.observe(viewport);
-    containerEl?.addEventListener("wheel", beginUserScroll, { passive: true });
-    containerEl?.addEventListener("touchstart", beginUserScroll, {
-      passive: true,
-    });
-    containerEl?.addEventListener("pointerdown", onPointerDown);
+    const onScroll = () => {
+      if (atBottom()) setSection(lastId);
+    };
+    vp.addEventListener("scroll", onScroll, { passive: true });
     return () => {
-      viewport.removeEventListener("scroll", updateActive);
-      window.removeEventListener("resize", updateActive);
-      resizeObserver.disconnect();
-      containerEl?.removeEventListener("wheel", beginUserScroll);
-      containerEl?.removeEventListener("touchstart", beginUserScroll);
-      containerEl?.removeEventListener("pointerdown", onPointerDown);
+      observer.disconnect();
+      vp.removeEventListener("scroll", onScroll);
     };
   }, []);
 
+  /** Jump to a section; the observer picks the highlight up on arrival. */
   function jumpTo(id: SettingsSection) {
-    pinnedRef.current = id;
     setSection(id);
-    const vp = scrollAreaViewport();
+    const vp = scrollViewport();
     const el = document.getElementById(`settings-${id}`);
-    if (vp && el) {
-      const top =
-        el.getBoundingClientRect().top -
-        vp.getBoundingClientRect().top +
-        vp.scrollTop;
-      vp.scrollTo({ top: Math.max(top - 12, 0), behavior: "smooth" });
-    }
+    if (!vp || !el) return;
+    const top =
+      el.getBoundingClientRect().top -
+      vp.getBoundingClientRect().top +
+      vp.scrollTop;
+    vp.scrollTo({ top: Math.max(top - 4, 0), behavior: "smooth" });
   }
+
+  /** Throw away unsaved edits by re-running the load pipeline. */
+  function discardChanges() {
+    setDirtyFields(new Set());
+    setReloadKey((k) => k + 1);
+  }
+
+  const needle = query.trim().toLowerCase();
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    sections: needle
+      ? group.sections.filter((s) =>
+          t(s.labelKey).toLowerCase().includes(needle),
+        )
+      : group.sections,
+  })).filter((group) => group.sections.length > 0);
+
+  /** What the save tooltip lists: the changed settings, in change order. */
+  const changedLabels = Array.from(dirtyFields).map((field) =>
+    t(DIRTY_LABELS[field]),
+  );
+  const changedPreview =
+    changedLabels.slice(0, DIRTY_PREVIEW_LIMIT).join(" · ") +
+    (changedLabels.length > DIRTY_PREVIEW_LIMIT ? " …" : "");
+
   return (
     <div
       ref={containerRef}
       className="relative flex w-full min-h-0 flex-1 gap-3"
     >
-      <aside className="flex w-8 shrink-0 flex-col gap-1 md:w-40">
-        {SECTIONS.map((s) => {
-          const active = section === s.id;
-          return (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => jumpTo(s.id)}
-              className={cn(
-                "flex items-center justify-center gap-3 rounded-xl px-0 py-2 text-center transition-colors duration-150 md:justify-center md:px-2.5",
-                active
-                  ? "bg-primary/[0.08] text-foreground"
-                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-              )}
-            >
-              <span className="block truncate text-sm font-medium flex select-none text-center justify-center py-0.5">
-                {t(s.labelKey)}
+      {/* Text-only navigation: group labels + spacing carry the hierarchy. */}
+      <aside className="hidden w-[188px] shrink-0 flex-col gap-3 md:flex">
+        <input
+          ref={searchRef}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("settings.search")}
+          aria-label={t("settings.search")}
+          className="h-8 w-full shrink-0 rounded-lg border border-border/70 bg-card/60 px-2.5 text-[13px] outline-none transition-[box-shadow,border-color] placeholder:text-muted-foreground/80 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
+        />
+        <nav className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+          {visibleGroups.map((group) => (
+            <div key={group.id} className="flex flex-col gap-0.5">
+              <span className="px-2.5 pb-1 text-[11px] font-semibold tracking-[0.02em] text-muted-foreground/80">
+                {t(group.labelKey)}
               </span>
-            </button>
-          );
-        })}
+              {group.sections.map((s) => {
+                const active = section === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => jumpTo(s.id)}
+                    aria-current={active ? "true" : undefined}
+                    className={cn(
+                      "flex h-8 items-center rounded-lg px-2.5 text-left text-[13px] font-medium transition-colors duration-150",
+                      active
+                        ? "bg-primary/[0.08] text-foreground"
+                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                    )}
+                  >
+                    {t(s.labelKey)}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+          {visibleGroups.length === 0 ? (
+            <p className="px-2.5 py-1 text-xs text-muted-foreground">
+              {t("settings.searchEmpty")}
+            </p>
+          ) : null}
+        </nav>
       </aside>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+        {/* No page title here: the window's tab strip already says 设置, and a
+            second copy only ate vertical space. From md up the sidebar owns
+            navigation, so the head slot is empty; below md it holds the
+            section picker (the sidebar is gone there). */}
+        <div className="md:hidden">
+          <Select
+            value={section}
+            onValueChange={(v) => jumpTo(v as SettingsSection)}
+          >
+            <SelectTrigger
+              className="w-full"
+              aria-label={t("settings.sectionPicker")}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SECTIONS.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {t(s.labelKey)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Same ScrollArea (and same scrollbar) as the rest of the app. Its
+            content wrapper is a `display: table` box, so the sticky heads were
+            worth measuring: at scrollTop 700 the head reported top = 0 relative
+            to the viewport, i.e. it does stick. */}
         <ScrollArea className="min-h-0 flex-1">
-          <div className="pb-4 pr-3">
-            <div className="space-y-8">
-              <section id="settings-ocr" className="scroll-mt-3">
-                <SectionHeader title={t("settings.ocr")} />
+          <div className="pb-6 pr-3 pt-2">
+            <div className="space-y-4">
+              {/* Models first: without them the local engine cannot run, so the
+                  prerequisite sits above the engine it belongs to. */}
+              <section id="settings-models" className={SECTION_CARD}>
+                <SectionHeader
+                  title={t("settings.modelFiles")}
+                  hint={t("settings.sectionHint.models")}
+                />
+                <ModelsPanel />
+              </section>
+              <section id="settings-ocr" className={SECTION_CARD}>
+                <SectionHeader
+                  title={t("settings.ocr")}
+                  hint={t("settings.sectionHint.ocr")}
+                />
                 <OcrSettingsPanel
                   vendors={vendors}
                   onChange={(updater) => {
                     setVendors(updater);
-                    markDirty();
+                    markDirty("vendors");
                   }}
                   ocrMode={ocrMode}
                   onOcrModeChange={(v) => {
                     setOcrMode(v);
-                    markDirty();
+                    markDirty("ocrMode");
                   }}
                   loading={loading}
                   ocrModelSize={ocrModelSize}
                   onOcrModelSizeChange={(v) => {
                     setOcrModelSize(v);
-                    markDirty();
+                    markDirty("ocrModelSize");
                   }}
                   ocrLayoutMode={ocrLayoutMode}
                   onOcrLayoutModeChange={(v) => {
                     setOcrLayoutMode(v);
-                    markDirty();
+                    markDirty("layout");
                   }}
                   ocrLayoutModel={ocrLayoutModel}
                   onOcrLayoutModelChange={(v) => {
                     setOcrLayoutModel(v);
-                    markDirty();
+                    markDirty("layoutModel");
                   }}
                   layoutModels={layoutModels}
                   layoutScoreThreshold={layoutScoreThreshold}
                   onLayoutScoreThresholdChange={(v) => {
                     setLayoutScoreThreshold(v);
-                    markDirty();
+                    markDirty("layoutThreshold");
                   }}
                   layoutDropHeaderFooter={layoutDropHeaderFooter}
                   onLayoutDropHeaderFooterChange={(v) => {
                     setLayoutDropHeaderFooter(v);
-                    markDirty();
+                    markDirty("layoutHeaderFooter");
                   }}
                   ocrTextCleanup={ocrTextCleanup}
                   onOcrTextCleanupChange={(v) => {
                     setOcrTextCleanup(v);
-                    markDirty();
+                    markDirty("ocrTextCleanup");
                   }}
                   aiOcrPrompt={aiOcrPrompt}
                   onAiOcrPromptChange={(v) => {
                     setAiOcrPrompt(v);
-                    markDirty();
+                    markDirty("aiPrompt");
                   }}
                   drawTablePrompt={drawTablePrompt}
                   onDrawTablePromptChange={(v) => {
                     setDrawTablePrompt(v);
-                    markDirty();
+                    markDirty("drawPrompt");
                   }}
                 />
               </section>
-              <section id="settings-models" className="scroll-mt-3">
+              <section id="settings-snip" className={SECTION_CARD}>
                 <SectionHeader
-                  title={t("settings.modelFiles")}
+                  title={t("snip.capture")}
+                  hint={t("settings.sectionHint.snip")}
                 />
-                <ModelsPanel />
-              </section>
-              <section id="settings-snip" className="scroll-mt-3">
-                <SectionHeader title={t("snip.capture")} />
                 <SnipSettingsPanel
                   value={screenshotHotkey}
                   onChange={(v) => {
                     setScreenshotHotkey(v);
-                    markDirty();
+                    markDirty("hotkey");
                   }}
                   resultPopup={snipResultPopup}
                   onResultPopupChange={(v) => {
                     setSnipResultPopup(v);
-                    markDirty();
+                    markDirty("snipPopup");
                   }}
                   autoCopy={snipAutoCopy}
                   onAutoCopyChange={(v) => {
                     setSnipAutoCopy(v);
-                    markDirty();
+                    markDirty("snipAutoCopy");
                   }}
                   disabled={loading}
                 />
               </section>
-              <section id="settings-textSep" className="scroll-mt-3">
-                <SectionHeader title={t("settings.textAndLineBreak")} />
+              <section id="settings-textSep" className={SECTION_CARD}>
+                <SectionHeader
+                  title={t("settings.textAndLineBreak")}
+                  hint={t("settings.sectionHint.textSep")}
+                />
                 <ParagraphModeSettingsPanel
                   value={paragraphMode}
                   onChange={(v) => {
                     setParagraphMode(v);
-                    markDirty();
+                    markDirty("paragraphMode");
                   }}
                   disabled={loading}
                 />
@@ -638,84 +743,102 @@ export function SettingsView() {
                   value={textSeparator}
                   onChange={(v) => {
                     setTextSeparator(v);
-                    markDirty();
+                    markDirty("textSeparator");
                   }}
                   disabled={loading}
                 />
               </section>
-              <section id="settings-draw" className="scroll-mt-3">
-                <SectionHeader title={t("settings.drawTable")} />
+              <section id="settings-draw" className={SECTION_CARD}>
+                <SectionHeader
+                  title={t("settings.drawTable")}
+                  hint={t("settings.sectionHint.draw")}
+                />
                 <DrawSettingsPanel
                   value={cacheExtracted}
                   onChange={(v) => {
                     setCacheExtracted(v);
-                    markDirty();
+                    markDirty("cacheExtracted");
                   }}
                   disabled={loading}
                 />
               </section>
-              <section id="settings-excel" className="scroll-mt-3">
-                <SectionHeader title={t("settings.excel")} />
+              <section id="settings-excel" className={SECTION_CARD}>
+                <SectionHeader
+                  title={t("settings.excel")}
+                  hint={t("settings.sectionHint.excel")}
+                />
                 <ExcelSettingsPanel
                   value={excelTablesOnly}
                   onChange={(v) => {
                     setExcelTablesOnly(v);
-                    markDirty();
+                    markDirty("excelTablesOnly");
                   }}
                   stripMdSyntax={stripMdSyntax}
                   onStripMdSyntaxChange={(v) => {
                     setStripMdSyntax(v);
-                    markDirty();
+                    markDirty("stripMdSyntax");
                   }}
                   writeNumeric={writeNumeric}
                   onWriteNumericChange={(v) => {
                     setWriteNumeric(v);
-                    markDirty();
+                    markDirty("writeNumeric");
                   }}
                   disabled={loading}
                 />
               </section>
-              <section id="settings-threads" className="scroll-mt-3">
-                <SectionHeader title={t("settings.threads")} />
+              <section id="settings-threads" className={SECTION_CARD}>
+                <SectionHeader
+                  title={t("settings.threads")}
+                  hint={t("settings.sectionHint.threads")}
+                />
                 <ThreadSettingsPanel
                   value={maxConcurrent}
                   onChange={(n) => {
                     setMaxConcurrent(n);
-                    markDirty();
+                    markDirty("maxConcurrent");
                   }}
                   localOcrThreads={localOcrThreads}
                   onLocalOcrThreadsChange={(n) => {
                     setLocalOcrThreads(n);
-                    markDirty();
+                    markDirty("localOcrThreads");
                   }}
                   disabled={loading}
                 />
               </section>
-              <section id="settings-backup" className="scroll-mt-3">
-                <SectionHeader title={t("settings.backup")} />
+              <section id="settings-backup" className={SECTION_CARD}>
+                <SectionHeader
+                  title={t("settings.backup")}
+                  hint={t("settings.sectionHint.backup")}
+                />
                 <BackupPanel
                   busy={loading}
                   onImported={() => {
-                    setDirty(false);
+                    setDirtyFields(new Set());
                     setReloadKey((k) => k + 1);
                   }}
                 />
               </section>
-              <section id="settings-stats" className="scroll-mt-3">
-                <SectionHeader title={t("settings.stats")} />
+              <section id="settings-stats" className={SECTION_CARD}>
+                <SectionHeader
+                  title={t("settings.stats")}
+                  hint={t("settings.sectionHint.stats")}
+                />
                 <UsageStatsPanel
                   stats={usageStats}
                   busy={loading}
                   onCleared={() => void refreshUsage()}
                 />
               </section>
-              <section id="settings-glass" className="scroll-mt-3">
-                <SectionHeader title={t("settings.glass")} />
+              <section id="settings-appearance" className={SECTION_CARD}>
+                <SectionHeader
+                  title={t("settings.appearance")}
+                  hint={t("settings.sectionHint.appearance")}
+                />
                 <GlassSettingsPanel
                   blurEnabled={glassBlurEnabled}
                   onBlurEnabledChange={(v) => {
                     setGlassBlurEnabled(v);
-                    markDirty();
+                    markDirty("glassBlur");
                     // Live preview: update both windows without saving.
                     window.dispatchEvent(
                       new CustomEvent("doccraft:opacity-preview", {
@@ -729,7 +852,7 @@ export function SettingsView() {
                   resultOpacity={snipResultOpacity}
                   onResultOpacityChange={(v) => {
                     setSnipResultOpacity(v);
-                    markDirty();
+                    markDirty("snipOpacity");
                     // Live preview: send value directly to snip result window.
                     emitTo("snip-result", "snip:settings-changed", {
                       opacity: v,
@@ -738,7 +861,7 @@ export function SettingsView() {
                   mainOpacity={mainWindowOpacity}
                   onMainOpacityChange={(v) => {
                     setMainWindowOpacity(v);
-                    markDirty();
+                    markDirty("mainOpacity");
                     // Live preview: update main window background without saving.
                     window.dispatchEvent(
                       new CustomEvent("doccraft:opacity-preview", {
@@ -748,25 +871,25 @@ export function SettingsView() {
                   }}
                   disabled={loading}
                 />
-              </section>
-              <section id="settings-tray" className="scroll-mt-3">
-                <SectionHeader title={t("settings.tray")} />
                 <TraySettingsPanel
                   value={enableTray}
                   onChange={(v) => {
                     setEnableTray(v);
-                    markDirty();
+                    markDirty("tray");
                   }}
                   disabled={loading}
                 />
               </section>
-              <section id="settings-update" className="scroll-mt-3">
-                <SectionHeader title={t("settings.update")} />
+              <section id="settings-update" className={SECTION_CARD}>
+                <SectionHeader
+                  title={t("settings.update")}
+                  hint={t("settings.sectionHint.update")}
+                />
                 <UpdateSettingsPanel
                   autoCheck={autoCheckUpdate}
                   onAutoCheckChange={(v) => {
                     setAutoCheckUpdate(v);
-                    markDirty();
+                    markDirty("autoCheckUpdate");
                   }}
                   skippedVersion={updateExtras.skippedVersion}
                   onSkippedCleared={() =>
@@ -775,45 +898,66 @@ export function SettingsView() {
                   disabled={loading}
                 />
               </section>
-              {/* Trailing spacer: lets the last sections (glass / tray / update)
-                  scroll all the way to the top of the viewport when clicked, even
-                  when the content below them is shorter than the viewport. */}
-              <div
-                aria-hidden
-                style={{ height: Math.max(viewportHeight - 96, 0) }}
-              />
             </div>
           </div>
         </ScrollArea>
 
-        {dirty ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center">
-            <GlassPanel
-              blur={false}
-              className="backdrop-blur-[20px] pointer-events-auto flex animate-in fade-in-0 slide-in-from-bottom-2 items-center gap-3 rounded-full py-1.5 pl-4 pr-1.5"
-            >
-              <span className="text-xs text-muted-foreground">
-                {t("settings.unsavedChanges")}
-              </span>
+        {/* Save bar. `flex-none` and outside the scroll area, so it neither
+            covers the last rows (the old floating pill) nor sits under the
+            window controls in the top-right corner. */}
+        <div className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border/70 bg-card/80 px-3 py-2">
+          {dirty ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  tabIndex={0}
+                  className="flex cursor-default items-center gap-1.5 rounded-md text-xs font-medium text-warning outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                >
+                  <span className="size-1.5 rounded-full bg-current" />
+                  {t("settings.unsavedCount", { count: dirtyFields.size })}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" align="start" className="max-w-72">
+                {changedPreview}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              {t("settings.allSaved")}
+            </span>
+          )}
+          <div className="ml-auto flex items-center gap-2">
+            {dirty ? (
               <Button
-                onClick={handleSave}
-                disabled={saving || !loaded}
-                className="rounded-full"
-                size="sm"
                 variant="secondary"
+                size="sm"
+                onClick={discardChanges}
+                disabled={saving}
               >
-                {saving ? <Loader2 className="animate-spin" /> : <Save />}
-                {t("settings.save")}
+                {t("settings.discard")}
               </Button>
-            </GlassPanel>
+            ) : null}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleSave}
+              disabled={saving || !loaded || !dirty}
+            >
+              {saving ? <Loader2 className="animate-spin" /> : <Save />}
+              {t("settings.save")}
+            </Button>
           </div>
-        ) : null}
+        </div>
       </div>
     </div>
   );
 }
 
-/** Grouped panel: rounded container whose children are hairline-separated. */
+/**
+ * Row group inside a card. It deliberately has no box of its own: the
+ * `<section>` is the card now, and a group is just a run of hairline-separated
+ * rows - replacing the old "one glass panel per row" stack.
+ */
 function Panel({
   children,
   className,
@@ -822,14 +966,35 @@ function Panel({
   className?: string;
 }) {
   return (
-    <GlassPanel
+    <div className={cn("divide-y divide-border/60", className)}>{children}</div>
+  );
+}
+
+/** Second-level label inside a card (engine / layout / providers / prompts). */
+function SubSection({
+  label,
+  hint,
+  first,
+}: {
+  label: string;
+  hint?: string;
+  /** The first sub-section in a card has no top hairline. */
+  first?: boolean;
+}) {
+  return (
+    <div
       className={cn(
-        "divide-y divide-border/60 overflow-hidden rounded-2xl",
-        className,
+        "flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-4 pb-1 pt-3",
+        !first && "border-t border-border/60",
       )}
     >
-      {children}
-    </GlassPanel>
+      <span className="text-[11px] font-semibold text-muted-foreground">
+        {label}
+      </span>
+      {hint ? (
+        <span className="text-[11px] text-muted-foreground/75">{hint}</span>
+      ) : null}
+    </div>
   );
 }
 
@@ -862,20 +1027,16 @@ function SettingRow({
   );
 }
 
-function SectionHeader({
-  title,
-  description,
-}: {
-  title: string;
-  description?: string;
-}) {
+/** Sticky card head: section title + a one-line summary of what lives inside. */
+function SectionHeader({ title, hint }: { title: string; hint?: string }) {
   return (
-    <div className="mb-3 space-y-0.5">
-      <h2 className="text-base font-semibold uppercase tracking-wider text-muted-foreground">
-        {title}
-      </h2>
-      {description ? (
-        <p className="text-sm text-muted-foreground">{description}</p>
+    // Solid background, no backdrop-filter: a sticky band that samples the
+    // rows scrolling underneath needs a compositing pass this WebView already
+    // does for the window glass, and a solid head is the conventional look.
+    <div className="sticky top-0 z-10 rounded-t-2xl border-b border-border/60 bg-card px-4 py-2.5">
+      <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
+      {hint ? (
+        <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
       ) : null}
     </div>
   );
@@ -1053,6 +1214,7 @@ function OcrSettingsPanel({
 
   return (
     <>
+      <SubSection label={t("settings.subEngine")} first />
       <Panel>
         <SettingRow
           label={t("settings.ocrEnabled")}
@@ -1127,6 +1289,7 @@ function OcrSettingsPanel({
 
       {/* Layout analysis (docs/design/00016): off / paddle. The
           model + sub-options only expand for the paddle tier. */}
+      <SubSection label={t("settings.subLayout")} />
       <Panel>
         <SettingRow
           label={t("settings.ocrLayoutMode")}
@@ -1217,58 +1380,17 @@ function OcrSettingsPanel({
         ) : null}
       </Panel>
 
-      {/* Custom prompts for the remote AI vision paths (empty = built-in
-          default). Both are collapsible so the OCR page stays tidy. */}
-      <Panel>
-        <PromptTextarea
-          title={t("settings.aiOcrPrompt")}
-          description={t("settings.aiOcrPromptDesc")}
-          value={aiOcrPrompt}
-          onChange={onAiOcrPromptChange}
-          placeholder={t("settings.aiOcrPromptPlaceholder")}
-          disabled={loading}
-        />
-        <PromptTextarea
-          title={t("settings.drawTablePrompt")}
-          description={t("settings.drawTablePromptDesc")}
-          value={drawTablePrompt}
-          onChange={onDrawTablePromptChange}
-          placeholder={t("settings.drawTablePromptPlaceholder")}
-          disabled={loading}
-        />
-      </Panel>
+      <SubSection label={t("settings.subVendors")} />
 
       {loading ? (
-        <div className="space-y-3">
-          <Panel>
-            <Skeleton className="h-14 w-full" />
-          </Panel>
-
-          <Panel>
-            <Skeleton className="h-14 w-full" />
-            <Skeleton className="h-14 w-full" />
-          </Panel>
-
-          <div className="space-y-3">
-            <GlassPanel className="rounded-2xl p-4">
-              <Skeleton className="mb-3 h-10 w-full" />
-              <Skeleton className="mb-2 h-3 w-3/4" />
-              <Skeleton className="h-3 w-1/2" />
-            </GlassPanel>
-            <GlassPanel className="rounded-2xl p-4">
-              <Skeleton className="mb-3 h-10 w-full" />
-              <Skeleton className="mb-2 h-3 w-3/4" />
-              <Skeleton className="h-3 w-1/2" />
-            </GlassPanel>
-            <GlassPanel className="rounded-2xl p-4">
-              <Skeleton className="mb-3 h-10 w-full" />
-              <Skeleton className="mb-2 h-3 w-3/4" />
-              <Skeleton className="h-3 w-1/2" />
-            </GlassPanel>
-          </div>
+        <div className="space-y-2 px-4 py-3">
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-12 w-full" />
         </div>
       ) : vendors.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card px-6 py-10 text-center">
+        <div className="mx-4 mb-3 flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/70 bg-muted/20 px-6 py-8 text-center">
           <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
             <KeyRound className="size-6" />
           </span>
@@ -1300,13 +1422,38 @@ function OcrSettingsPanel({
       )}
 
       {vendors.length > 0 ? (
-        <div className="flex items-center">
+        <div className="flex items-center px-4 py-3">
           <Button variant="secondary" size="sm" onClick={addVendor}>
             <Plus />
             {t("settings.addVendor")}
           </Button>
         </div>
       ) : null}
+
+      {/* Custom prompts for the remote AI vision paths (empty = built-in
+          default). Both are collapsible so the OCR page stays tidy. */}
+      <SubSection
+        label={t("settings.subPrompts")}
+        hint={t("settings.subPromptsHint")}
+      />
+      <Panel>
+        <PromptTextarea
+          title={t("settings.aiOcrPrompt")}
+          description={t("settings.aiOcrPromptDesc")}
+          value={aiOcrPrompt}
+          onChange={onAiOcrPromptChange}
+          placeholder={t("settings.aiOcrPromptPlaceholder")}
+          disabled={loading}
+        />
+        <PromptTextarea
+          title={t("settings.drawTablePrompt")}
+          description={t("settings.drawTablePromptDesc")}
+          value={drawTablePrompt}
+          onChange={onDrawTablePromptChange}
+          placeholder={t("settings.drawTablePromptPlaceholder")}
+          disabled={loading}
+        />
+      </Panel>
     </>
   );
 }
@@ -1672,7 +1819,7 @@ function TextSepSettingsPanel({
   ];
 
   return (
-    <Panel>
+    <Panel className="border-t border-border/60">
       <SettingRow
         label={t("settings.textSeparator")}
         description={t("settings.textSeparatorDesc")}
@@ -1706,7 +1853,7 @@ function TraySettingsPanel({
   const { t } = useI18n();
 
   return (
-    <Panel>
+    <Panel className="border-t border-border/60">
       <SettingRow
         label={t("settings.tray")}
         description={t("settings.trayDesc")}
@@ -1766,16 +1913,16 @@ function UpdateSettingsPanel({
 
   const currentVersion = snapshot?.currentVersion ?? "";
   const available =
-    snapshot?.phase === "available" && snapshot.version ? snapshot.version : null;
+    snapshot?.phase === "available" && snapshot.version
+      ? snapshot.version
+      : null;
 
   return (
     <Panel>
       <SettingRow
         label={t("update.currentVersion")}
         description={
-          available
-            ? t("update.available", { version: available })
-            : undefined
+          available ? t("update.available", { version: available }) : undefined
         }
       >
         <span className="text-sm tabular-nums text-muted-foreground">
@@ -1799,7 +1946,11 @@ function UpdateSettingsPanel({
           label={t("update.skippedLabel")}
           description={`v${skippedVersion}`}
         >
-          <Button variant="outline" size="sm" onClick={() => void clearSkipped()}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void clearSkipped()}
+          >
             {t("update.clearSkipped")}
           </Button>
         </SettingRow>
@@ -1941,7 +2092,9 @@ function ModelsPanel() {
       } else {
         const files = await openFileDialog({
           multiple: true,
-          filters: [{ name: "Model files", extensions: ["mnn", "json", "txt"] }],
+          filters: [
+            { name: "Model files", extensions: ["mnn", "json", "txt"] },
+          ],
         });
         if (files) await importPaths(Array.isArray(files) ? files : [files]);
       }
@@ -1958,7 +2111,7 @@ function ModelsPanel() {
       : null;
 
   return (
-    <div ref={panelRef} className="space-y-2">
+    <div ref={panelRef} className="space-y-2 pb-2">
       <Panel>
         {groups.map((group) => {
           const running = busyGroup === group.id || activeGroup === group.id;
@@ -1966,7 +2119,9 @@ function ModelsPanel() {
             <div key={group.id} className="flex flex-col gap-2 px-4 py-3">
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0 space-y-0.5">
-                  <Label>{t(MODEL_GROUP_KEYS[group.id] ?? "settings.modelFiles")}</Label>
+                  <Label>
+                    {t(MODEL_GROUP_KEYS[group.id] ?? "settings.modelFiles")}
+                  </Label>
                   <p className="truncate text-xs text-muted-foreground">
                     {formatSize(group.totalBytes)} ·{" "}
                     {group.files.map((file) => file.name).join(", ")}
@@ -2013,7 +2168,7 @@ function ModelsPanel() {
 
       <div
         className={cn(
-          "flex flex-col items-center gap-2 rounded-2xl border border-dashed px-4 py-4 text-center transition-colors",
+          "mx-4 flex flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-4 text-center transition-colors",
           dragging ? "border-primary bg-primary/5" : "border-border/60",
         )}
       >
@@ -2601,12 +2756,12 @@ function VendorCard({
   const v = vendor;
   const [open, setOpen] = useState(!vendor.apiKeySet);
   return (
-    <Panel>
+    <div className="mx-4 my-2 overflow-hidden rounded-xl border border-border/70 bg-muted/20">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 select-none"
+        className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/40 select-none"
       >
         <ChevronDown
           className={cn(
@@ -2640,7 +2795,7 @@ function VendorCard({
       </button>
 
       {open ? (
-        <div className="space-y-4 px-4 py-4">
+        <div className="space-y-4 px-3 py-3">
           <div className="flex items-center gap-2">
             <Input
               value={v.name}
@@ -2740,6 +2895,6 @@ function VendorCard({
           </div>
         </div>
       ) : null}
-    </Panel>
+    </div>
   );
 }

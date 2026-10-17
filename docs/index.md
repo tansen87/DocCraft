@@ -189,14 +189,18 @@ and Simplified Chinese - switchable at runtime.
   to follow the system language, switched via a dropdown next to the theme
   toggle; the choice persists in
   `localStorage` and every string goes through a typed translation layer.
-- **Settings page** - sidebar navigation over scroll-synced sections styled as
-  grouped panels with hairline-separated setting rows ("Soft Rows" layout, see
+- **Settings page** - grouped, **text-only** sidebar navigation (识别 /
+  转换 / 外观 / 数据与关于) with a `Ctrl K` filter, over sections rendered as
+  **one card each** with a sticky head and hairline-separated rows ("Soft
+  Rows", see
   [design/00002_settings-ui-redesign.md](./design/00002_settings-ui-redesign.md)):
   vendor/model/key management, OCR mode selector, local-engine caching
   toggle, press-to-record hotkey field, custom AI prompts, layout analysis
-  mode/model selection, paragraph mode, unsaved-changes floating save pill,
-  and responsive collapse for narrow windows. A **usage statistics** card
-  displays local conversion counters.
+  mode/model selection, paragraph mode, and a save bar below the scroll area
+  that reports **how many** settings are pending (hover lists them) - kept away
+  from the window controls in the top-right corner. Below 768 px the sidebar
+  gives way to a section picker. A **usage statistics** card displays local
+  conversion counters.
 - **Config backup & restore** - export all app settings plus OCR vendors
   into one JSON file (API keys excluded by default; including them stores
   plaintext after an explicit warning), and import such a file again:
@@ -310,7 +314,7 @@ doccraft/
 │  │  ├─ pdf-to-md.tsx           # Batch queue + single-file PDF workspace
 │  │  ├─ image-to-md.tsx         # Image → Markdown (OCR) list + merged preview
 │  │  ├─ md-to-xlsx.tsx          # Markdown → Excel batch list + preview
-│  │  └─ settings.tsx            # Settings (grouped-panel layout, usage stats card)
+│  │  └─ settings.tsx            # Settings (grouped text nav + one card per section)
 │  ├─ App.tsx                    # App shell, tab switching (PDF/IMG → MD / MD → XLSX / settings)
 │  ├─ index.css                  # Tailwind v4 + design tokens
 │  └─ main.tsx                   # Entry; routes `snip-*` windows to the overlay
