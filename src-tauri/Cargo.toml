@@ -1,6 +1,6 @@
 [package]
 name = "doccraft"
-version = "0.3.0"
+version = "0.3.1"
 description = "DocCraft document conversion desktop tool"
 authors = ["tansen"]
 edition = "2024"
