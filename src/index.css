@@ -375,3 +375,22 @@ body,
 .img-list-scroll [data-radix-scroll-area-viewport] > div {
   display: block !important;
 }
+
+/* Settings search: brief tint on the row a result jumped to, so the eye can
+   find it after the scroll settles. Applied/removed from JS. */
+@keyframes doccraft-row-flash {
+  0% {
+    background-color: color-mix(in srgb, var(--primary) 0%, transparent);
+  }
+  15%,
+  70% {
+    background-color: color-mix(in srgb, var(--primary) 12%, transparent);
+  }
+  100% {
+    background-color: color-mix(in srgb, var(--primary) 0%, transparent);
+  }
+}
+.doccraft-flash {
+  border-radius: var(--radius-lg);
+  animation: doccraft-row-flash 1.6s ease-out;
+}

@@ -189,8 +189,12 @@ and Simplified Chinese - switchable at runtime.
   to follow the system language, switched via a dropdown next to the theme
   toggle; the choice persists in
   `localStorage` and every string goes through a typed translation layer.
-- **Settings page** - grouped, **text-only** sidebar navigation (识别 /
-  转换 / 外观 / 数据与关于) with a `Ctrl K` filter, over sections rendered as
+- **Settings page** - flat, **text-only** sidebar navigation (one entry per
+  card, in card order) with a `Ctrl K` filter that matches the settings' own
+  text - row labels, descriptions and the current option values inside the
+  controls - not just the eleven card titles; results are listed as
+  `card › row` and jumping to one scrolls the row into view and highlights it
+  briefly. Sections are rendered as
   **one card each** with a sticky head and hairline-separated rows ("Soft
   Rows", see
   [design/00002_settings-ui-redesign.md](./design/00002_settings-ui-redesign.md)):
@@ -314,7 +318,7 @@ doccraft/
 │  │  ├─ pdf-to-md.tsx           # Batch queue + single-file PDF workspace
 │  │  ├─ image-to-md.tsx         # Image → Markdown (OCR) list + merged preview
 │  │  ├─ md-to-xlsx.tsx          # Markdown → Excel batch list + preview
-│  │  └─ settings.tsx            # Settings (grouped text nav + one card per section)
+│  │  └─ settings.tsx            # Settings (flat text nav + detail-level filter, one card per section)
 │  ├─ App.tsx                    # App shell, tab switching (PDF/IMG → MD / MD → XLSX / settings)
 │  ├─ index.css                  # Tailwind v4 + design tokens
 │  └─ main.tsx                   # Entry; routes `snip-*` windows to the overlay

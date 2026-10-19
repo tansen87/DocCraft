@@ -109,54 +109,50 @@ type SettingsSection =
   | "update";
 
 /**
- * Sidebar navigation, grouped by what the user is trying to do rather than by
- * the order the sections happen to be rendered in. Text only (no icons): the
- * group labels and the gaps between groups carry the hierarchy, which keeps
- * eleven entries scannable without adding visual noise.
+ * Sidebar navigation: one flat list of the cards, in the order they are
+ * rendered top to bottom, so a click always lands on the card the list implies.
+ * Text only (no icons) - eleven entries stay scannable without adding visual
+ * noise.
  */
-const NAV_GROUPS: {
-  id: string;
-  labelKey: TranslationKey;
-  sections: { id: SettingsSection; labelKey: TranslationKey }[];
-}[] = [
-  {
-    id: "recognize",
-    labelKey: "settings.navGroup.recognize",
-    sections: [
-      // Model files first: the local engine can only run once they exist.
-      { id: "models", labelKey: "settings.modelFiles" },
-      { id: "ocr", labelKey: "settings.ocr" },
-      // Screenshot recognition is just another OCR entry point.
-      { id: "snip", labelKey: "snip.capture" },
-    ],
-  },
-  {
-    id: "convert",
-    labelKey: "settings.navGroup.convert",
-    sections: [
-      { id: "textSep", labelKey: "settings.textAndLineBreak" },
-      { id: "draw", labelKey: "settings.drawTable" },
-      { id: "excel", labelKey: "settings.excel" },
-      { id: "threads", labelKey: "settings.threads" },
-    ],
-  },
-  {
-    id: "appearance",
-    labelKey: "settings.navGroup.appearance",
-    sections: [{ id: "appearance", labelKey: "settings.appearance" }],
-  },
-  {
-    id: "data",
-    labelKey: "settings.navGroup.data",
-    sections: [
-      { id: "backup", labelKey: "settings.backup" },
-      { id: "stats", labelKey: "settings.stats" },
-      { id: "update", labelKey: "settings.update" },
-    ],
-  },
+const SECTIONS: { id: SettingsSection; labelKey: TranslationKey }[] = [
+  // Model files first: the local engine can only run once they exist.
+  { id: "models", labelKey: "settings.modelFiles" },
+  { id: "ocr", labelKey: "settings.ocr" },
+  // Screenshot recognition is just another OCR entry point.
+  { id: "snip", labelKey: "snip.capture" },
+  { id: "textSep", labelKey: "settings.textAndLineBreak" },
+  { id: "draw", labelKey: "settings.drawTable" },
+  { id: "excel", labelKey: "settings.excel" },
+  { id: "threads", labelKey: "settings.threads" },
+  { id: "backup", labelKey: "settings.backup" },
+  { id: "stats", labelKey: "settings.stats" },
+  { id: "appearance", labelKey: "settings.appearance" },
+  { id: "update", labelKey: "settings.update" },
 ];
 
-const SECTIONS = NAV_GROUPS.flatMap((group) => group.sections);
+/** Height of a card's sticky head; a jumped-to row is parked below it. */
+const STICKY_HEAD_OFFSET = 56;
+
+/** How long a jumped-to row stays highlighted (ms). */
+const FLASH_MS = 1600;
+
+/**
+ * One matched row of a settings card. The element is resolved while the index
+ * is built, so jumping needs no stable id per row.
+ */
+interface SearchHit {
+  el: HTMLElement;
+  /** The row's own label (never the description). */
+  label: string;
+  /** The matched description, when the label itself is not the match. */
+  detail?: string;
+}
+
+interface SearchGroup {
+  id: SettingsSection;
+  label: string;
+  hits: SearchHit[];
+}
 
 /**
  * Every section is one card. The sticky head lives inside it, so the card must
@@ -234,6 +230,8 @@ export function SettingsView() {
   /** Sidebar filter; Ctrl K focuses it. */
   const [query, setQuery] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
+  /** The scrolling column of cards; see `scrollViewport()`. */
+  const contentRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [vendors, setVendors] = useState<VendorForm[]>([]);
   const [ocrMode, setOcrMode] = useState<OcrMode>("disabled");
@@ -278,6 +276,8 @@ export function SettingsView() {
   const [usageStats, setUsageStats] = useState<UsageStats | null>(null);
   /** Bumped after a config import so the load effect re-runs. */
   const [reloadKey, setReloadKey] = useState(0);
+  /** Cards + matched rows for the current filter (empty when not searching). */
+  const [searchGroups, setSearchGroups] = useState<SearchGroup[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -441,10 +441,14 @@ export function SettingsView() {
     }
   }
 
-  /** The scroll container that holds the section cards (Radix viewport). */
+  /**
+   * The scroll container that holds the section cards (Radix viewport). Scoped
+   * to the cards column: the sidebar is a `ScrollArea` too, so "the first
+   * viewport in the page" is no longer the right one.
+   */
   function scrollViewport(): HTMLElement | null {
     return (
-      containerRef.current?.querySelector<HTMLElement>(
+      contentRef.current?.querySelector<HTMLElement>(
         '[data-slot="scroll-area-viewport"]',
       ) ?? null
     );
@@ -526,6 +530,31 @@ export function SettingsView() {
     vp.scrollTo({ top: Math.max(top - 4, 0), behavior: "smooth" });
   }
 
+  /** Briefly tint a row so the eye can find it after a search jump. */
+  function flash(el: HTMLElement) {
+    el.classList.remove("doccraft-flash");
+    // Reflow: a repeat click must restart the animation, not ignore it.
+    void el.offsetWidth;
+    el.classList.add("doccraft-flash");
+    window.setTimeout(() => el.classList.remove("doccraft-flash"), FLASH_MS);
+  }
+
+  /** Jump to a search hit: the section head, or one row inside it. */
+  function openHit(groupId: SettingsSection, hit?: SearchHit) {
+    setSection(groupId);
+    const vp = scrollViewport();
+    const el = hit?.el ?? document.getElementById(`settings-${groupId}`);
+    if (!vp || !el) return;
+    const top =
+      el.getBoundingClientRect().top -
+      vp.getBoundingClientRect().top +
+      vp.scrollTop;
+    // Rows sit under the card's sticky head, so they need the extra offset.
+    const offset = hit ? STICKY_HEAD_OFFSET : 4;
+    vp.scrollTo({ top: Math.max(top - offset, 0), behavior: "smooth" });
+    if (hit) flash(hit.el);
+  }
+
   /** Throw away unsaved edits by re-running the load pipeline. */
   function discardChanges() {
     setDirtyFields(new Set());
@@ -533,14 +562,53 @@ export function SettingsView() {
   }
 
   const needle = query.trim().toLowerCase();
-  const visibleGroups = NAV_GROUPS.map((group) => ({
-    ...group,
-    sections: needle
-      ? group.sections.filter((s) =>
-          t(s.labelKey).toLowerCase().includes(needle),
-        )
-      : group.sections,
-  })).filter((group) => group.sections.length > 0);
+
+  /**
+   * The filter matches the settings' own text - row labels, descriptions and
+   * the current option values inside the controls - not just the eleven card
+   * titles, so "provider", "guided" or a hotkey name all find their row. The
+   * index is read off the rendered cards: every string already runs through
+   * `t()`, so both languages are covered without a second dictionary, and the
+   * cards hold the live values (a select's *current* label, not its options).
+   * Rebuilt whenever the filter, the language or the loaded state changes.
+   */
+  useEffect(() => {
+    const needleNow = query.trim().toLowerCase();
+    if (!needleNow) {
+      setSearchGroups([]);
+      return;
+    }
+    const groups: SearchGroup[] = [];
+    for (const s of SECTIONS) {
+      const card = document.getElementById(`settings-${s.id}`);
+      if (!card) continue;
+      const head = card.querySelector<HTMLElement>("[data-setting-head]");
+      const title = head?.querySelector("h2")?.textContent?.trim() || t(s.labelKey);
+      const headHit = (head?.textContent ?? "")
+        .toLowerCase()
+        .includes(needleNow);
+      const hits: SearchHit[] = [];
+      card.querySelectorAll<HTMLElement>("[data-setting-row]").forEach((el) => {
+        if (!(el.textContent ?? "").toLowerCase().includes(needleNow)) return;
+        const label = el.dataset.settingLabel?.trim() || el.textContent?.trim() || "";
+        const description = el.dataset.settingDesc?.trim() ?? "";
+        hits.push({
+          el,
+          label,
+          // Only spell out the description when it is what matched, so the
+          // result list answers "why is this here?" in one line.
+          detail:
+            description && !label.toLowerCase().includes(needleNow)
+              ? description
+              : undefined,
+        });
+      });
+      if (headHit || hits.length > 0) {
+        groups.push({ id: s.id, label: title, hits });
+      }
+    }
+    setSearchGroups(groups);
+  }, [query, t, loading]);
 
   /** What the save tooltip lists: the changed settings, in change order. */
   const changedLabels = Array.from(dirtyFields).map((field) =>
@@ -555,7 +623,8 @@ export function SettingsView() {
       ref={containerRef}
       className="relative flex w-full min-h-0 flex-1 gap-3"
     >
-      {/* Text-only navigation: group labels + spacing carry the hierarchy. */}
+      {/* Text-only navigation: a flat list of the cards, or - while filtering -
+          the matching rows of those cards. */}
       <aside className="hidden w-[188px] shrink-0 flex-col gap-3 md:flex">
         <input
           ref={searchRef}
@@ -565,13 +634,50 @@ export function SettingsView() {
           aria-label={t("settings.search")}
           className="h-8 w-full shrink-0 rounded-lg border border-border/70 bg-card/60 px-2.5 text-[13px] outline-none transition-[box-shadow,border-color] placeholder:text-muted-foreground/80 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
         />
-        <nav className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-          {visibleGroups.map((group) => (
-            <div key={group.id} className="flex flex-col gap-0.5">
-              <span className="px-2.5 pb-1 text-[11px] font-semibold tracking-[0.02em] text-muted-foreground/80">
-                {t(group.labelKey)}
-              </span>
-              {group.sections.map((s) => {
+        {needle ? (
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="flex w-full flex-col gap-3 pb-2 pr-1">
+              {searchGroups.map((group) => (
+                <div key={group.id} className="flex flex-col gap-0.5">
+                  {/* Card title: jumps to the top of the card. */}
+                  <button
+                    type="button"
+                    onClick={() => openHit(group.id)}
+                    className="rounded-md px-2.5 py-0.5 text-left text-[11px] font-semibold tracking-[0.02em] text-muted-foreground/80 transition-colors hover:text-foreground"
+                  >
+                    {group.label}
+                  </button>
+                  {/* Matched rows, indented one level under their card. */}
+                  {group.hits.map((hit, i) => (
+                    <button
+                      key={`${group.id}-${i}`}
+                      type="button"
+                      onClick={() => openHit(group.id, hit)}
+                      className="group flex flex-col gap-0.5 rounded-lg py-1 pl-5 pr-2 text-left transition-colors hover:bg-muted/60"
+                    >
+                      <span className="truncate text-[13px] font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+                        {hit.label}
+                      </span>
+                      {hit.detail ? (
+                        <span className="truncate text-[11px] text-muted-foreground/70">
+                          {hit.detail}
+                        </span>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              ))}
+              {searchGroups.length === 0 ? (
+                <p className="px-2.5 py-1 text-xs text-muted-foreground">
+                  {t("settings.searchEmpty")}
+                </p>
+              ) : null}
+            </div>
+          </ScrollArea>
+        ) : (
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="flex w-full flex-col gap-0.5 pb-2 pr-1">
+              {SECTIONS.map((s) => {
                 const active = section === s.id;
                 return (
                   <button
@@ -591,16 +697,14 @@ export function SettingsView() {
                 );
               })}
             </div>
-          ))}
-          {visibleGroups.length === 0 ? (
-            <p className="px-2.5 py-1 text-xs text-muted-foreground">
-              {t("settings.searchEmpty")}
-            </p>
-          ) : null}
-        </nav>
+          </ScrollArea>
+        )}
       </aside>
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+      <div
+        ref={contentRef}
+        className="flex min-h-0 min-w-0 flex-1 flex-col gap-3"
+      >
         {/* No page title here: the window's tab strip already says 设置, and a
             second copy only ate vertical space. From md up the sidebar owns
             navigation, so the head slot is empty; below md it holds the
@@ -983,6 +1087,9 @@ function SubSection({
 }) {
   return (
     <div
+      data-setting-row
+      data-setting-label={label}
+      data-setting-desc={hint}
       className={cn(
         "flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-4 pb-1 pt-3",
         !first && "border-t border-border/60",
@@ -998,7 +1105,10 @@ function SubSection({
   );
 }
 
-/** One settings row: label + description on the left, control on the right. */
+/**
+ * One settings row: label + description on the left, control on the right.
+ * `data-setting-row` / `-label` / `-desc` mark it for the settings filter.
+ */
 function SettingRow({
   label,
   description,
@@ -1011,7 +1121,12 @@ function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-x-6">
+    <div
+      data-setting-row
+      data-setting-label={label}
+      data-setting-desc={description}
+      className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-x-6"
+    >
       <div className="min-w-0 space-y-0.5">
         <Label htmlFor={htmlFor}>{label}</Label>
         {description ? (
@@ -1033,7 +1148,12 @@ function SectionHeader({ title, hint }: { title: string; hint?: string }) {
     // Solid background, no backdrop-filter: a sticky band that samples the
     // rows scrolling underneath needs a compositing pass this WebView already
     // does for the window glass, and a solid head is the conventional look.
-    <div className="sticky top-0 z-10 rounded-t-2xl border-b border-border/60 bg-card px-4 py-2.5">
+    // `data-setting-head` marks the block the settings filter reads the card
+    // title and summary off.
+    <div
+      data-setting-head
+      className="sticky top-0 z-10 rounded-t-2xl border-b border-border/60 bg-card px-4 py-2.5"
+    >
       <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
       {hint ? (
         <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
@@ -1480,7 +1600,12 @@ function PromptTextarea({
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   return (
-    <div className="px-4 py-3">
+    <div
+      data-setting-row
+      data-setting-label={title}
+      data-setting-desc={description}
+      className="px-4 py-3"
+    >
       <button
         type="button"
         onClick={() => !disabled && setOpen((o) => !o)}
@@ -2116,7 +2241,14 @@ function ModelsPanel() {
         {groups.map((group) => {
           const running = busyGroup === group.id || activeGroup === group.id;
           return (
-            <div key={group.id} className="flex flex-col gap-2 px-4 py-3">
+            <div
+              key={group.id}
+              data-setting-row
+              data-setting-label={t(
+                MODEL_GROUP_KEYS[group.id] ?? "settings.modelFiles",
+              )}
+              className="flex flex-col gap-2 px-4 py-3"
+            >
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0 space-y-0.5">
                   <Label>
