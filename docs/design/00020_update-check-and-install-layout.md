@@ -222,7 +222,7 @@ pub struct UpdateSnapshot {
 
 ; 把 $INSTDIR 规范化为 <选定路径>\DocCraft；已是 …\DocCraft 时不再追加（幂等）。
 Function DocCraftNormalizeInstDir
-  StrCpy $R0 "$INSTDIR" -9                       ; 取尾部 9 个字符（"\DocCraft"）
+  StrCpy $R0 "$INSTDIR" "" -9                    ; 取尾部 9 个字符（"\DocCraft"）
   StrCmp $R0 "\${DOCCRAFT_SUBDIR}" done          ; 已带后缀 → 直接返回
   StrCpy $INSTDIR "$INSTDIR\${DOCCRAFT_SUBDIR}"
   done:

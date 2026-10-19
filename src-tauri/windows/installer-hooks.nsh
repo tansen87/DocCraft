@@ -26,8 +26,13 @@
 
 !macro NSIS_HOOK_PREINSTALL
   ; ── 1) normalise $INSTDIR to <chosen>\DocCraft ─────────────────────────────
-  ; "\DocCraft" is 9 characters long.
-  StrCpy $R0 "$INSTDIR" -9
+  ; "\DocCraft" is 9 characters long. `StrCpy` takes (maxlen, start_offset):
+  ; an empty maxlen keeps the whole string and a *negative start offset* counts
+  ; from the end, so the fourth parameter is what selects the trailing
+  ; "\DocCraft". Passing -9 as the third parameter instead would *truncate* the
+  ; last 9 characters (yielding the parent directory), which never matches the
+  ; suffix below and makes every upgrade append `\DocCraft` again.
+  StrCpy $R0 "$INSTDIR" "" -9
   StrCmp $R0 "\${DOCCRAFT_SUBDIR}" doccraft_norm_done
     StrCpy $INSTDIR "$INSTDIR\${DOCCRAFT_SUBDIR}"
   doccraft_norm_done:
