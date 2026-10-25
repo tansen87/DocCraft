@@ -114,6 +114,56 @@ const EMPTY_DRAW_STATE: PageDrawState = {
   mergeColumns: [],
 };
 
+/** Column boundaries on the canvas: `[0, ...sorted vertical separators, width]`. */
+function columnBoundaries(verticalLines: DrawLine[], width: number): number[] {
+  const xs = verticalLines
+    .map((line) => line.canvasValue)
+    .sort((a, b) => a - b);
+  return [0, ...xs, width];
+}
+
+/**
+ * Re-map merge-column indices after the vertical separators change.
+ *
+ * `mergeColumns` stores positional (0-based, left→right) column indices, so
+ * inserting, removing or dragging a vertical separator shifts every column on
+ * its right - a stored index would then highlight a different column. Re-derive
+ * each pick from the merged column's own left boundary, or - when that boundary
+ * was removed / moved away - from the new column still covering the region's
+ * centre, so the highlight stays on the same part of the page.
+ */
+function remapMergeColumns(
+  prevLines: DrawLine[],
+  nextLines: DrawLine[],
+  width: number,
+  mergeColumns: number[],
+): number[] {
+  if (mergeColumns.length === 0) return mergeColumns;
+  const prevBounds = columnBoundaries(prevLines, width);
+  const nextBounds = columnBoundaries(nextLines, width);
+  const nextColCount = Math.max(0, nextBounds.length - 1);
+  const remapped = new Set<number>();
+  for (const col of mergeColumns) {
+    if (col < 0 || col >= prevBounds.length - 1) continue;
+    const left = prevBounds[col];
+    const right = prevBounds[col + 1];
+    let target = nextBounds.indexOf(left);
+    if (target < 0 || target >= nextColCount) {
+      // The left boundary vanished: keep the new column covering the centre.
+      const mid = (left + right) / 2;
+      target = -1;
+      for (let i = 0; i < nextColCount; i++) {
+        if (mid >= nextBounds[i] && mid <= nextBounds[i + 1]) {
+          target = i;
+          break;
+        }
+      }
+    }
+    if (target >= 0 && target < nextColCount) remapped.add(target);
+  }
+  return Array.from(remapped).sort((a, b) => a - b);
+}
+
 /** Render extracted tables as GFM markdown, prefixed with `<!-- Page N -->` markers. */
 function buildTablesMarkdown(
   tables: MdTable[],
@@ -385,45 +435,83 @@ export function DrawTablePanel({
 
   const handleLineAdd = useCallback(
     (line: DrawLine) => {
-      const newState =
-        line.type === "vertical"
-          ? { ...drawState, verticalLines: [...drawState.verticalLines, line] }
-          : {
-              ...drawState,
-              horizontalLines: [...drawState.horizontalLines, line],
-            };
-      setDrawState(newState);
-      pushHistory(newState);
-    },
-    [drawState, pushHistory],
-  );
-
-  const handleLineRemove = useCallback(
-    (id: string) => {
+      if (line.type === "vertical") {
+        const verticalLines = [...drawState.verticalLines, line];
+        const newState: PageDrawState = {
+          ...drawState,
+          verticalLines,
+          // Adding a separator shifts the columns to its right; remap the
+          // picked merge columns so the highlight stays on the same region.
+          mergeColumns: remapMergeColumns(
+            drawState.verticalLines,
+            verticalLines,
+            canvasWidth,
+            drawState.mergeColumns,
+          ),
+        };
+        setDrawState(newState);
+        pushHistory(newState);
+        return;
+      }
       const newState: PageDrawState = {
-        verticalLines: drawState.verticalLines.filter((l) => l.id !== id),
-        horizontalLines: drawState.horizontalLines.filter((l) => l.id !== id),
-        mergeColumns: drawState.mergeColumns,
+        ...drawState,
+        horizontalLines: [...drawState.horizontalLines, line],
       };
       setDrawState(newState);
       pushHistory(newState);
     },
-    [drawState, pushHistory],
+    [drawState, pushHistory, canvasWidth],
+  );
+
+  const handleLineRemove = useCallback(
+    (id: string) => {
+      const removedVertical = drawState.verticalLines.some((l) => l.id === id);
+      const verticalLines = drawState.verticalLines.filter((l) => l.id !== id);
+      const newState: PageDrawState = {
+        verticalLines,
+        horizontalLines: drawState.horizontalLines.filter((l) => l.id !== id),
+        mergeColumns: removedVertical
+          ? remapMergeColumns(
+              drawState.verticalLines,
+              verticalLines,
+              canvasWidth,
+              drawState.mergeColumns,
+            )
+          : drawState.mergeColumns,
+      };
+      setDrawState(newState);
+      pushHistory(newState);
+    },
+    [drawState, pushHistory, canvasWidth],
   );
 
   const handleLineUpdate = useCallback(
     (id: string, canvasValue: number, pdfValue: number) => {
-      setDrawState((prev) => ({
-        verticalLines: prev.verticalLines.map((l) =>
-          l.id === id ? { ...l, canvasValue, pdfValue } : l,
-        ),
-        horizontalLines: prev.horizontalLines.map((l) =>
-          l.id === id ? { ...l, canvasValue, pdfValue } : l,
-        ),
-        mergeColumns: prev.mergeColumns,
-      }));
+      setDrawState((prev) => {
+        const isVertical = prev.verticalLines.some((l) => l.id === id);
+        const verticalLines = isVertical
+          ? prev.verticalLines.map((l) =>
+              l.id === id ? { ...l, canvasValue, pdfValue } : l,
+            )
+          : prev.verticalLines;
+        return {
+          verticalLines,
+          horizontalLines: prev.horizontalLines.map((l) =>
+            l.id === id ? { ...l, canvasValue, pdfValue } : l,
+          ),
+          // Dragging a separator across another reorders the columns too.
+          mergeColumns: isVertical
+            ? remapMergeColumns(
+                prev.verticalLines,
+                verticalLines,
+                canvasWidth,
+                prev.mergeColumns,
+              )
+            : prev.mergeColumns,
+        };
+      });
     },
-    [],
+    [canvasWidth],
   );
 
   const handleUndo = useCallback(() => {
