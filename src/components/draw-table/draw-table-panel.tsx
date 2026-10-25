@@ -561,24 +561,31 @@ export function DrawTablePanel({
   }, []);
 
   /**
-   * Toggle whether the column under a canvas click merges its wrapped lines.
+   * Add or remove the merge flag of the column under a canvas click. A left
+   * click (`remove = false`) adds the column, a right click drops it.
    * `canvasX` is in canvas (CSS) pixels, matching `DrawLine.canvasValue`.
    */
-  const toggleMergeColumn = useCallback(
-    (canvasX: number) => {
-      const sortedV = drawState.verticalLines
-        .map((l) => l.canvasValue)
-        .sort((a, b) => a - b);
-      // Column index = number of vertical separators left of the click.
-      const col = sortedV.filter((v) => v < canvasX).length;
-      setDrawState((prev) => ({
-        ...prev,
-        mergeColumns: prev.mergeColumns.includes(col)
-          ? prev.mergeColumns.filter((c) => c !== col)
-          : [...prev.mergeColumns, col],
-      }));
+  const handleMergeClick = useCallback(
+    (canvasX: number, remove: boolean) => {
+      setDrawState((prev) => {
+        const sortedV = prev.verticalLines
+          .map((l) => l.canvasValue)
+          .sort((a, b) => a - b);
+        // Column index = number of vertical separators left of the click.
+        const col = sortedV.filter((v) => v < canvasX).length;
+        const merged = prev.mergeColumns.includes(col);
+        if (remove) {
+          if (!merged) return prev;
+          return {
+            ...prev,
+            mergeColumns: prev.mergeColumns.filter((c) => c !== col),
+          };
+        }
+        if (merged) return prev;
+        return { ...prev, mergeColumns: [...prev.mergeColumns, col] };
+      });
     },
-    [drawState.verticalLines],
+    [],
   );
 
   // If the exclusion editor is closed (Esc / toolbar toggle) while the
@@ -851,7 +858,7 @@ export function DrawTablePanel({
               verticalLines={drawState.verticalLines}
               horizontalLines={drawState.horizontalLines}
               mergeColumns={drawState.mergeColumns}
-              onMergeToggle={toggleMergeColumn}
+              onMergeToggle={handleMergeClick}
               onLineAdd={handleLineAdd}
               onLineRemove={handleLineRemove}
               onLineUpdate={handleLineUpdate}

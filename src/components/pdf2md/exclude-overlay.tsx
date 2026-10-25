@@ -59,16 +59,6 @@ export function ExcludeOverlay({
   const { t } = useI18n();
   const svgRef = useRef<SVGSVGElement>(null);
   const dragRef = useRef<DragState | null>(null);
-  /**
-   * Last pointerdown on a rect, used to detect double-clicks. Native
-   * `dblclick` on the `<g>` is unreliable here: `setPointerCapture` redirects
-   * compatibility mouse events to the SVG root, so we detect the double-click
-   * from the second `pointerdown` itself.
-   */
-  const lastRectDownRef = useRef<{ index: number; time: number }>({
-    index: -1,
-    time: 0,
-  });
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
@@ -130,7 +120,8 @@ export function ExcludeOverlay({
   };
 
   const handleBackgroundDown = (e: React.PointerEvent) => {
-    if (disabled) return;
+    // Right-click is reserved for deleting a rect, never for drawing one.
+    if (disabled || e.button !== 0) return;
     const { x, y } = localPoint(e);
     setSelected(null);
     beginDrag(e, {
@@ -145,19 +136,9 @@ export function ExcludeOverlay({
   };
 
   const handleRectDown = (e: React.PointerEvent, index: number) => {
-    if (disabled) return;
-    const now = Date.now();
-    const last = lastRectDownRef.current;
-    // Second press on the same rect within the double-click window deletes it.
-    if (last.index === index && now - last.time < 300) {
-      e.stopPropagation();
-      e.preventDefault();
-      lastRectDownRef.current = { index: -1, time: 0 };
-      commit(rects.filter((_, i) => i !== index));
-      setSelected(null);
-      return;
-    }
-    lastRectDownRef.current = { index, time: now };
+    // Only a left press moves the rect; the right button deletes instead
+    // (see `handleRectContextMenu`).
+    if (disabled || e.button !== 0) return;
     const { x, y } = localPoint(e);
     setSelected(index);
     beginDrag(e, {
@@ -170,12 +151,20 @@ export function ExcludeOverlay({
     });
   };
 
+  /** Right-click on a rect deletes it (double-click was too easy to hit). */
+  const handleRectContextMenu = (e: React.MouseEvent, index: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    commit(rects.filter((_, i) => i !== index));
+    setSelected(null);
+  };
+
   const handleHandleDown = (
     e: React.PointerEvent,
     index: number,
     corner: Corner,
   ) => {
-    if (disabled) return;
+    if (disabled || e.button !== 0) return;
     const { x, y } = localPoint(e);
     setSelected(index);
     beginDrag(e, {
@@ -318,6 +307,8 @@ export function ExcludeOverlay({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
+      // Keep the browser/WebView context menu out of the drawing surface.
+      onContextMenu={(e) => e.preventDefault()}
     >
       <defs>
         <pattern
@@ -355,6 +346,7 @@ export function ExcludeOverlay({
             key={index}
             style={{ cursor: disabled ? "default" : "move" }}
             onPointerDown={(e) => handleRectDown(e, index)}
+            onContextMenu={(e) => handleRectContextMenu(e, index)}
           >
             <rect
               x={box.x}

@@ -13,8 +13,11 @@ interface CanvasOverlayProps {
   horizontalLines: DrawLine[];
   /** Column indices (0-based) whose wrapped lines merge (00015 guided). */
   mergeColumns?: number[];
-  /** Called when a merge column is clicked (mode === "merge"). */
-  onMergeToggle?: (canvasX: number) => void;
+  /**
+   * Called when a column is clicked in merge mode (mode === "merge"). A left
+   * click adds the column, a right click (`remove`) drops it.
+   */
+  onMergeToggle?: (canvasX: number, remove: boolean) => void;
   /** Called when a new line is added */
   onLineAdd: (line: DrawLine) => void;
   /** Called when a line is removed */
@@ -62,6 +65,8 @@ export function CanvasOverlay({
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<SVGSVGElement>) => {
+      // Right-click is reserved for deleting; only the left button adds.
+      if (e.button !== 0) return;
       const svg = svgRef.current;
       if (!svg) return;
       const rect = svg.getBoundingClientRect();
@@ -69,7 +74,7 @@ export function CanvasOverlay({
       const canvasY = e.clientY - rect.top;
 
       if (mode === "merge") {
-        onMergeToggle?.(canvasX);
+        onMergeToggle?.(canvasX, false);
         return;
       }
       if (mode === "vertical") {
@@ -126,16 +131,37 @@ export function CanvasOverlay({
   }, []);
 
   const handleLineMouseDown = useCallback((e: React.MouseEvent, id: string) => {
+    // Only a left press starts dragging; the right button deletes instead.
+    if (e.button !== 0) return;
     e.stopPropagation();
     setDragging(id);
   }, []);
 
-  const handleLineDoubleClick = useCallback(
+  /** Right-click on a line deletes it (double-click was too easy to hit). */
+  const handleLineContextMenu = useCallback(
     (e: React.MouseEvent, id: string) => {
+      e.preventDefault();
       e.stopPropagation();
       onLineRemove(id);
     },
     [onLineRemove],
+  );
+
+  /**
+   * Right-click on the surface removes the merge flag of the column under the
+   * pointer while the merge tool is active; elsewhere it just suppresses the
+   * browser context menu.
+   */
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent<SVGSVGElement>) => {
+      e.preventDefault();
+      if (mode !== "merge") return;
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      onMergeToggle?.(e.clientX - rect.left, true);
+    },
+    [mode, onMergeToggle],
   );
 
   const { pdfX: mousePdfX, pdfY: mousePdfY } = mousePos
@@ -150,6 +176,7 @@ export function CanvasOverlay({
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
+      onContextMenu={handleContextMenu}
       onMouseLeave={() => {
         setDragging(null);
         setMousePos(null);
@@ -199,7 +226,7 @@ export function CanvasOverlay({
           <g
             key={line.id}
             onMouseDown={(e) => handleLineMouseDown(e, line.id)}
-            onDoubleClick={(e) => handleLineDoubleClick(e, line.id)}
+            onContextMenu={(e) => handleLineContextMenu(e, line.id)}
             style={{ cursor: "grab" }}
           >
             <line
@@ -232,7 +259,7 @@ export function CanvasOverlay({
           <g
             key={line.id}
             onMouseDown={(e) => handleLineMouseDown(e, line.id)}
-            onDoubleClick={(e) => handleLineDoubleClick(e, line.id)}
+            onContextMenu={(e) => handleLineContextMenu(e, line.id)}
             style={{ cursor: "grab" }}
           >
             <line

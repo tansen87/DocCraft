@@ -292,7 +292,7 @@ pub fn rebuild_pages_excluding(
   这样复用现有的虚拟化渲染(IntersectionObserver + 按需 render),不必新写预览器。
 - 新组件 `src/components/pdf2md/exclude-overlay.tsx`(SVG,与 `canvas-overlay.tsx` 同构):
   - 按下拖拽 → 松手生成矩形(`crypto.randomUUID()`,同 `canvas-overlay.tsx:65`);
-  - 单击选中 / 拖拽移动 / 八向 resize handle;双击或 `Delete`/`Backspace` 删除;
+  - 单击选中 / 拖拽移动 / 八向 resize handle;右键或 `Delete`/`Backspace` 删除;
   - `Esc` 退出排除模式;
   - 小于阈值(~8pt)的拖拽视为误操作丢弃;
   - 视觉:琥珀色 `stroke-dasharray` + 12% 填充 + 45° 斜线 `pattern`,与 draw-table 的红/蓝线条区分;
@@ -396,7 +396,7 @@ notice.tableDegraded("{count}") / toast.excludeApplied
 3. 无矩形时,转换结果与改动前**逐字符一致**(回归基线)。
 4. 矩形跨页到更小页面时被正确裁剪,不越界、不抛错。
 5. 混合纸张 + 横竖混排文档不产生坐标偏移(对照手动框选位置与排除结果)。
-6. 拖拽/移动/resize/删除/双击/Esc 交互流畅,未选中矩形不干扰页面滚动。
+6. 拖拽/移动/resize/删除/右键/Esc 交互流畅,未选中矩形不干扰页面滚动。
 7. 关闭 OCR(`ocrMode = disabled`)时,`convert_pdf` 路径同样生效。
 8. `cargo test` 新增用例全绿;前端 `tsc` + 构建通过。
 
