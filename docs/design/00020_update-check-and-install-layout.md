@@ -260,7 +260,8 @@ FunctionEnd
 
 > 上面的代码是**设计示意**。实现见
 > [`src-tauri/windows/installer-hooks.nsh`](../../src-tauri/windows/installer-hooks.nsh)：
-> 全部内联在 `NSIS_HOOK_PREINSTALL` 宏里（不定义辅助函数，避免 NSIS 的栈式传参），
+> 除一个"路径末段是否等于 `DocCraft`"的辅助函数（`DocCraftPathEndsWithSubdir`，
+> 输入 `$R0`、输出 `$R1`）外，全部内联在 `NSIS_HOOK_PREINSTALL` 宏里，
 > 系统位置校验用"前缀 + 大小写不敏感 `StrCmp`"完成，提示文案为 **ASCII 英文**
 > （NSIS 按安装程序代码页读取 `!include` 文件，含非 ASCII 文本需要带 BOM 的
 > include 才能正常显示，属另一项独立改动）。
@@ -272,9 +273,16 @@ FunctionEnd
 - **注册表/卸载器自动正确**：`MANUPRODUCTKEY`、`InstallLocation`、`UninstallString`
   都在钩子之后写入，记录的是最终路径，无需额外修补。
 - **幂等**：升级/复装时 `RestorePreviousInstallLocation` 先把 `$INSTDIR` 恢复成注册表里的
-  `…\DocCraft`，尾部比较会命中 `done` 分支，不会出现 `DocCraft\DocCraft`。
-- 目录页返回的路径不带尾部反斜杠（仅盘根 `D:\` 例外，而盘根会被系统位置校验拒绝），
-  因此规范化函数不需要额外的反斜杠裁剪逻辑。
+  `…\DocCraft`，尾段比较命中"已带后缀"分支，不会出现 `DocCraft\DocCraft`。
+- **折叠历史嵌套**：≤0.3.1 的安装器会追加出 `…\DocCraft\DocCraft`，且升级是"原地"的，
+  因此钩子先把多出来的层级逐层折叠回一层：先把内层 `data/`（设置 + DPAPI 密钥）与
+  `models/` 重命名到外层，成功才切换 `$INSTDIR`；任一步失败则放弃折叠、原地升级
+  （路径难看无害，丢用户设置有害）。折叠后由 `NSIS_HOOK_POSTINSTALL` 重指桌面/开始菜单
+  快捷方式（`/UPDATE` 不重建快捷方式）并删除残留层级。
+- 尾部反斜杠：目录页返回的路径不带尾部分隔符（盘根 `D:\` 例外，会被系统位置校验拒绝），
+  但注册表残留或 `/D=` 传入的值可能带一个，钩子仍会先裁剪，避免尾段比较失效。
+  另外尾段判定不只比最后 9 个字符——`C:\DocCraft` 这类短路径的最后 9 个字符是
+  `:\DocCraft`，会漏掉分隔符，所以分隔符单独取一位校验。
 - **不 fork 上游模板**：上述逻辑全部落在 hooks 里，避免长期维护一份 `installer.nsi` 副本。
   退路：若将来需要"在目录页上就即时纠正/回显最终路径"（钩子无法影响页面），
   再切换为 `nsis.template` 自定义模板（成本：跟随上游模板变更）。
