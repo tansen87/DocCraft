@@ -63,7 +63,9 @@ and Simplified Chinese - switchable at runtime.
   indicator showing the current extraction/OCR stage, e.g. "Recognizing page
   3/12").
 - **Custom title bar + glassmorphism UI** - a custom window title bar
-  (`WindowControls`) with minimize / maximize / close; the main window and
+  (`WindowControls`) with minimize / maximize / close, carrying the **DocCraft**
+  wordmark at its left edge (13px / 600, shared with the snip result popup via
+  `<Wordmark />`); the main window and
   snip result popup use a frosted-glass (`GlassPanel`) backdrop-blur effect
   whose opacity is independently tunable (0–100) per window. The blur can be
   toggled globally (`glassBlurEnabled`); on Windows it uses native acrylic.
@@ -295,8 +297,9 @@ doccraft/
 │  │  ├─ image-table/             # Draw-a-table extraction on imported images
 │  │  │  └─ image-table-overlay.tsx
 │  │  ├─ layout/
-│  │  │  ├─ app-header.tsx       # Top bar (brand, tabs, language + theme toggles)
+│  │  │  ├─ app-header.tsx       # Top bar (DocCraft wordmark, tabs, language + theme toggles)
 │  │  │  └─ window-controls.tsx  # Custom title bar (minimize / maximize / close)
+│  │  ├─ wordmark.tsx            # DocCraft wordmark, shared by the main bar and the snip popup
 │  │  ├─ language-toggle.tsx     # English / 中文 dropdown
 │  │  ├─ theme-toggle.tsx
 │  │  └─ ui/                     # shadcn/ui components (incl. glass-panel.tsx, status-badge.tsx)

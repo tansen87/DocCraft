@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { Wordmark } from "@/components/wordmark";
 import { formatDuration } from "@/lib/format-duration";
 import { getAppSettings } from "@/lib/ipc";
 
@@ -412,18 +413,13 @@ export function SnipResultWindow() {
             setCopyTipOpen(false);
             setClearTipOpen(false);
           }}
-          className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border/30 bg-white/[0.03] pl-3 pr-1.5 transition-colors hover:bg-green-500/15"
+          className="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-border/30 bg-white/[0.03] pl-3 pr-1.5"
         >
           <div
             data-tauri-drag-region
             className="flex min-w-0 items-center gap-2 select-none"
           >
-            <span
-              data-tauri-drag-region
-              className="truncate text-xs font-semibold tracking-wider text-muted-foreground"
-            >
-              DocCraft
-            </span>
+            <Wordmark data-tauri-drag-region className="truncate" />
             {durationMs != null ? (
               <span
                 data-tauri-drag-region

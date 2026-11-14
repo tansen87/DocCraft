@@ -6,6 +6,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { HeaderActions } from "@/components/header-actions";
 import { WindowControls } from "@/components/layout/window-controls";
+import { Wordmark } from "@/components/wordmark";
 import { useI18n } from "@/i18n";
 import { useGlobalTasks } from "@/lib/global-task";
 import { useGlassOpacity } from "@/lib/glass-opacity";
@@ -55,9 +56,21 @@ export function AppHeader({ activeTab, onTabChange }: AppHeaderProps) {
 
   return (
     <header
-      className="sticky top-0 z-20 glass-panel glass-blur flex h-10 items-center gap-2 px-2 transition-colors hover:bg-green-500/15"
+      className="sticky top-0 z-20 glass-panel glass-blur flex h-10 items-center pl-3 pr-2 transition-colors hover:bg-foreground/[0.07]"
       style={{ "--glass-bg-opacity": opacity / 100 } as React.CSSProperties}
     >
+      {/* Brand, at the window's left edge. Draggable like the empty strip, so
+          the whole bar still moves the window. */}
+      <div
+        className="flex h-full shrink-0 items-center pr-4"
+        onPointerDown={onDragPointerDown}
+        onPointerMove={onDragPointerMove}
+        onPointerUp={onDragPointerUp}
+        onDoubleClick={onDragDoubleClick}
+      >
+        <Wordmark />
+      </div>
+
       <Tabs
         value={activeTab}
         onValueChange={(v) => onTabChange(v as WorkspaceTab)}
@@ -96,7 +109,7 @@ export function AppHeader({ activeTab, onTabChange }: AppHeaderProps) {
           key={tab}
           type="button"
           onClick={() => onTabChange(tab)}
-          className="flex shrink-0 items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          className="ml-2 flex shrink-0 items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
         >
           <Loader2 className="size-3 animate-spin" />
           <span className="font-medium">{t(`tabs.${tab}`)}</span>

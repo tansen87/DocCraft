@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>DocCraft · 标题栏品牌位原型</title>
+<style>
+  @font-face {
+    font-family: "Geist";
+    src: url("../../../node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2-variations");
+    font-weight: 100 900;
+    font-display: block;
+  }
+
+  * { box-sizing: border-box; }
+
+  :root {
+    --ink: oklch(0.145 0 0);
+    --ink-2: oklch(0.42 0 0);
+    --ink-3: oklch(0.62 0 0);
+    --page: oklch(0.965 0 0);
+    --hair: oklch(0 0 0 / 0.09);
+    --redline: oklch(0.55 0.19 27);
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+
+  html, body { margin: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: "Geist", "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page { width: 1180px; margin: 0 auto; padding: 52px 32px 56px; }
+
+  .kicker {
+    font-size: 11px;
+    color: var(--ink-3);
+    font-family: var(--mono);
+    margin: 0 0 14px;
+  }
+  h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.018em; margin: 0 0 10px; }
+  .lede { margin: 0; max-width: 680px; font-size: 13px; line-height: 1.65; color: var(--ink-2); }
+
+  /* ---------- row ---------- */
+  .row { margin-top: 30px; }
+  .row:first-of-type { margin-top: 38px; }
+
+  .row-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .row-name { font-size: 13px; font-weight: 600; letter-spacing: -0.005em; }
+  .row-tag {
+    font-size: 10.5px;
+    font-family: var(--mono);
+    color: var(--ink-3);
+    border: 1px solid var(--hair);
+    border-radius: 4px;
+    padding: 1.5px 5px;
+  }
+  .row-tag.pick {
+    color: oklch(0.44 0.09 155);
+    border-color: oklch(0.52 0.09 155 / 0.35);
+    background: oklch(0.52 0.09 155 / 0.08);
+  }
+  .row-desc { font-size: 12px; color: var(--ink-3); margin-left: auto; }
+
+  /* ---------- window ---------- */
+  .win {
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    box-shadow:
+      0 0 0 1px oklch(0 0 0 / 0.07),
+      0 1px 2px oklch(0 0 0 / 0.05),
+      0 14px 34px oklch(0 0 0 / 0.06);
+
+    --bg: oklch(1 0 0);
+    --fg: oklch(0.145 0 0);
+    --fg-2: oklch(0.556 0 0);
+    --muted: oklch(0.97 0 0);
+    --border: oklch(0.922 0 0);
+    --card: oklch(1 0 0);
+  }
+  .win[data-theme="dark"] {
+    --bg: oklch(0.185 0 0);
+    --fg: oklch(0.985 0 0);
+    --fg-2: oklch(0.708 0 0);
+    --muted: oklch(0.269 0 0);
+    --border: oklch(1 0 0 / 0.1);
+    --card: oklch(0.225 0 0);
+    box-shadow:
+      0 0 0 1px oklch(1 0 0 / 0.08),
+      0 14px 34px oklch(0 0 0 / 0.3);
+  }
+
+  /* ---------- title bar ---------- */
+  .bar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    height: 40px;
+    background: color-mix(in oklab, var(--bg) 88%, transparent);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+  }
+
+  .brand { display: flex; align-items: center; gap: 7px; height: 100%; flex-shrink: 0; user-select: none; }
+  .brand.slot { padding-right: 16px; }
+  .brand.cell { padding-right: 12px; margin-right: 12px; border-right: 1px solid var(--border); }
+
+  .wordmark {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.006em;
+    line-height: 1;
+    color: var(--fg);
+    padding-top: 1px;
+  }
+  .mark { width: 15px; height: 15px; display: block; color: var(--fg); flex-shrink: 0; }
+
+  .tabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 32px;
+    padding: 3px;
+    border: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
+    border-radius: 10px;
+    flex-shrink: 0;
+    color: var(--fg-2);
+  }
+  .tab {
+    display: flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 10px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 450;
+    line-height: 1;
+    white-space: nowrap;
+    color: var(--fg-2);
+  }
+  .tab.active {
+    background: color-mix(in oklab, var(--bg) 92%, transparent);
+    color: var(--fg);
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--border) 85%, transparent),
+      0 1px 1px oklch(0 0 0 / 0.04);
+  }
+
+  .drag { flex: 1 1 auto; min-width: 24px; align-self: stretch; }
+
+  .right { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .icon-btn {
+    width: 32px; height: 32px;
+    display: grid; place-items: center;
+    border-radius: 8px;
+    color: var(--fg-2);
+    position: relative;
+  }
+  .icon-btn svg { width: 16px; height: 16px; }
+  .wc { display: flex; align-items: center; }
+
+  svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ---------- body slice ---------- */
+  .body {
+    height: 88px;
+    padding: 10px 12px;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .body-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 8px;
+    border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+    border-radius: 8px;
+  }
+  .swatch { width: 22px; height: 22px; border-radius: 5px; border: 1px solid color-mix(in oklab, var(--border) 80%, transparent); flex-shrink: 0; }
+  .fname { font-size: 12px; color: var(--fg); line-height: 1.3; }
+  .fpath { font-size: 10px; color: var(--fg-2); line-height: 1.45; }
+  .ghost { margin-left: auto; font-size: 11px; color: var(--fg-2); padding: 4px 9px; border-radius: 6px; border: 1px solid color-mix(in oklab, var(--border) 90%, transparent); }
+  .panes { display: flex; gap: 10px; flex: 1; }
+  .pane { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 6px; }
+  .pane i { display: block; height: 4px; border-radius: 2px; background: color-mix(in oklab, var(--fg) 9%, transparent); }
+
+  /* ---------- ruler under the bar ---------- */
+  .ruler { position: relative; height: 42px; margin-top: 6px; }
+  .ruler span {
+    position: absolute;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .ruler .tick { position: absolute; width: 1px; background: var(--ink-3); opacity: 0.5; }
+  .ruler .span-line { position: absolute; height: 1px; background: var(--ink-3); opacity: 0.35; }
+
+  /* ---------- callout + note ---------- */
+  .callout {
+    display: flex; align-items: flex-start; gap: 7px;
+    margin-top: 9px;
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: var(--redline);
+  }
+  .callout .sw { width: 9px; height: 9px; margin-top: 4px; border-radius: 2px; background: oklch(0.723 0.19 149 / 0.35); border: 1px solid oklch(0.55 0.19 27 / 0.35); flex-shrink: 0; }
+  .row-note { margin: 9px 0 0; font-size: 11.5px; line-height: 1.55; color: var(--ink-3); }
+  .row-note b { font-weight: 600; color: var(--ink-2); }
+
+  /* ---------- spec ---------- */
+  .spec {
+    margin-top: 58px;
+    padding-top: 26px;
+    border-top: 1px solid var(--hair);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 34px 46px;
+  }
+  .spec.full { grid-template-columns: 1fr; margin-top: 30px; padding-top: 0; border-top: 0; }
+  .spec h2 { font-size: 13px; font-weight: 600; margin: 0 0 10px; letter-spacing: -0.005em; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 6px 0; font-size: 12px; border-bottom: 1px solid var(--hair); vertical-align: top; }
+  th { font-weight: 450; color: var(--ink-3); width: 40%; }
+  td { color: var(--ink); }
+  code { font-family: var(--mono); font-size: 11px; background: oklch(0 0 0 / 0.05); padding: 1px 4px; border-radius: 3px; }
+  .note-list { margin: 0; padding: 0; list-style: none; }
+  .note-list li { font-size: 12px; line-height: 1.65; color: var(--ink-2); padding-left: 13px; position: relative; margin-bottom: 9px; }
+  .note-list li::before { content: "·"; position: absolute; left: 3px; color: var(--ink-3); }
+  .note-list b { font-weight: 600; color: var(--ink); }
+  pre {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.75;
+    background: oklch(0 0 0 / 0.045);
+    border-radius: 8px;
+    padding: 13px 15px;
+    color: var(--ink-2);
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <p class="kicker">docs/design/prototype/titlebar-brand.html</p>
+  <h1>标题栏品牌位</h1>
+  <p class="lede">
+    在自定义标题栏（40px，玻璃背景）最左侧加入 DocCraft 字标。四个工作区标签、右侧动作与窗口控制保持不变，
+    下面只确定字标本身的写法、它与标签组之间的距离，以及是否需要一个符号。
+  </p>
+
+  <div id="rows"></div>
+
+  <section class="spec">
+    <div>
+      <h2>尺寸</h2>
+      <table>
+        <tr><th>标题栏</th><td>40px，左内边距 12，右 8</td></tr>
+        <tr><th>字标</th><td>Geist 13px / 600 / <code>-0.006em</code> / <code>text-foreground</code></td></tr>
+        <tr><th>左内边距 → 字标</th><td>12（现状 8）</td></tr>
+        <tr><th>字标 → 标签组</th><td>16（不另加分隔线）</td></tr>
+        <tr><th>标签组</th><td>h-32，栏内上下各 4，与现状一致</td></tr>
+        <tr><th>符号（方案 B）</th><td>15 × 15，stroke 1.5，与字标相距 7</td></tr>
+        <tr><th>通高线（方案 C）</th><td>1px <code>border</code>，两侧各 12</td></tr>
+      </table>
+    </div>
+    <div>
+      <h2>要一并修掉的两处</h2>
+      <ul class="note-list">
+        <li>
+          <b>整条标题栏悬停变绿</b>：<code>app-header.tsx</code> 的 <code>hover:bg-green-500/15</code>
+          让 40px 高的窗口 chrome 在指针经过时铺一层绿色，而这个高亮本来是给可点击块的。
+          移除后标题栏仍是拖拽区，光标样式与行为都不变。
+        </li>
+        <li>
+          <b>两处字标规格不一</b>：截图结果窗（<code>snip-result-window.tsx:423</code>）现在用
+          12px / 600 / <code>tracking-wider</code> / 次要色，是那块界面上最弱的一行。改成同一套规格，
+          主窗与结果窗共用一个 <code>&lt;Wordmark /&gt;</code>。
+        </li>
+      </ul>
+      <h2 style="margin-top:24px">实现要点</h2>
+      <ul class="note-list">
+        <li>字标区域复用现有的 <code>startDragging</code> 指针回调，否则窗口左侧约 100px 拖不动。</li>
+        <li>字标 <code>select-none</code>，不响应点击，不进入 tab 顺序。</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="spec full">
+    <div>
+      <h2>方案 A 的标记（对照真实 class）</h2>
+      <pre>&lt;div
+  className="flex h-full shrink-0 select-none items-center pr-4"
+  onPointerDown={onDragPointerDown}
+  onPointerMove={onDragPointerMove}
+  onPointerUp={onDragPointerUp}
+  onDoubleClick={onDragDoubleClick}
+&gt;
+  &lt;span className="text-[13px] font-semibold leading-none tracking-[-0.006em]"&gt;DocCraft&lt;/span&gt;
+&lt;/div&gt;</pre>
+    </div>
+  </section>
+</div>
+
+<script>
+  const ICONS = {
+    download: '<path d="M12 13v8l-4-4"/><path d="m12 21 4-4"/><path d="M4.393 15.269A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.436 8.284"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+    languages: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
+    minus: '<path d="M5 12h14"/>',
+    maximize: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
+    x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  };
+
+  /* Product-derived mark: a sheet with a cut corner and two extracted text rules. */
+  const MARK = `<svg class="mark" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3.3 2.3h6.1l3.3 3.3v8.1H3.3z"/>
+      <path d="M9.4 2.3v3.3h3.3"/>
+      <path d="M5.6 9h4.8"/>
+      <path d="M5.6 11.4h3.1"/>
+    </svg>`;
+
+  const icon = (name, cls = "") =>
+    `<span class="icon-btn ${cls}"><svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg></span>`;
+
+  const TABS = ["PDF to MD", "Image to MD", "MD to Excel", "Settings"];
+
+  function bar(v) {
+    let brandHtml = "";
+    if (v.brand === "word") {
+      brandHtml = `<div class="brand slot" data-brand><span class="wordmark">DocCraft</span></div>`;
+    } else if (v.brand === "mark") {
+      brandHtml = `<div class="brand slot" data-brand>${MARK}<span class="wordmark">DocCraft</span></div>`;
+    } else if (v.brand === "cell") {
+      brandHtml = `<div class="brand cell" data-brand><span class="wordmark">DocCraft</span></div>`;
+    }
+    return `<div class="bar" style="padding-left:${v.pl}px;padding-right:8px">
+        ${brandHtml}
+        <div class="tabs" data-tabs>
+          ${TABS.map((t, i) => `<span class="tab${i === 0 ? " active" : ""}">${t}</span>`).join("")}
+        </div>
+        <div class="drag"></div>
+        <div class="right">
+          ${icon("download")}${icon("languages")}${icon("sun")}
+          <div class="wc">${icon("minus")}${icon("maximize")}${icon("x", "close")}</div>
+        </div>
+      </div>`;
+  }
+
+  function body() {
+    return `<div class="body">
+        <div class="body-row">
+          <div class="swatch"></div>
+          <div>
+            <div class="fname">split_test_less.pdf</div>
+            <div class="fpath">D:\\projects\\...\\split_test_less.pdf</div>
+          </div>
+          <div class="ghost">Convert</div>
+        </div>
+        <div class="panes">
+          <div class="pane"><i style="width:64%"></i><i style="width:88%"></i><i style="width:76%"></i></div>
+          <div class="pane"><i style="width:52%"></i><i style="width:80%"></i><i style="width:38%"></i></div>
+        </div>
+      </div>`;
+  }
+
+  const ROWS = [
+    {
+      id: "current",
+      name: "现状",
+      tag: "before",
+      desc: "标题栏从标签组开始，窗口没有任何产品标识",
+      brand: "none",
+      pl: 8,
+      theme: "light",
+      callout: "指针进入时，整条 40px 栏铺一层绿色（hover:bg-green-500/15），与任何操作无关",
+      note: "无边框窗口里系统标题已被自绘的窗口控制替代，产品名不再出现在任何位置；标签组顶到窗口左边缘，读起来像浏览器的标签条。",
+    },
+    {
+      id: "a",
+      name: "方案 A · 只放字标",
+      tag: "pick",
+      desc: "左 12 放字标，右 16 接标签组，不加分隔线",
+      brand: "word",
+      pl: 12,
+      theme: "light",
+      ruler: true,
+      note: "最安静的一版：不造 logo，只用项目已有的字族。标签轨道自带的 1px 边框就是分隔，再加一条竖线会变成两条相距 12px 的近邻发丝线，小尺寸下读作脏点。",
+    },
+    {
+      id: "b",
+      name: "方案 B · 字标 + 结构符号",
+      tag: "可选",
+      desc: "15px 纸页符号（折角 + 两条抽出的文本行）",
+      brand: "mark",
+      pl: 12,
+      theme: "light",
+      note: "符号取自产品本身：一页纸被抽成几行文本。比通用文件图标更贴近 PDF → Markdown，也不与右侧 lucide 动作图标撞形。",
+    },
+    {
+      id: "c",
+      name: "方案 C · 字标独占一格",
+      tag: "可选",
+      desc: "字标在一条通高发丝线左侧，像编辑器的分区栏",
+      brand: "cell",
+      pl: 12,
+      theme: "light",
+      note: "发丝线贯通整条工具栏高度，读作「侧栏起点」而不是「标签起点」；代价是把 40px 的栏切成两块，右侧动作显得更远。",
+    },
+  ];
+
+  const DARKS = [
+    { brand: "word", label: "方案 A", desc: "只有字标与留白，前景色随主题" },
+    { brand: "mark", label: "方案 B", desc: "符号 15px，与字标相距 7" },
+    { brand: "cell", label: "方案 C", desc: "发丝线用 border，随主题变淡" },
+  ];
+
+  let html = "";
+  for (const r of ROWS) {
+    html += `<div class="row">
+        <div class="row-head">
+          <span class="row-name">${r.name}</span>
+          <span class="row-tag${r.tag === "pick" ? " pick" : ""}">${r.tag}</span>
+          <span class="row-desc">${r.desc}</span>
+        </div>
+        <div class="win" data-theme="${r.theme}" data-variant="${r.id}">
+          ${bar(r)}
+          ${body()}
+        </div>
+        ${r.ruler ? `<div class="ruler" data-ruler></div>` : ""}
+        ${r.callout ? `<p class="callout"><span class="sw"></span>${r.callout}</p>` : ""}
+        <p class="row-note">${r.note}</p>
+      </div>`;
+  }
+
+  html += `<div class="row" style="margin-top:40px">
+      <div class="row-head">
+        <span class="row-name">暗色</span><span class="row-tag">dark</span>
+        <span class="row-desc">同一组尺寸在暗色主题下的读数</span>
+      </div>
+    </div>`;
+
+  for (const d of DARKS) {
+    html += `<div class="row" style="margin-top:18px">
+        <div class="row-head" style="margin-bottom:7px">
+          <span class="row-name" style="font-weight:450;font-size:12px;color:var(--ink-2)">${d.label}</span>
+          <span class="row-desc" style="margin-left:0">${d.desc}</span>
+        </div>
+        <div class="win" data-theme="dark" data-variant="d-${d.brand}">
+          ${bar({ brand: d.brand, pl: 12 })}
+          ${body()}
+        </div>
+      </div>`;
+  }
+
+  document.getElementById("rows").innerHTML = html;
+
+  /* Dimension lines under variant A, measured from the rendered DOM. */
+  function drawRuler() {
+    const win = document.querySelector('.win[data-variant="a"]');
+    const ruler = document.querySelector("[data-ruler]");
+    if (!win || !ruler) return;
+    const w = win.getBoundingClientRect();
+    const rel = (el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left - w.left, right: r.right - w.left, width: r.width };
+    };
+    const wm = rel(win.querySelector(".wordmark"));
+    const tabs = rel(win.querySelector("[data-tabs]"));
+
+    const marks = [
+      [0, 12, "12", 0],
+      [wm.right, tabs.left, "16", 0],
+      [12, wm.right, "字标 13 / 600", 1],
+    ];
+
+    const parts = [];
+    for (const [x1, x2, label, tier] of marks) {
+      const top = tier === 0 ? 2 : 20;
+      parts.push(`<div class="tick" style="left:${x1}px;top:${top}px;height:6px"></div>`);
+      parts.push(`<div class="tick" style="left:${x2}px;top:${top}px;height:6px"></div>`);
+      parts.push(`<div class="span-line" style="left:${x1}px;width:${x2 - x1}px;top:${top + 6}px"></div>`);
+      parts.push(
+        `<span style="left:${x1 + (x2 - x1) / 2}px;top:${top + 9}px;transform:translateX(-50%)">${label}</span>`,
+      );
+    }
+    ruler.innerHTML = parts.join("");
+  }
+
+  drawRuler();
+</script>
+</body>
+</html>
