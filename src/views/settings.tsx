@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode, SetStateAction } from "react";
 import {
   open as openFileDialog,
@@ -8,17 +8,14 @@ import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   ChevronDown,
-  Download,
   Eye,
   EyeOff,
   KeyRound,
-  Loader2,
   Plus,
-  Save,
+  Search,
   ShieldCheck,
   Star,
   Trash2,
-  Upload,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -131,7 +128,7 @@ const SECTIONS: { id: SettingsSection; labelKey: TranslationKey }[] = [
 ];
 
 /** Height of a card's sticky head; a jumped-to row is parked below it. */
-const STICKY_HEAD_OFFSET = 56;
+const STICKY_HEAD_OFFSET = 40;
 
 /** How long a jumped-to row stays highlighted (ms). */
 const FLASH_MS = 1600;
@@ -155,11 +152,13 @@ interface SearchGroup {
 }
 
 /**
- * Every section is one card. The sticky head lives inside it, so the card must
- * stay free of `overflow-hidden` (that would break `position: sticky`).
+ * Every section is one card: a solid surface with a single hairline, no shadow
+ * and no backdrop blur - the window behind it is already translucent, and a
+ * second glass layer read as two frames fighting. The sticky head lives inside
+ * the card, so the card must stay free of `overflow-hidden` (that would break
+ * `position: sticky`).
  */
-const SECTION_CARD =
-  "scroll-mt-4 rounded-2xl border border-border/70 bg-card/80 pb-1 shadow-sm backdrop-blur-sm";
+const SECTION_CARD = "scroll-mt-4 rounded-xl border border-border bg-card";
 
 /**
  * One entry per setting that can be edited, so the save bar can say *how many*
@@ -196,6 +195,33 @@ const DIRTY_LABELS = {
 } satisfies Record<string, TranslationKey>;
 
 type DirtyField = keyof typeof DIRTY_LABELS;
+
+/**
+ * Which changed fields light up which sidebar entry, so the nav can show a dot
+ * on a section holding unsaved edits instead of making the user scroll the
+ * whole page looking for them. Sections absent here never hold settings.
+ */
+const SECTION_FIELDS: Partial<Record<SettingsSection, DirtyField[]>> = {
+  ocr: [
+    "vendors",
+    "ocrMode",
+    "ocrModelSize",
+    "ocrTextCleanup",
+    "layout",
+    "layoutModel",
+    "layoutThreshold",
+    "layoutHeaderFooter",
+    "aiPrompt",
+    "drawPrompt",
+  ],
+  snip: ["hotkey", "snipPopup", "snipAutoCopy"],
+  textSep: ["paragraphMode", "textSeparator"],
+  draw: ["cacheExtracted"],
+  excel: ["excelTablesOnly", "stripMdSyntax", "writeNumeric"],
+  threads: ["maxConcurrent", "localOcrThreads"],
+  appearance: ["glassBlur", "mainOpacity", "snipOpacity", "tray"],
+  update: ["autoCheckUpdate"],
+};
 
 /** How many changed-field labels the save tooltip lists before eliding. */
 const DIRTY_PREVIEW_LIMIT = 6;
@@ -583,14 +609,16 @@ export function SettingsView() {
       const card = document.getElementById(`settings-${s.id}`);
       if (!card) continue;
       const head = card.querySelector<HTMLElement>("[data-setting-head]");
-      const title = head?.querySelector("h2")?.textContent?.trim() || t(s.labelKey);
+      const title =
+        head?.querySelector("h2")?.textContent?.trim() || t(s.labelKey);
       const headHit = (head?.textContent ?? "")
         .toLowerCase()
         .includes(needleNow);
       const hits: SearchHit[] = [];
       card.querySelectorAll<HTMLElement>("[data-setting-row]").forEach((el) => {
         if (!(el.textContent ?? "").toLowerCase().includes(needleNow)) return;
-        const label = el.dataset.settingLabel?.trim() || el.textContent?.trim() || "";
+        const label =
+          el.dataset.settingLabel?.trim() || el.textContent?.trim() || "";
         const description = el.dataset.settingDesc?.trim() ?? "";
         hits.push({
           el,
@@ -621,19 +649,29 @@ export function SettingsView() {
   return (
     <div
       ref={containerRef}
-      className="relative flex w-full min-h-0 flex-1 gap-3"
+      className="relative flex min-h-0 w-full flex-1 gap-4 px-4 pt-3"
     >
       {/* Text-only navigation: a flat list of the cards, or - while filtering -
           the matching rows of those cards. */}
-      <aside className="hidden w-[188px] shrink-0 flex-col gap-3 md:flex">
-        <input
-          ref={searchRef}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t("settings.search")}
-          aria-label={t("settings.search")}
-          className="h-8 w-full shrink-0 rounded-lg border border-border/70 bg-card/60 px-2.5 text-[13px] outline-none transition-[box-shadow,border-color] placeholder:text-muted-foreground/80 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
-        />
+      <aside className="hidden w-[212px] shrink-0 flex-col gap-3 pb-3 md:flex">
+        <div className="flex h-[30px] w-full shrink-0 items-center gap-1.5 rounded-[7px] bg-muted/60 px-2 transition-[box-shadow] focus-within:ring-[3px] focus-within:ring-ring/25">
+          <Search
+            aria-hidden
+            className="size-3.5 shrink-0 text-muted-foreground"
+          />
+          <input
+            ref={searchRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("settings.search")}
+            aria-label={t("settings.search")}
+            className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground"
+          />
+          {/* The shortcut exists; the field is the one place worth showing it. */}
+          <kbd className="shrink-0 rounded-[3px] border border-border px-1 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
+            Ctrl K
+          </kbd>
+        </div>
         {needle ? (
           <ScrollArea className="min-h-0 flex-1">
             <div className="flex w-full flex-col gap-3 pb-2 pr-1">
@@ -679,6 +717,9 @@ export function SettingsView() {
             <div className="flex w-full flex-col gap-0.5 pb-2 pr-1">
               {SECTIONS.map((s) => {
                 const active = section === s.id;
+                const pending = SECTION_FIELDS[s.id]?.some((f) =>
+                  dirtyFields.has(f),
+                );
                 return (
                   <button
                     key={s.id}
@@ -686,13 +727,19 @@ export function SettingsView() {
                     onClick={() => jumpTo(s.id)}
                     aria-current={active ? "true" : undefined}
                     className={cn(
-                      "flex h-8 items-center rounded-lg px-2.5 text-left text-[13px] font-medium transition-colors duration-150",
+                      "relative flex h-8 items-center gap-2 rounded-[7px] px-2 text-left text-[13px] transition-colors",
                       active
-                        ? "bg-primary/[0.08] text-foreground"
+                        ? "bg-foreground/[0.045] font-medium text-foreground before:absolute before:left-0 before:top-[9px] before:h-3.5 before:w-0.5 before:rounded-full before:bg-foreground"
                         : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
                     )}
                   >
                     {t(s.labelKey)}
+                    {pending ? (
+                      <span
+                        aria-hidden
+                        className="ml-auto size-1.5 shrink-0 rounded-[2px] bg-warning"
+                      />
+                    ) : null}
                   </button>
                 );
               })}
@@ -701,10 +748,7 @@ export function SettingsView() {
         )}
       </aside>
 
-      <div
-        ref={contentRef}
-        className="flex min-h-0 min-w-0 flex-1 flex-col gap-3"
-      >
+      <div ref={contentRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/* No page title here: the window's tab strip already says 设置, and a
             second copy only ate vertical space. From md up the sidebar owns
             navigation, so the head slot is empty; below md it holds the
@@ -735,7 +779,7 @@ export function SettingsView() {
             worth measuring: at scrollTop 700 the head reported top = 0 relative
             to the viewport, i.e. it does stick. */}
         <ScrollArea className="min-h-0 flex-1">
-          <div className="pb-6 pr-3 pt-2">
+          <div className="pb-4 pr-1">
             <div className="space-y-4">
               {/* Models first: without them the local engine cannot run, so the
                   prerequisite sits above the engine it belongs to. */}
@@ -1006,18 +1050,18 @@ export function SettingsView() {
           </div>
         </ScrollArea>
 
-        {/* Save bar. `flex-none` and outside the scroll area, so it neither
-            covers the last rows (the old floating pill) nor sits under the
-            window controls in the top-right corner. */}
-        <div className="flex flex-none flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border/70 bg-card/80 px-3 py-2">
+        {/* Save bar, as a footer: flush with the column, one hairline above it,
+            solid card surface. `flex-none` and outside the scroll area, so it
+            neither covers the last rows nor sits under the window controls. */}
+        <div className="flex min-h-11 flex-none flex-wrap items-center gap-x-3 gap-y-2 border-t border-border bg-card px-4 py-2">
           {dirty ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <span
                   tabIndex={0}
-                  className="flex cursor-default items-center gap-1.5 rounded-md text-xs font-medium text-warning outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                  className="flex cursor-default items-center gap-1.5 rounded-md text-[12.5px] font-medium text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30"
                 >
-                  <span className="size-1.5 rounded-full bg-current" />
+                  <span className="size-1.5 rounded-[2px] bg-warning" />
                   {t("settings.unsavedCount", { count: dirtyFields.size })}
                 </span>
               </TooltipTrigger>
@@ -1026,7 +1070,7 @@ export function SettingsView() {
               </TooltipContent>
             </Tooltip>
           ) : (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-[12.5px] text-muted-foreground">
               {t("settings.allSaved")}
             </span>
           )}
@@ -1047,7 +1091,6 @@ export function SettingsView() {
               onClick={handleSave}
               disabled={saving || !loaded || !dirty}
             >
-              {saving ? <Loader2 className="animate-spin" /> : <Save />}
               {t("settings.save")}
             </Button>
           </div>
@@ -1092,14 +1135,16 @@ function SubSection({
       data-setting-desc={hint}
       className={cn(
         "flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-4 pb-1 pt-3",
-        !first && "border-t border-border/60",
+        !first && "border-t border-border",
       )}
     >
-      <span className="text-[11px] font-semibold text-muted-foreground">
+      <span className="text-[11px] font-medium text-muted-foreground">
         {label}
       </span>
       {hint ? (
-        <span className="text-[11px] text-muted-foreground/75">{hint}</span>
+        <span className="font-mono text-[10.5px] text-muted-foreground/80">
+          {hint}
+        </span>
       ) : null}
     </div>
   );
@@ -1125,12 +1170,14 @@ function SettingRow({
       data-setting-row
       data-setting-label={label}
       data-setting-desc={description}
-      className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-x-6"
+      className="flex min-h-12 flex-col gap-3 px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-x-6"
     >
       <div className="min-w-0 space-y-0.5">
-        <Label htmlFor={htmlFor}>{label}</Label>
+        <Label htmlFor={htmlFor} className="text-[13px] font-medium">
+          {label}
+        </Label>
         {description ? (
-          <p className="text-xs leading-relaxed text-muted-foreground whitespace-pre-line">
+          <p className="text-[11.5px] leading-[1.45] text-muted-foreground whitespace-pre-line">
             {description}
           </p>
         ) : null}
@@ -1148,15 +1195,18 @@ function SectionHeader({ title, hint }: { title: string; hint?: string }) {
     // Solid background, no backdrop-filter: a sticky band that samples the
     // rows scrolling underneath needs a compositing pass this WebView already
     // does for the window glass, and a solid head is the conventional look.
-    // `data-setting-head` marks the block the settings filter reads the card
-    // title and summary off.
+    // Title and summary share one line, so the head costs 40px instead of two
+    // stacked lines. `data-setting-head` marks the block the settings filter
+    // reads the card title and summary off.
     <div
       data-setting-head
-      className="sticky top-0 z-10 rounded-t-2xl border-b border-border/60 bg-card px-4 py-2.5"
+      className="sticky top-0 z-10 flex h-10 items-center gap-2.5 rounded-t-xl border-b border-border bg-card px-4"
     >
-      <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
+      <h2 className="shrink-0 text-[13px] font-semibold tracking-[-0.004em]">
+        {title}
+      </h2>
       {hint ? (
-        <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>
+        <p className="truncate text-[11.5px] text-muted-foreground">{hint}</p>
       ) : null}
     </div>
   );
@@ -2072,7 +2122,7 @@ function UpdateSettingsPanel({
           description={`v${skippedVersion}`}
         >
           <Button
-            variant="outline"
+            variant="secondary"
             size="sm"
             onClick={() => void clearSkipped()}
           >
@@ -2090,6 +2140,13 @@ const MODEL_GROUP_KEYS: Record<string, TranslationKey> = {
   "ocr.small": "settings.modelGroupOcrSmall",
   "ocr.medium": "settings.modelGroupOcrMedium",
   "layout.PP-DocLayoutV3": "settings.modelGroupLayout",
+};
+
+/** What each OCR tier trades away, one word next to its name. */
+const MODEL_TIER_NOTES: Record<string, TranslationKey> = {
+  "ocr.tiny": "settings.modelTierFastest",
+  "ocr.small": "settings.modelTierBalanced",
+  "ocr.medium": "settings.modelTierAccurate",
 };
 
 /** `3.1 MB` / `812 KB`. */
@@ -2236,42 +2293,49 @@ function ModelsPanel() {
       : null;
 
   return (
-    <div ref={panelRef} className="space-y-2 pb-2">
+    <div ref={panelRef} className="pb-1">
       <Panel>
         {groups.map((group) => {
           const running = busyGroup === group.id || activeGroup === group.id;
+          const label = t(MODEL_GROUP_KEYS[group.id] ?? "settings.modelFiles");
+          const tierKey = MODEL_TIER_NOTES[group.id];
+          const missing = group.files.filter((f) => !f.installed).length;
           return (
             <div
               key={group.id}
               data-setting-row
-              data-setting-label={t(
-                MODEL_GROUP_KEYS[group.id] ?? "settings.modelFiles",
-              )}
-              className="flex flex-col gap-2 px-4 py-3"
+              data-setting-label={label}
+              className="flex flex-col"
             >
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0 space-y-0.5">
-                  <Label>
-                    {t(MODEL_GROUP_KEYS[group.id] ?? "settings.modelFiles")}
-                  </Label>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {formatSize(group.totalBytes)} ·{" "}
-                    {group.files.map((file) => file.name).join(", ")}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <span
-                    className={cn(
-                      "text-xs",
-                      group.installed
-                        ? "text-muted-foreground"
-                        : "text-warning",
-                    )}
-                  >
-                    {group.installed
-                      ? t("settings.modelInstalled")
-                      : t("settings.modelNotInstalled")}
+              <div className="flex min-h-[52px] items-center gap-3 px-4 py-2">
+                {/* Square status light, not a word: installed vs incomplete. */}
+                <span
+                  aria-hidden
+                  className={cn(
+                    "size-1.5 shrink-0 rounded-[2px]",
+                    group.installed ? "bg-success" : "ring-1 ring-warning",
+                  )}
+                />
+                <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                  <span className="truncate text-[13px] font-medium">
+                    {label}
                   </span>
+                  {tierKey ? (
+                    <span className="shrink-0 text-[11.5px] text-muted-foreground">
+                      {t(tierKey)}
+                    </span>
+                  ) : null}
+                </div>
+                <span className="w-[132px] shrink-0 text-right font-mono text-[11.5px] tabular-nums text-muted-foreground">
+                  {formatSize(group.totalBytes)}
+                  {" · "}
+                  {missing > 0
+                    ? t("settings.modelFilesMissing", { count: missing })
+                    : t("settings.modelFileCount", {
+                        count: group.files.length,
+                      })}
+                </span>
+                <div className="flex w-[84px] shrink-0 justify-end">
                   <Button
                     size="sm"
                     variant="secondary"
@@ -2285,9 +2349,9 @@ function ModelsPanel() {
                 </div>
               </div>
               {running && percent !== null ? (
-                <div className="space-y-1">
-                  <Progress value={percent} className="h-1.5" />
-                  <p className="text-[11px] text-muted-foreground">
+                <div className="space-y-1 px-4 pb-2">
+                  <Progress value={percent} className="h-1" />
+                  <p className="font-mono text-[10.5px] text-muted-foreground">
                     {t("settings.modelDownloading", { percent })}
                     {progress?.file ? ` · ${progress.file}` : ""}
                   </p>
@@ -2296,18 +2360,20 @@ function ModelsPanel() {
             </div>
           );
         })}
-      </Panel>
 
-      <div
-        className={cn(
-          "mx-4 flex flex-col items-center gap-2 rounded-xl border border-dashed px-4 py-4 text-center transition-colors",
-          dragging ? "border-primary bg-primary/5" : "border-border/60",
-        )}
-      >
-        <p className="text-xs text-muted-foreground">
-          {t("settings.modelDragHint")}
-        </p>
-        <div className="flex gap-2">
+        {/* Import row: still a drag target, but one line instead of a box. */}
+        <div
+          data-setting-row
+          data-setting-label={t("settings.modelImport")}
+          data-setting-desc={t("settings.modelDragHint")}
+          className={cn(
+            "flex flex-wrap items-center gap-x-2 gap-y-2 px-4 py-2.5 transition-colors",
+            dragging && "bg-primary/5",
+          )}
+        >
+          <span className="text-[12.5px] font-medium">
+            {t("settings.modelImport")}
+          </span>
           <Button
             size="sm"
             variant="secondary"
@@ -2324,13 +2390,16 @@ function ModelsPanel() {
           >
             {t("settings.modelPickFolder")}
           </Button>
+          {snapshot?.root ? (
+            <span
+              title={t("settings.modelTargetHint", { path: snapshot.root })}
+              className="ml-auto max-w-[52%] truncate font-mono text-[10.5px] text-muted-foreground"
+            >
+              {snapshot.root}
+            </span>
+          ) : null}
         </div>
-        {snapshot?.root ? (
-          <p className="break-all text-[11px] text-muted-foreground/80">
-            {t("settings.modelTargetHint", { path: snapshot.root })}
-          </p>
-        ) : null}
-      </div>
+      </Panel>
     </div>
   );
 }
@@ -2674,7 +2743,6 @@ function BackupPanel({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="secondary" size="sm" disabled={disabled}>
-              {working ? <Loader2 className="animate-spin" /> : <Download />}
               {t("settings.exportConfig")}
             </Button>
           </DropdownMenuTrigger>
@@ -2701,7 +2769,6 @@ function BackupPanel({
           disabled={disabled}
           onClick={() => void handleImport()}
         >
-          <Upload />
           {t("settings.importConfig")}
         </Button>
       </SettingRow>
@@ -2738,21 +2805,7 @@ function UsageStatsPanel({
 
   return (
     <Panel>
-      <UsagePeriodBlock
-        title={t("settings.statsToday")}
-        period={stats?.today}
-        busy={busy}
-      />
-      <UsagePeriodBlock
-        title={t("settings.statsMonth")}
-        period={stats?.month}
-        busy={busy}
-      />
-      <UsagePeriodBlock
-        title={t("settings.statsTotal")}
-        period={stats?.total}
-        busy={busy}
-      />
+      <UsageTable stats={stats} busy={busy} />
       <SettingRow
         label={t("settings.clearStats")}
         description={t("settings.clearStatsDesc")}
@@ -2763,7 +2816,6 @@ function UsageStatsPanel({
           onClick={() => void handleClear()}
           disabled={busy || clearing}
         >
-          {clearing ? <Loader2 className="animate-spin" /> : <Trash2 />}
           {t("settings.clearStats")}
         </Button>
       </SettingRow>
@@ -2771,96 +2823,102 @@ function UsageStatsPanel({
   );
 }
 
-function UsagePeriodBlock({
-  title,
-  period,
+/**
+ * One readout, four rows by three periods - the same numbers the three stacked
+ * blocks used to hold, in a quarter of the height. Figures are mono and
+ * right-aligned so the columns can be compared by eye; the split lines keep
+ * the PDF/image and local/AI breakdown that the blocks carried.
+ */
+function UsageTable({
+  stats,
   busy,
 }: {
-  title: string;
-  period: UsagePeriodStats | undefined;
+  stats: UsageStats | null;
   busy: boolean;
 }) {
   const { t } = useI18n();
-  const pdfOcrRatio =
-    period && period.pdfPageCount > 0
-      ? Math.round((period.pdfOcrPageCount / period.pdfPageCount) * 100)
-      : null;
-  const ocrRatio =
-    pdfOcrRatio ??
-    (period && period.pageCount > 0
-      ? Math.round((period.ocrPageCount / period.pageCount) * 100)
-      : 0);
-  return (
-    <div className="space-y-2 px-4 py-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          {title}
-        </span>
-        {busy || !period ? (
-          <Skeleton className="h-4 w-16" />
-        ) : (
-          <span className="text-xs text-muted-foreground">
-            {t("settings.statsDuration")}{" "}
-            <span className="font-medium tabular-nums text-foreground">
-              {formatDuration(period.totalMs)}
-            </span>
-          </span>
-        )}
-      </div>
-      {busy || !period ? (
-        <div className="flex gap-4">
-          <Skeleton className="h-4 w-14" />
-          <Skeleton className="h-4 w-14" />
-          <Skeleton className="h-4 w-14" />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-3 sm:gap-y-1.5">
-          <StatCell
-            label={t("settings.statsFiles")}
-            value={period.fileCount}
-            sub={t("settings.statsFilesSplit", {
-              pdf: period.pdfFileCount,
-              image: period.imageFileCount,
-            })}
-          />
-          <StatCell
-            label={t("settings.statsPages")}
-            value={period.pageCount}
-            sub={t("settings.statsPagesSplit", {
-              pdf: period.pdfPageCount,
-              image: period.imageFileCount,
-            })}
-          />
-          <StatCell
-            label={t("settings.statsOcrPages")}
-            value={`${period.ocrPageCount} · ${ocrRatio}%`}
-            sub={t("settings.statsOcrSplit", {
-              local: period.localOcrPageCount,
-              ai: period.aiOcrPageCount,
-            })}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
+  const periods: (UsagePeriodStats | undefined)[] = [
+    stats?.today,
+    stats?.month,
+    stats?.total,
+  ];
 
-function StatCell({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string | number;
-  sub?: string;
-}) {
+  const rows: {
+    label: string;
+    value: (p: UsagePeriodStats) => string;
+    sub?: (p: UsagePeriodStats) => string;
+  }[] = [
+    {
+      label: t("settings.statsFiles"),
+      value: (p) => p.fileCount.toLocaleString(),
+      sub: (p) =>
+        t("settings.statsFilesSplit", {
+          pdf: p.pdfFileCount,
+          image: p.imageFileCount,
+        }),
+    },
+    {
+      label: t("settings.statsPages"),
+      value: (p) => p.pageCount.toLocaleString(),
+    },
+    {
+      label: t("settings.statsOcrPages"),
+      value: (p) => p.ocrPageCount.toLocaleString(),
+      sub: (p) =>
+        t("settings.statsOcrSplit", {
+          local: p.localOcrPageCount,
+          ai: p.aiOcrPageCount,
+        }),
+    },
+    {
+      label: t("settings.statsDuration"),
+      value: (p) => formatDuration(p.totalMs),
+    },
+  ];
+
   return (
-    <div className="min-w-0">
-      <p className="truncate text-xs text-muted-foreground">{label}</p>
-      <p className="text-sm font-medium tabular-nums">{value}</p>
-      {sub ? (
-        <p className="truncate text-[11px] text-muted-foreground">{sub}</p>
-      ) : null}
+    <div
+      className="grid items-baseline gap-x-4 px-4 py-2.5"
+      style={{ gridTemplateColumns: "112px repeat(3, minmax(0, 1fr))" }}
+    >
+      <span />
+      {[
+        t("settings.statsToday"),
+        t("settings.statsMonth"),
+        t("settings.statsTotal"),
+      ].map((label) => (
+        <span
+          key={label}
+          className="text-right text-[11px] text-muted-foreground"
+        >
+          {label}
+        </span>
+      ))}
+      {rows.map((row) => (
+        <Fragment key={row.label}>
+          <span className="pt-2 text-[12.5px] text-muted-foreground">
+            {row.label}
+          </span>
+          {periods.map((p, i) => (
+            <span key={i} className="pt-2 text-right">
+              {busy || !p ? (
+                <Skeleton className="ml-auto h-3.5 w-12" />
+              ) : (
+                <>
+                  <span className="block font-mono text-[12.5px] tabular-nums text-foreground">
+                    {row.value(p)}
+                  </span>
+                  {row.sub ? (
+                    <span className="mt-0.5 block font-mono text-[10px] tabular-nums text-muted-foreground">
+                      {row.sub(p)}
+                    </span>
+                  ) : null}
+                </>
+              )}
+            </span>
+          ))}
+        </Fragment>
+      ))}
     </div>
   );
 }
@@ -2888,38 +2946,38 @@ function VendorCard({
   const v = vendor;
   const [open, setOpen] = useState(!vendor.apiKeySet);
   return (
-    <div className="mx-4 my-2 overflow-hidden rounded-xl border border-border/70 bg-muted/20">
+    <div className="border-t border-border first:border-t-0">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/40 select-none"
+        className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-muted/40 select-none"
       >
         <ChevronDown
           className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
+            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
             open && "rotate-180",
           )}
         />
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-sm font-medium">
+        <span className="flex min-w-0 flex-1 items-baseline gap-2">
+          <span className="truncate text-[13px] font-medium">
             {v.name || (
               <span className="text-muted-foreground">
                 {t("settings.vendorName")}
               </span>
             )}
           </span>
-          <span className="truncate font-mono text-xs text-muted-foreground">
+          <span className="truncate font-mono text-[10.5px] text-muted-foreground">
             {v.baseUrl || "-"}
           </span>
         </span>
         {v.models.length > 0 ? (
-          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-            {v.models.length}
+          <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground">
+            {t("settings.models")} {v.models.length}
           </span>
         ) : null}
         {v.apiKeySet && !v.clearApiKey ? (
-          <span className="flex shrink-0 items-center gap-1 rounded-md bg-success-muted px-1.5 py-0.5 text-[11px] font-medium text-success">
+          <span className="flex shrink-0 items-center gap-1 text-[11px] text-success">
             <ShieldCheck className="size-3" />
             {t("settings.keySaved")}
           </span>
@@ -2927,13 +2985,13 @@ function VendorCard({
       </button>
 
       {open ? (
-        <div className="space-y-4 px-3 py-3">
+        <div className="space-y-3 border-t border-border/60 px-4 pb-3 pt-3">
           <div className="flex items-center gap-2">
             <Input
               value={v.name}
               onChange={(e) => onPatch({ name: e.target.value })}
               placeholder={t("settings.vendorName")}
-              className="h-9 flex-1 text-base font-medium"
+              className="h-8 flex-1 text-[13px] font-medium"
             />
             <Button variant="ghost" size="icon" onClick={onRemove}>
               <Trash2 />
