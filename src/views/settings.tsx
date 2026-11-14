@@ -649,7 +649,7 @@ export function SettingsView() {
   return (
     <div
       ref={containerRef}
-      className="relative flex min-h-0 w-full flex-1 gap-4 px-4 pt-3"
+      className="relative flex min-h-0 w-full flex-1 gap-4 pl-4 pt-3"
     >
       {/* Text-only navigation: a flat list of the cards, or - while filtering -
           the matching rows of those cards. */}
@@ -714,7 +714,7 @@ export function SettingsView() {
           </ScrollArea>
         ) : (
           <ScrollArea className="min-h-0 flex-1">
-            <div className="flex w-full flex-col gap-0.5 pb-2 pr-1">
+            <div className="flex w-full flex-col gap-0.5 pb-2 pr-4">
               {SECTIONS.map((s) => {
                 const active = section === s.id;
                 const pending = SECTION_FIELDS[s.id]?.some((f) =>
@@ -779,7 +779,7 @@ export function SettingsView() {
             worth measuring: at scrollTop 700 the head reported top = 0 relative
             to the viewport, i.e. it does stick. */}
         <ScrollArea className="min-h-0 flex-1">
-          <div className="pb-4 pr-1">
+          <div className="pb-4 pr-6">
             <div className="space-y-4">
               {/* Models first: without them the local engine cannot run, so the
                   prerequisite sits above the engine it belongs to. */}
@@ -1053,7 +1053,7 @@ export function SettingsView() {
         {/* Save bar, as a footer: flush with the column, one hairline above it,
             solid card surface. `flex-none` and outside the scroll area, so it
             neither covers the last rows nor sits under the window controls. */}
-        <div className="flex min-h-11 flex-none flex-wrap items-center gap-x-3 gap-y-2 border-t border-border bg-card px-4 py-2">
+        <div className="flex min-h-11 flex-none flex-wrap items-center gap-x-3 gap-y-2 border-t border-border bg-card py-2 pl-4 pr-6">
           {dirty ? (
             <Tooltip>
               <TooltipTrigger asChild>
